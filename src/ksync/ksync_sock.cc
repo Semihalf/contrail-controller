@@ -44,6 +44,8 @@ typedef boost::asio::detail::socket_option::integer<SOL_SOCKET,
         SO_RCVBUFFORCE> ReceiveBuffForceSize;
 #else 
         SO_RCVBUF> ReceiveBuffForceSize;
+typedef boost::asio::detail::socket_option::integer<SOL_SOCKET,
+        SO_SNDBUF> SendBuffSize;
 #endif
 
 int KSyncSock::vnsw_netlink_family_id_;
@@ -70,6 +72,21 @@ KSyncSockNetlink::KSyncSockNetlink(boost::asio::io_service &ios, int protocol)
     boost::system::error_code ec1;
     sock_.get_option(rcv_buf_size, ec);
     LOG(INFO, "Current receive sock buffer size is " << rcv_buf_size.value());
+
+#if defined(__FreeBSD__)
+    SendBuffSize set_send_buf;
+    set_send_buf = KSYNC_SOCK_SEND_BUFF_SIZE;
+    sock_.set_option(set_send_buf, ec);
+    if (ec.value() != 0) {
+        LOG(ERROR, "Error Changing netlink send sock buffer size to " <<
+                set_send_buf.value() << " error = " <<
+                boost::system::system_error(ec).what());
+    }
+    boost::asio::socket_base::send_buffer_size send_buf_size;
+    sock_.get_option(send_buf_size, ec);
+    LOG(INFO, "Current send sock buffer size is " <<
+            send_buf_size.value());
+#endif
 }
 
 uint32_t KSyncSockNetlink::GetSeqno(char *data) {

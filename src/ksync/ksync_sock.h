@@ -26,6 +26,9 @@
 #define KSYNC_DEFAULT_Q_ID_SEQ    0x00000001
 #define KSYNC_ACK_WAIT_THRESHOLD  200
 #define KSYNC_SOCK_RECV_BUFF_SIZE (256 * 1024)
+#if defined(__FreeBSD__)
+#define KSYNC_SOCK_SEND_BUFF_SIZE (256 * 1024)
+#endif
 
 #define KSYNC_ERROR(obj, ...)\
 do {\
