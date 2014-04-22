@@ -175,14 +175,15 @@ void KSync::CreateVhostIntf() {
     nl_free_client(cl);
 #elif defined(__FreeBSD__)
     struct ifreq ifr = { 0 };
+    ifr.ifr_flags = IFF_UP;
 
-    int s = socket(AF_LOCAL, SOCK_DGRAM, 0);
+    int s = socket(PF_LOCAL, SOCK_DGRAM, 0);
     assert(s > 0);
 
     strncpy(ifr.ifr_name, agent_->vhost_interface_name().c_str(),
         sizeof(ifr.ifr_name));
 
-    assert(ioctl(s, SIOCIFCREATE, &ifr) != -1);
+    assert(ioctl(s, SIOCSIFFLAGS, &ifr) != -1);
     close(s);
 #endif
 }
@@ -213,7 +214,7 @@ void KSync::UpdateVhostMac() {
 #elif defined(__FreeBSD__)
     struct ifreq ifr = { 0 };
 
-    int s = socket(AF_LOCAL, SOCK_DGRAM, 0);
+    int s = socket(PF_LOCAL, SOCK_DGRAM, 0);
     assert(s >= 0);
 
     strncpy(ifr.ifr_name, agent_->vhost_interface_name().c_str(),
