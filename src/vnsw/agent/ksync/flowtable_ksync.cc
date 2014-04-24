@@ -566,6 +566,9 @@ void FlowTableKSyncObject::MapFlowMem() {
     }
     nl_free_client(cl);
 
+//XXX the reason for destruction and re-creation of flow device
+//shall be investigated.
+#if !defined(__FreeBSD__)
     // Remove the existing /dev/flow file first. We will add it again below
     if (unlink("/dev/flow") != 0) {
         if (errno != ENOENT) {
@@ -584,6 +587,7 @@ void FlowTableKSyncObject::MapFlowMem() {
             assert(0);
         }
     }
+#endif
 
     int fd;
     if ((fd = open("/dev/flow", O_RDONLY | O_SYNC)) < 0) {
