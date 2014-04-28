@@ -56,6 +56,7 @@ VrfEntry::VrfEntry(const string &name) :
         name_(name), id_(kInvalidIndex), 
         walkid_(DBTableWalker::kInvalidWalkerId), deleter_(NULL),
         rt_table_db_(), delete_timeout_timer_(NULL) { 
+		std::cout << "[gjb] New VRFEntry: " << name << std::endl;
 }
 
 VrfEntry::~VrfEntry() {

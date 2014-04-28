@@ -73,6 +73,7 @@ public:
         } else {
             //TODO Add the IP prefix sent by BGP peer to add IP route 
         }
+	cout << "[gjb] Layer2RouteEntry with peer type: " << type << std::endl;
     }
     virtual ~Layer2RouteEntry() { }
 
@@ -118,6 +119,7 @@ public:
     Layer2RouteKey(const Peer *peer, const string &vrf_name) : 
         AgentRouteKey(peer, vrf_name) { 
             dmac_ = *ether_aton("FF:FF:FF:FF:FF:FF");
+	    std::cout << "[gjb] Layer2RouteKey Peer name: " << peer->GetName() << " type: " << peer->GetType() << "vrf: " << vrf_name << std::endl;
     }
     virtual ~Layer2RouteKey() { }
 

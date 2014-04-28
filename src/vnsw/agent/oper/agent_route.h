@@ -33,7 +33,12 @@ class AgentPath;
 
 struct AgentRouteKey : public AgentKey {
     AgentRouteKey(const Peer *peer, const std::string &vrf_name) : 
-        AgentKey(), peer_(peer), vrf_name_(vrf_name) { }
+        AgentKey(), peer_(peer), vrf_name_(vrf_name) {
+		if (peer)
+			std::cout << "[gjb] AgentRouteKey Peer name: " << peer->GetName() << " type: " << peer->GetType() << "vrf: " << vrf_name << std::endl;
+		else
+			std::cout << "[gjb] AgentRouteKey Peer (NULL) vrf: " << vrf_name << std::endl;
+	}
     virtual ~AgentRouteKey() { }
 
     virtual Agent::RouteTableType GetRouteTableType() = 0;

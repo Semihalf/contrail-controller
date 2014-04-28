@@ -321,7 +321,8 @@ public:
     FlowProto *GetFlowProto() { return flow_proto_; }
 
     const Peer *local_peer() const {return local_peer_.get();}
-    const Peer *local_vm_peer() const {return local_vm_peer_.get();}
+    const Peer *local_vm_peer() const {
+	    return local_vm_peer_.get();}
     const Peer *link_local_peer() const {return linklocal_peer_.get();}
     const Peer *ecmp_peer() const {return ecmp_peer_.get();}
 

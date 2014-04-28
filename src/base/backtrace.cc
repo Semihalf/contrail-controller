@@ -11,7 +11,7 @@
 
 ssize_t BackTrace::ToString(void * const* callstack, int frames, char *buf,
                             size_t buf_len) {
-#ifdef DARWIN
+#if defined(DARWIN) || defined(__FreeBSD__)
     return 0;
 #else
     buf[0] = '\0';

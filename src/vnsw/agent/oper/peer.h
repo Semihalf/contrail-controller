@@ -39,6 +39,7 @@ public:
         vrf_uc_walkid_(DBTableWalker::kInvalidWalkerId),
         vrf_mc_walkid_(DBTableWalker::kInvalidWalkerId) {
         num_walks_ = -1;
+	std::cout << "[gjb] Peer name: " << name << " type: " << type << std::endl;
     }
     virtual ~Peer() {
     }

@@ -7,8 +7,9 @@
 #include "vr_nexthop.h"
 #if defined(__linux__)
 #include <linux/if_ether.h>
-#endif
+#elif defined(__FreeBSD__)
 #include <net/ethernet.h>
+#endif
 #include <iomanip>
 #include <sstream>
 

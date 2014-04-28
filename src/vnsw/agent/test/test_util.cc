@@ -209,7 +209,7 @@ void AddLink(const char *node_name1, const char *name1,
     AddXmlHdr(buff, len);
     AddLinkString(buff, len, node_name1, name1, node_name2, name2);
     AddXmlTail(buff, len);
-    //LOG(DEBUG, buff);
+    LOG(DEBUG, buff);
     pugi::xml_document xdoc_;
     pugi::xml_parse_result result = xdoc_.load(buff);
     EXPECT_TRUE(result);
@@ -754,6 +754,7 @@ bool DBTableFind(const string &table_name) {
    return (Agent::GetInstance()->GetDB()->FindTable(table_name) != NULL);
 }
 
+#if defined(__linux__)
 void DeleteTap(int fd) {
     if (ioctl(fd, TUNSETPERSIST, 0) < 0) {
         LOG(ERROR, "Error <" << errno << ": " << strerror(errno) <<
@@ -855,7 +856,90 @@ void CreateTapInterfaces(const char *name, int count, int *fd) {
     }
 
 }
+#elif defined(__FreeBSD__)
+void DeleteTap(int fd) {
+}
 
+void DeleteTapIntf(const int fd[], int count) {
+
+	for (int i = 0; i < count; i++)
+		DeleteTap(fd[i]);
+}
+
+int CreateTap(const char *name) {
+	int fd;
+	struct ifreq ifr;
+	int socket_fd;
+
+        socket_fd = socket(AF_LOCAL, SOCK_DGRAM, 0);
+	if (socket_fd < 0) {
+            LOG(ERROR, "Error creating socket for a TAP device, errno: " <<
+                errno << ": " << strerror(errno));
+            assert(0);
+        }
+
+        memset(&ifr, 0, sizeof(ifr));
+        strncpy(ifr.ifr_name, "tap", IF_NAMESIZE);
+        if (ioctl(socket_fd, SIOCIFCREATE2, &ifr) < 0) {
+            LOG(ERROR, "Error creating the TAP device, errno: " << errno <<
+                ": " << strerror(errno));
+            assert(0);
+        }
+        // Set interface name and save the /dev/tapX path for later use
+        std::string dev_name = std::string("/dev/") +
+            std::string(ifr.ifr_name);
+        ifr.ifr_data = (caddr_t) name;
+        if (ioctl(socket_fd, SIOCSIFNAME, &ifr) < 0) {
+            LOG(ERROR, "Can not change interface name to " << name <<
+                "with error: " << errno << ": " << strerror(errno));
+            assert(0);
+        }
+
+	return fd;
+}
+
+void CreateTapIntf(const char *name, int count) {
+    char ifname[IF_NAMESIZE];
+
+    for (int i = 0; i < count; i++) {
+        snprintf(ifname, IF_NAMESIZE, "%s%d", name, i);
+        CreateTap(ifname);
+    }
+}
+
+void CreateTapInterfaces(const char *name, int count, int *fd) {
+    char ifname[IF_NAMESIZE];
+    struct ifreq ifr;
+    int socket_fd;
+
+    for (int i = 0; i < count; i++) {
+        snprintf(ifname, IF_NAMESIZE, "%s%d", name, i);
+        fd[i] = CreateTap(ifname);
+
+        // Set the interface up
+        socket_fd = socket(AF_INET, SOCK_DGRAM, 0);
+        if (socket_fd < 0) {
+            LOG(ERROR, "Can not open socket for " << name << ", errno: " <<
+                errno << ": " << strerror(errno));
+            assert(0);
+        }
+        memset(&ifr, 0, sizeof(ifr));
+        strncpy(ifr.ifr_name, name, IF_NAMESIZE);
+        if (ioctl(socket_fd, SIOCGIFFLAGS, &ifr) < 0) {
+            LOG(ERROR, "Can not get socket flags, errno: " << errno << ": " <<
+                strerror(errno));
+            assert(0);
+        }
+        ifr.ifr_flags |= IFF_UP;
+        if (ioctl(socket_fd, SIOCSIFFLAGS, &ifr) < 0) {
+            LOG(ERROR, "Can not set socket flags, errno: " << errno << ": " <<
+                strerror(errno));
+            assert(0);
+        }
+        close(socket_fd);
+    }
+}
+#endif
 void VnAddReq(int id, const char *name) {
     std::vector<VnIpam> ipam;
     VnData::VnIpamDataMap vn_ipam_data;
@@ -1018,6 +1102,7 @@ bool L2RouteFind(const string &vrf_name, const struct ether_addr &mac) {
         return false;
 
     Layer2RouteKey key(Agent::GetInstance()->local_vm_peer(), vrf_name, mac);
+    std::cout << "[gjb] local_vm_peer name: " << Agent::GetInstance()->local_vm_peer()->GetName() << " type: " <<  Agent::GetInstance()->local_vm_peer()->GetType() << std::endl;
     Layer2RouteEntry *route = 
         static_cast<Layer2RouteEntry *>
         (static_cast<Layer2AgentRouteTable *>(vrf->
@@ -1070,6 +1155,7 @@ Layer2RouteEntry *L2RouteGet(const string &vrf_name,
         return NULL;
 
     Layer2RouteKey key(Agent::GetInstance()->local_vm_peer(), vrf_name, mac);
+    std::cout << "[gjb] L2RouteGet peer name: " << Agent::GetInstance()->local_vm_peer()->GetName() << " type: " << Agent::GetInstance()->local_vm_peer()->GetType() << std::endl;
     Layer2RouteEntry *route = 
         static_cast<Layer2RouteEntry *>
         (static_cast<Layer2AgentRouteTable *>(vrf->
@@ -1863,19 +1949,26 @@ void CreateVmportEnvInternal(struct PortInfo *input, int count, int acl_id,
         sprintf(vm_name, "vm%d", input[i].vm_id);
         sprintf(instance_ip, "instance%d", input[i].vm_id);
         if (!l2_vn) {
+	LOG(DEBUG, " [gjb] Add VN  " << vn_name << " vn_id " << input[i].vn_id);
             AddVn(vn_name, input[i].vn_id);
+	LOG(DEBUG, " [gjb] Add VRF " << vrf_name);
             AddVrf(vrf_name);
         }
+	LOG(DEBUG, " [gjb] Add VM " << vm_name << " vm_id " << input[i].vm_id);
         AddVm(vm_name, input[i].vm_id);
+	LOG(DEBUG, " [gjb] AddVmPortVrfbytes " << input[i].name);
         AddVmPortVrf(input[i].name, "", 0);
 
         //AddNode("virtual-machine-interface-routing-instance", input[i].name, 
         //        input[i].intf_id);
         IntfCfgAdd(input, i);
+	LOG(DEBUG, " [gjb] AddPort " << input[i].name);
         AddPort(input[i].name, input[i].intf_id);
         if (with_ip) {
+	LOG(DEBUG, " [gjb] AddInstanceIp " << instance_ip << " vm_id " << input[i].vm_id << " addr " << input[i].addr);
             AddInstanceIp(instance_ip, input[i].vm_id, input[i].addr);
         }
+	LOG(DEBUG, " [gjb] Add links");
         if (!l2_vn) {
             AddLink("virtual-network", vn_name, "routing-instance", vrf_name);
         }

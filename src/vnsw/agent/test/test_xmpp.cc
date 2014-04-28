@@ -670,11 +670,13 @@ TEST_F(AgentXmppUnitTest, ConnectionUpDown) {
     };
 
     //Create vn,vrf,vm,vm-port and route entry in vrf1 
+    std::cout << "[gjb] CreateVmportEnv" << std::endl;
     CreateVmportEnv(input, 1);
     client->WaitForIdle();
     //expect subscribe message+route at the mock server
     WAIT_FOR(100, 10000, (mock_peer.get()->Count() == 6));
 
+    std::cout << "[gjb] IP4 setup" << std::endl;
     Ip4Address addr = Ip4Address::from_string("1.1.1.2");
     EXPECT_TRUE(VmPortActive(input, 0));
     EXPECT_TRUE(RouteFind("vrf1", addr, 32));
@@ -683,7 +685,9 @@ TEST_F(AgentXmppUnitTest, ConnectionUpDown) {
 
     const struct ether_addr *mac = ether_aton("00:00:00:01:01:02");
     EXPECT_TRUE(L2RouteFind("vrf1", *mac));
+    std::cout << "[gjb] Get route for vrf1" << std::endl;
     Layer2RouteEntry *l2_rt = L2RouteGet("vrf1", *mac);
+    cout << "[gjb] Actual type is: " << l2_rt->GetActivePath()->peer()->GetType() << " and we expect: " << Peer::LOCAL_VM_PEER << std::endl;
 
     //ensure active path is local-vm
     EXPECT_TRUE(rt->GetActivePath()->peer()->GetType() == Peer::LOCAL_VM_PORT_PEER);
@@ -698,6 +702,7 @@ TEST_F(AgentXmppUnitTest, ConnectionUpDown) {
     WAIT_FOR(100, 10000, (bgp_peer.get()->Count() == 2));
 
     //ensure active path is BGP
+    std::cout << "[gjb] l2_rt peer name: " << l2_rt->GetActivePath()->peer()->GetName() << " type: " << l2_rt->GetActivePath()->peer()->GetType() << std::endl;
     EXPECT_TRUE(rt->GetActivePath()->peer()->GetType() == Peer::BGP_PEER);
     WAIT_FOR(100, 10000, (l2_rt->GetActivePath()->peer()->GetType() == Peer::BGP_PEER));
     EXPECT_TRUE(l2_rt->GetActivePath()->peer()->GetType() == Peer::BGP_PEER);
@@ -750,6 +755,7 @@ TEST_F(AgentXmppUnitTest, ConnectionUpDown) {
     EXPECT_TRUE(L2RouteFind("vrf1", *mac2));
     Layer2RouteEntry *l2_rt2 = L2RouteGet("vrf1", *mac2);
 
+    cout << "[gjb] Actual type is: " << l2_rt2->GetActivePath()->peer()->GetType() << " and we expect: " << Peer::LOCAL_VM_PEER << std::endl;
     //ensure active path is local-vm
     EXPECT_TRUE(rt2->GetActivePath()->peer()->GetType() == Peer::LOCAL_VM_PORT_PEER);
     EXPECT_TRUE(l2_rt2->GetActivePath()->peer()->GetType() == Peer::LOCAL_VM_PEER);

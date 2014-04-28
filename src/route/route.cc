@@ -5,6 +5,7 @@
 #include "route/route.h"
 
 Route::Route() {
+	std::cout << "[gjb] New route: " << this << std::endl;
 }
 
 Route::~Route() {
@@ -22,6 +23,7 @@ const Path *Route::front() const {
 void Route::insert(const Path *ipath) {
     Path *path = const_cast<Path *> (ipath);
 
+    std::cout << "[gjb] Insert path " << ipath << " for route: " << this << std::endl;
     path->set_time_stamp_usecs(UTCTimestampUsec());
     path_.push_back(*path);
 }

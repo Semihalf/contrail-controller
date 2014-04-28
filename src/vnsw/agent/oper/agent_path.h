@@ -16,6 +16,10 @@ public:
         tunnel_type_(TunnelType::ComputeType(TunnelType::AllType())),
         vrf_name_(""), gw_ip_(0), unresolved_(true),
         is_subnet_discard_(false), dependant_rt_(rt) {
+		if (peer)
+			cout << "[gjb] AgentPath with peer " << peer->GetName() << " and type: " << peer->GetType() << std::endl;
+		else
+			cout << "[gjb] AgentPath with peer (NULL)" << std::endl;
     }
     virtual ~AgentPath() { 
         clear_sg_list();

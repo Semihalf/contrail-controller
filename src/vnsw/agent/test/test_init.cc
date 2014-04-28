@@ -319,9 +319,13 @@ void TestShutdown() {
 
     Agent::GetInstance()->GetEventManager()->Shutdown();
     AsioStop();
+    cout << "asio stop " << endl;
     TaskScheduler::GetInstance()->Terminate();
+    cout << "scheduler->Shutdown" << endl;
 
     AgentStats::GetInstance()->Shutdown();
+    cout << "agentstats>Shutdown" << endl;
     Agent::GetInstance()->Shutdown();
+    cout << "agent->Shutdown" << endl;
     delete agent_init;
 }

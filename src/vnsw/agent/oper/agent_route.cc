@@ -262,6 +262,7 @@ void AgentRouteTable::Input(DBTablePartition *part, DBClient *client,
     bool notify = false;
     bool route_added = false;
 
+    std::cout << "[gjb] AgentRouteTable::Input " << std::endl;
     VrfEntry *vrf = agent_->GetVrfTable()->FindVrfFromName(key->vrf_name());
     // Ignore request if VRF not found. Note, we process the DELETE
     // request even if VRF is in deleted state

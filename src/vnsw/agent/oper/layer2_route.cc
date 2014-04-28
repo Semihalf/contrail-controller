@@ -42,6 +42,7 @@ DBTableBase *Layer2AgentRouteTable::CreateTable(DB *db,
     AgentRouteTable *table = new Layer2AgentRouteTable(db, name);
     table->Init();
     //table->InitRouteTable(db, table, name, Agent::LAYER2);
+    std::cout << "[gjb] Layer2AgentRouteTable" << std::endl;
     return table;
 }
 
@@ -50,6 +51,7 @@ Layer2RouteKey::AllocRouteEntry(VrfEntry *vrf, bool is_multicast) const
 {
     Layer2RouteEntry * entry = new Layer2RouteEntry(vrf, dmac_, vm_ip_, plen_, 
                                                     peer()->GetType(), is_multicast); 
+    std::cout << "[gjb] Layer2RouteKey::AllocRouteEntry" << std::endl;
     return static_cast<AgentRoute *>(entry);
 }
 
@@ -65,6 +67,7 @@ void Layer2AgentRouteTable::AddLocalVmRouteReq(const Peer *peer,
     DBRequest req;
     req.oper = DBRequest::DB_ENTRY_ADD_CHANGE;
 
+    std::cout << "[gjb] Layer2RouteKey::AddLocalVmRouteReq" << std::endl;
     Layer2RouteKey *key = new Layer2RouteKey(peer, vrf_name, mac, vm_ip, 32);
     req.key.reset(key);
 
@@ -91,6 +94,7 @@ void Layer2AgentRouteTable::AddLocalVmRoute(const Peer *peer,
     DBRequest req;
     req.oper = DBRequest::DB_ENTRY_ADD_CHANGE;
 
+    std::cout << "[gjb] Layer2RouteKey::AddLocalVmRoute" << std::endl;
     Layer2RouteKey *key = new Layer2RouteKey(peer, vrf_name, mac, vm_ip, 32);
     req.key.reset(key);
 
@@ -113,6 +117,7 @@ void Layer2AgentRouteTable::AddLayer2BroadcastRoute(const string &vrf_name,
     DBRequest req;
     req.oper = DBRequest::DB_ENTRY_ADD_CHANGE;
 
+    std::cout << "[gjb] Layer2RouteKey::AddLayer2BroadcastRoute" << std::endl;
     Layer2RouteKey *key = 
         new Layer2RouteKey(Agent::GetInstance()->local_vm_peer(), vrf_name);
     req.key.reset(key);
@@ -135,6 +140,7 @@ void Layer2AgentRouteTable::AddRemoteVmRouteReq(const Peer *peer,
     DBRequest nh_req;
     nh_req.oper = DBRequest::DB_ENTRY_ADD_CHANGE;
 
+    std::cout << "[gjb] Layer2RouteKey::AddRemoteVmRouteReq" << std::endl;
     if (bmap != (1 << TunnelType::VXLAN) || 
         (TunnelType::ComputeType(TunnelType::AllType()) != 
                                  (1 << TunnelType::VXLAN))) {
@@ -172,6 +178,7 @@ void Layer2AgentRouteTable::DeleteReq(const Peer *peer, const string &vrf_name,
     DBRequest req;
     req.oper = DBRequest::DB_ENTRY_DELETE;
 
+    std::cout << "[gjb] Layer2RouteKey::DeleteReq" << std::endl;
     Layer2RouteKey *key = new Layer2RouteKey(peer, vrf_name, mac);
     req.key.reset(key);
     req.data.reset(NULL);
@@ -183,6 +190,7 @@ void Layer2AgentRouteTable::Delete(const Peer *peer, const string &vrf_name,
     DBRequest req;
     req.oper = DBRequest::DB_ENTRY_DELETE;
 
+    std::cout << "[gjb] Layer2RouteKey::Delete" << std::endl;
     Layer2RouteKey *key = new Layer2RouteKey(peer, vrf_name, mac);
     req.key.reset(key);
     req.data.reset(NULL);
@@ -193,6 +201,7 @@ void Layer2AgentRouteTable::DeleteBroadcastReq(const string &vrf_name) {
     DBRequest req;
     req.oper = DBRequest::DB_ENTRY_DELETE;
 
+    std::cout << "[gjb] Layer2RouteKey::DeleteBroadcastReq" << std::endl;
     Layer2RouteKey *key = 
         new Layer2RouteKey(Agent::GetInstance()->local_vm_peer(), vrf_name);
     req.key.reset(key);
