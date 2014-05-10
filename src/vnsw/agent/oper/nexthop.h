@@ -160,7 +160,7 @@ public:
         free_index_ = 0;
     }
 
-    size_t GetActiveMemberCount() const {
+    size_t HashTableSize() const {
         return hash_table_.size();
     }
 
@@ -209,6 +209,16 @@ public:
             hash++;
         }
         return 0;
+    }
+
+    uint32_t count() const {
+        int cnt = 0;
+        for (uint32_t i = 0; i < mbr_list_.size(); i++) {
+            if (mbr_list_[i] != NULL)
+                cnt++;
+        }
+
+        return cnt;
     }
 
 private:
@@ -764,14 +774,18 @@ public:
     static void CreateMulticastVmInterfaceNH(const uuid &intf_uuid,
                                              const struct ether_addr &dmac, 
                                              const string &vrf_name);
+    static void DeleteMulticastVmInterfaceNH(const uuid &intf_uuid);
     static void CreateL2VmInterfaceNH(const uuid &intf_uuid,
                                       const struct ether_addr &dmac, 
                                       const string &vrf_name);
+    static void DeleteL2InterfaceNH(const uuid &intf_uuid);
     static void CreateL3VmInterfaceNH(const uuid &intf_uuid,
                                       const struct ether_addr &dmac, 
                                       const string &vrf_name);
+    static void DeleteL3InterfaceNH(const uuid &intf_uuid);
+    static void DeleteNH(const uuid &intf_uuid, bool policy, uint8_t flags);
     static void DeleteVmInterfaceNHReq(const uuid &intf_uuid);
-    static void CreatePacketInterfaceNhReq(const string &ifname);
+    static void CreatePacketInterfaceNh(const string &ifname);
     static void DeleteHostPortReq(const string &ifname);
     static void CreateInetInterfaceNextHop(const string &ifname,
                                            const string &vrf_name);
@@ -1177,7 +1191,10 @@ public:
     }
 
     size_t ComponentNHCount() const {
-        return component_nh_list_.GetActiveMemberCount();
+        return component_nh_list_.HashTableSize();
+    }
+    uint32_t ActiveComponentNHCount() const {
+        return component_nh_list_.count();
     }
 
     const ComponentNHList* GetComponentNHList() const {

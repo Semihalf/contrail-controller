@@ -20,6 +20,7 @@
 #include <ksync/ksync_entry.h>
 #include <ksync/ksync_object.h>
 #include <ksync/ksync_sock.h>
+#include <ksync/ksync_types.h>
 #include <ksync/agent_ksync_types.h>
 #include <ksync/interface_ksync.h>
 #include <ksync/nexthop_ksync.h>
@@ -42,7 +43,7 @@ FlowTableKSyncEntry::FlowTableKSyncEntry(FlowTableKSyncObject *obj,
     : flow_entry_(fe), hash_id_(hash_id), 
     old_reverse_flow_id_(FlowEntry::kInvalidFlowHandle), old_action_(0), 
     old_component_nh_idx_(0xFFFF), old_first_mirror_index_(0xFFFF), 
-    old_second_mirror_index_(0xFFFF), trap_flow_(false), nh_(NULL), 
+    old_second_mirror_index_(0xFFFF), trap_flow_(false), ecmp_(false), nh_(NULL),
     ksync_obj_(obj) {
 }
 
@@ -221,6 +222,11 @@ int FlowTableKSyncEntry::Encode(sandesh_op::type op, char *buf, int buf_len) {
             req.set_fr_rindex(nat_flow->flow_handle());
         }
 
+        if (fe_action & (1 << TrafficAction::VRF_TRANSLATE)) {
+            flags |= VR_FLOW_FLAG_VRFT;
+            req.set_fr_flow_dvrf(flow_entry_->acl_assigned_vrf_index());
+        }
+
         if (flow_entry_->is_flags_set(FlowEntry::Trap)) {
             flags |= VR_FLOW_FLAG_TRAP_ECMP;
             action = VR_FLOW_ACTION_HOLD;
@@ -292,6 +298,12 @@ bool FlowTableKSyncEntry::Sync() {
         trap_flow_ = flow_entry_->is_flags_set(FlowEntry::Trap);
         changed = true;
     }
+
+    if (ecmp_ != flow_entry_->is_flags_set(FlowEntry::EcmpFlow)) {
+        ecmp_ = flow_entry_->is_flags_set(FlowEntry::EcmpFlow);
+        changed = true;
+    }
+
 
     if (flow_entry_->data().nh_state_.get() && 
         flow_entry_->data().nh_state_->nh()) {
@@ -375,7 +387,13 @@ int FlowTableKSyncEntry::DeleteMsg(char *buf, int buf_len) {
 
 std::string FlowTableKSyncEntry::ToString() const {
     std::ostringstream str;
-    str << flow_entry_;
+    const FlowKey *fe_key = &flow_entry_->key();
+    Ip4Address sip(fe_key->src.ipv4);
+    Ip4Address dip(fe_key->dst.ipv4);
+    str << "Flow : " << hash_id_ << " with Source IP: " << sip.to_string()
+        << " Source port: " << fe_key->src_port << " Destination IP: "
+        << dip.to_string() << " Destination port: " << fe_key->dst_port
+        << " Protocol "<< fe_key->protocol;
     return str.str();
 }
 
@@ -383,6 +401,17 @@ bool FlowTableKSyncEntry::IsLess(const KSyncEntry &rhs) const {
     const FlowTableKSyncEntry &entry = static_cast
         <const FlowTableKSyncEntry &>(rhs);
     return flow_entry_ < entry.flow_entry_;
+}
+
+void FlowTableKSyncEntry::ErrorHandler(int err, uint32_t seq_no) const {
+    if (err == ENOSPC || err == EBADF) {
+        KSYNC_ERROR(VRouterError, "VRouter operation failed. Error <", err,
+                    ":", strerror(err), ">. Object <", ToString(),
+                    ">. Operation <", OperationString(), ">. Message number :",
+                    seq_no);
+        return;
+    }
+    KSyncEntry::ErrorHandler(err, seq_no);
 }
 
 FlowTableKSyncObject::FlowTableKSyncObject(KSync *ksync) : 
@@ -465,6 +494,7 @@ void FlowTableKSyncObject::MapFlowMemTest() {
     flow_table_entries_count_ = kTestFlowTableSize / sizeof(vr_flow_entry);
     audit_yield_ = flow_table_entries_count_;
     audit_timeout_ = 0; // timout immediately.
+    ksync_->agent()->set_flow_table_size(flow_table_entries_count_);
 }
 
 void FlowTableKSyncObject::UnmapFlowMemTest() {
@@ -605,6 +635,7 @@ void FlowTableKSyncObject::MapFlowMem() {
     }
 
     flow_table_entries_count_ = flow_table_size_ / sizeof(vr_flow_entry);
+    ksync_->agent()->set_flow_table_size(flow_table_entries_count_);
     audit_yield_ = AuditYield;
     audit_timeout_ = AuditTimeout;
     audit_timer_->Start(AuditTimeout,

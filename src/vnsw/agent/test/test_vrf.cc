@@ -45,8 +45,8 @@ using namespace boost::assign;
 
 
 using namespace pugi;
-void RouterIdDepInit() {
-    VNController::Connect();
+void RouterIdDepInit(Agent *agent) {
+    Agent::GetInstance()->controller()->Connect();
 }
 
 static void ValidateSandeshResponse(Sandesh *sandesh, vector<int> &result) {
@@ -67,14 +67,23 @@ protected:
         Agent::GetInstance()->SetXmppPort(bgp_peer1->GetServerPort(), 0);
         Agent::GetInstance()->SetDnsXmppServer("", 0);
         Agent::GetInstance()->SetDnsXmppPort(bgp_peer1->GetServerPort(), 0);
-        RouterIdDepInit();
+        RouterIdDepInit(Agent::GetInstance());
         thread_->Start();
         WAIT_FOR(100, 10000, (bgp_peer1->IsEstablished() == true));
     }
 
     virtual void TearDown() {
-        VNController::DisConnect();
+        Agent::GetInstance()->controller()->DisConnect();
         client->WaitForIdle();
+        if (Agent::GetInstance()->headless_agent_mode()) {
+            TaskScheduler::GetInstance()->Stop();
+            Agent::GetInstance()->controller()->unicast_cleanup_timer().cleanup_timer_->Fire();
+            Agent::GetInstance()->controller()->multicast_cleanup_timer().cleanup_timer_->Fire();
+            TaskScheduler::GetInstance()->Start();
+            client->WaitForIdle();
+            Agent::GetInstance()->controller()->Cleanup();
+            client->WaitForIdle();
+        }
 
         bgp_peer1->Shutdown();
         client->WaitForIdle();

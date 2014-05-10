@@ -45,14 +45,14 @@
 
 using namespace pugi;
 
-void RouterIdDepInit() {
+void RouterIdDepInit(Agent *agent) {
 }
 
 class AgentBgpXmppPeerTest : public AgentXmppChannel {
 public:
     AgentBgpXmppPeerTest(XmppChannel *channel, std::string xs, uint8_t xs_idx) :
-        AgentXmppChannel(channel, xs, "0", xs_idx), rx_count_(0),
-        rx_channel_event_queue_(
+        AgentXmppChannel(Agent::GetInstance(), channel, xs, "0", xs_idx), 
+        rx_count_(0), rx_channel_event_queue_(
             TaskScheduler::GetInstance()->GetTaskId("xmpp::StateMachine"), 0,
             boost::bind(&AgentBgpXmppPeerTest::ProcessChannelEvent, this, _1)) {
     }
@@ -63,8 +63,7 @@ public:
     }
 
     bool ProcessChannelEvent(xmps::PeerState state) {
-        AgentXmppChannel::HandleXmppClientChannelEvent(
-            static_cast<AgentXmppChannel *>(this), state);
+        AgentXmppChannel::HandleAgentXmppClientChannelEvent(static_cast<AgentXmppChannel *>(this), state);
         return true;
     }
 
@@ -128,7 +127,6 @@ protected:
     AgentXmppUnitTest() : thread_(&evm_) {}
  
     virtual void SetUp() {
-        AgentIfMapVmExport::Init();
         xs_p = new XmppServer(&evm_, XmppInit::kControlNodeJID);
         xs_s = new XmppServer(&evm_, XmppInit::kControlNodeJID);
         xc_p = new XmppClient(&evm_);
@@ -155,11 +153,18 @@ protected:
         client->WaitForIdle();
         xs_s->Shutdown();
         client->WaitForIdle();
+
+        TaskScheduler::GetInstance()->Stop();
+        Agent::GetInstance()->controller()->unicast_cleanup_timer().cleanup_timer_->Fire();
+        TaskScheduler::GetInstance()->Start();
+        client->WaitForIdle();
+        Agent::GetInstance()->controller()->Cleanup();
+        client->WaitForIdle();
+
         TcpServerManager::DeleteServer(xs_p);
         TcpServerManager::DeleteServer(xs_s);
         TcpServerManager::DeleteServer(xc_p);
         TcpServerManager::DeleteServer(xc_s);
-        AgentIfMapVmExport::Shutdown();
         evm_.Shutdown();
         thread_.Join();
     }
@@ -261,7 +266,8 @@ protected:
 
     void XmppConnectionSetUp() {
 
-        Agent::GetInstance()->SetControlNodeMulticastBuilder(NULL);
+        Agent::GetInstance()->controller()->increment_multicast_sequence_number();
+        Agent::GetInstance()->set_cn_mcast_builder(NULL);
 	//Create an xmpp client
 	XmppConfigData *xmppc_p_cfg = new XmppConfigData;
 	LOG(DEBUG, "Create an xmpp client connect to Server port " << xs_p->GetPort());
@@ -286,7 +292,7 @@ protected:
 	    boost::bind(&ControlNodeMockBgpXmppPeer::HandleXmppChannelEvent, 
                         mock_peer.get(), _1, _2));
 	// server connection
-        WAIT_FOR(100, 10000,
+        WAIT_FOR(1000, 10000,
             ((sconnection = xs_p->FindConnection(XmppInit::kAgentNodeJID)) != NULL));
         assert(sconnection);
 
@@ -313,7 +319,7 @@ protected:
 	    boost::bind(&AgentBgpXmppPeerTest::HandleXmppChannelEvent, bgp_peer_s.get(), _2));
 
 	// server connection
-        WAIT_FOR(100, 10000,
+        WAIT_FOR(1000, 10000,
             ((sconnection_s = xs_s->FindConnection(XmppInit::kAgentNodeJID)) != NULL));
         assert(sconnection_s);
     }
@@ -342,10 +348,10 @@ namespace {
 TEST_F(AgentXmppUnitTest, Connection) {
 
     //wait for connection establishment
-    WAIT_FOR(100, 10000, (sconnection->GetStateMcState() == xmsm::ESTABLISHED));
-    WAIT_FOR(100, 10000, (cchannel_p->GetPeerState() == xmps::READY));
-    WAIT_FOR(100, 10000, (sconnection_s->GetStateMcState() == xmsm::ESTABLISHED));
-    WAIT_FOR(100, 10000, (cchannel_s->GetPeerState() == xmps::READY));
+    WAIT_FOR(1000, 10000, (sconnection->GetStateMcState() == xmsm::ESTABLISHED));
+    WAIT_FOR(1000, 10000, (cchannel_p->GetPeerState() == xmps::READY));
+    WAIT_FOR(1000, 10000, (sconnection_s->GetStateMcState() == xmsm::ESTABLISHED));
+    WAIT_FOR(1000, 10000, (cchannel_s->GetPeerState() == xmps::READY));
 
     client->Reset();
     client->WaitForIdle();
@@ -374,17 +380,17 @@ TEST_F(AgentXmppUnitTest, Connection) {
     //expect subscribe to __default__
     uint8_t n = 1;
     uint8_t n_s = 1;
-    WAIT_FOR(100, 10000, (mock_peer.get()->Count() == n));
-    WAIT_FOR(100, 10000, (mock_peer_s.get()->Count() == n_s));
+    WAIT_FOR(1000, 10000, (mock_peer.get()->Count() == n));
+    WAIT_FOR(1000, 10000, (mock_peer_s.get()->Count() == n_s));
 
     VrfAddReq("vrf2");
     VnAddReq(2, "vn2", 0, "vrf2");
     n++;  
     n_s++; 
     //expect subscribe vrf2 message at the mock server
-    WAIT_FOR(100, 10000, (mock_peer.get()->Count() == n));
+    WAIT_FOR(1000, 10000, (mock_peer.get()->Count() == n));
     //expect subscribe vrf2 message at the secondary mock server
-    WAIT_FOR(100, 10000, (mock_peer_s.get()->Count() == n_s));
+    WAIT_FOR(1000, 10000, (mock_peer_s.get()->Count() == n_s));
 
     //Create vm-port and route entry in vrf1 
     CreateVmportEnv(input, 1);
@@ -402,16 +408,16 @@ TEST_F(AgentXmppUnitTest, Connection) {
     n++; n++; n++; n++; n++;
     n_s++; n_s++; n_s++;
     //expect subscribe vrf1 ,vm route at the mock server
-    WAIT_FOR(100, 10000, (mock_peer.get()->Count() == n));
+    WAIT_FOR(1000, 10000, (mock_peer.get()->Count() == n));
     //expect subscribe vrf1, vm route at the mock secondary server
-    WAIT_FOR(100, 10000, (mock_peer_s.get()->Count() == n_s));
+    WAIT_FOR(1000, 10000, (mock_peer_s.get()->Count() == n_s));
 
 
     // Send route-reflect, back to vrf1
     SendRouteMessage(mock_peer.get(), "vrf1", "1.1.1.1/32",
                      MplsTable::kStartLabel);
     // Route reflected to vrf1
-    WAIT_FOR(100, 10000, (bgp_peer.get()->Count() == 1));
+    WAIT_FOR(1000, 10000, (bgp_peer.get()->Count() == 1));
     //ensure active path is local-vm
     EXPECT_TRUE(rt->GetActivePath()->peer()->GetType() 
                 == Peer::BGP_PEER);
@@ -420,33 +426,33 @@ TEST_F(AgentXmppUnitTest, Connection) {
     SendRouteMessage(mock_peer.get(), "vrf2", "1.1.1.1/32",
                      MplsTable::kStartLabel);
     // Route reflected to vrf2
-    WAIT_FOR(100, 10000, (bgp_peer.get()->Count() == 2));
+    WAIT_FOR(1000, 10000, (bgp_peer.get()->Count() == 2));
 
     // Route leaked to vrf2, check entry in route-table
-    WAIT_FOR(100, 10000, (RouteFind("vrf2", addr, 32) == true));
+    WAIT_FOR(1000, 10000, (RouteFind("vrf2", addr, 32) == true));
     Inet4UnicastRouteEntry *rt2 = RouteGet("vrf2", addr, 32);
-    WAIT_FOR(100, 10000, rt2->GetActivePath() != NULL);
-    WAIT_FOR(100, 10000, rt2->dest_vn_name().size() > 0);
+    WAIT_FOR(1000, 10000, rt2->GetActivePath() != NULL);
+    WAIT_FOR(1000, 10000, rt2->dest_vn_name().size() > 0);
     EXPECT_STREQ(rt2->dest_vn_name().c_str(), "vn1");
     //check paths
-    ASSERT_TRUE(rt2->FindPath(bgp_peer->GetBgpPeer()) != NULL);
+    ASSERT_TRUE(rt2->FindPath(bgp_peer->bgp_peer_id()) != NULL);
 
 
     // Send route-reflect, back to vrf1 from secondary control-node
     SendRouteMessage(mock_peer_s.get(), "vrf1", "1.1.1.1/32",
                      MplsTable::kStartLabel);
     // Route reflected to vrf1
-    WAIT_FOR(100, 10000, (bgp_peer_s.get()->Count() == 0));
+    WAIT_FOR(1000, 10000, (bgp_peer_s.get()->Count() == 0));
 
     // Send route, leak to vrf2 from secondary control-node
     SendRouteMessage(mock_peer_s.get(), "vrf2", "1.1.1.1/32",
                      MplsTable::kStartLabel);
     // Route reflected to vrf2
-    WAIT_FOR(100, 10000, (bgp_peer_s.get()->Count() == 2));
+    WAIT_FOR(1000, 10000, (bgp_peer_s.get()->Count() == 2));
 
-    client->WaitForIdle();
     // Route leaked to vrf2, check entry in route-table, check paths
-    ASSERT_TRUE(rt2->FindPath(bgp_peer_s->GetBgpPeer()) != NULL);
+    WAIT_FOR(1000, 10000, (rt2->FindPath(bgp_peer_s->bgp_peer_id()) != NULL));
+    client->WaitForIdle();
     
     //ensure active path is local-vm
     EXPECT_TRUE(rt->GetActivePath()->peer()->GetType() 
@@ -461,33 +467,33 @@ TEST_F(AgentXmppUnitTest, Connection) {
     n++; n_s++;
     n++;
     n++;
-    WAIT_FOR(100, 10000, (mock_peer.get()->Count() == n));
-    WAIT_FOR(100, 10000, (mock_peer_s.get()->Count() == n_s));
+    WAIT_FOR(1000, 10000, (mock_peer.get()->Count() == n));
+    WAIT_FOR(1000, 10000, (mock_peer_s.get()->Count() == n_s));
 
     //Send route-reflect delete
     SendRouteDeleteMessage(mock_peer.get(), "vrf1");
     // Route delete for vrf1 
-    WAIT_FOR(100, 10000, (bgp_peer.get()->Count() == 3));
+    WAIT_FOR(1000, 10000, (bgp_peer.get()->Count() == 3));
 
     //Send route-leak delete
     SendRouteDeleteMessage(mock_peer.get(), "vrf2");
     // Route delete for vrf2 
-    WAIT_FOR(100, 10000, (bgp_peer.get()->Count() == 4));
+    WAIT_FOR(1000, 10000, (bgp_peer.get()->Count() == 4));
 
     Inet4UnicastRouteEntry *rt4 = RouteGet("vrf1", addr, 32);
     EXPECT_STREQ(rt4->dest_vn_name().c_str(), "vn1");
     //check paths
-    ASSERT_TRUE(rt4->FindPath(bgp_peer->GetBgpPeer()) == NULL);
+    ASSERT_TRUE(rt4->FindPath(bgp_peer->bgp_peer_id()) == NULL);
 
     //Send route-reflect delete from seconday control-node
     SendRouteDeleteMessage(mock_peer_s.get(), "vrf1");
     // Route delete for vrf1 
-    WAIT_FOR(100, 10000, (bgp_peer_s.get()->Count() == 3));
+    WAIT_FOR(1000, 10000, (bgp_peer_s.get()->Count() == 3));
 
     //Send route-leak delete
     SendRouteDeleteMessage(mock_peer_s.get(), "vrf2");
     // Route delete for vrf2 
-    WAIT_FOR(100, 10000, (bgp_peer_s.get()->Count() == 4));
+    WAIT_FOR(1000, 10000, (bgp_peer_s.get()->Count() == 4));
 
     client->WaitForIdle();
 
@@ -496,8 +502,8 @@ TEST_F(AgentXmppUnitTest, Connection) {
     EXPECT_TRUE(mock_peer_s.get()->Count() == n_s);
 
     //Confirm route has been cleaned up
-    WAIT_FOR(100, 10000, (RouteFind("vrf1", addr, 32) == false));
-    WAIT_FOR(100, 10000, (RouteFind("vrf2", addr, 32) == false));
+    WAIT_FOR(1000, 10000, (RouteFind("vrf1", addr, 32) == false));
+    WAIT_FOR(1000, 10000, (RouteFind("vrf2", addr, 32) == false));
     //Confirm Vmport is deleted
     EXPECT_FALSE(VmPortFind(input, 0));
 
@@ -528,15 +534,15 @@ TEST_F(AgentXmppUnitTest, Connection) {
 TEST_F(AgentXmppUnitTest, CfgServerSelection) {
 
     //wait for connection establishment
-    WAIT_FOR(100, 10000, (sconnection->GetStateMcState() == xmsm::ESTABLISHED));
-    WAIT_FOR(100, 10000, (cchannel_p->GetPeerState() == xmps::READY));
-    WAIT_FOR(100, 10000, (sconnection_s->GetStateMcState() == xmsm::ESTABLISHED));
-    WAIT_FOR(100, 10000, (cchannel_s->GetPeerState() == xmps::READY));
+    WAIT_FOR(1000, 10000, (sconnection->GetStateMcState() == xmsm::ESTABLISHED));
+    WAIT_FOR(1000, 10000, (cchannel_p->GetPeerState() == xmps::READY));
+    WAIT_FOR(1000, 10000, (sconnection_s->GetStateMcState() == xmsm::ESTABLISHED));
+    WAIT_FOR(1000, 10000, (cchannel_s->GetPeerState() == xmps::READY));
 
     client->Reset();
     client->WaitForIdle();
 
-    WAIT_FOR(100, 10000, (Agent::GetInstance()->GetXmppCfgServer().empty() == false));
+    WAIT_FOR(1000, 10000, (Agent::GetInstance()->GetXmppCfgServer().empty() == false));
     if (Agent::GetInstance()->GetXmppCfgServer().compare(Agent::GetInstance()->GetXmppServer(0)) == 0) {
         //bring-down the channel
         bgp_peer.get()->HandleXmppChannelEvent(xmps::NOT_READY);
@@ -574,14 +580,3 @@ TEST_F(AgentXmppUnitTest, CfgServerSelection) {
 }
 }
 
-int main(int argc, char **argv) {
-    GETUSERARGS();
-    client = TestInit(init_file, ksync_init);
-    Agent::GetInstance()->SetXmppServer("127.0.0.1", 0);
-    Agent::GetInstance()->SetXmppServer("127.0.0.2", 1);
-    
-    int ret = RUN_ALL_TESTS();
-    Agent::GetInstance()->GetEventManager()->Shutdown();
-    AsioStop();
-    return ret;
-}

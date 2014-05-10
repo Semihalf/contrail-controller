@@ -5,6 +5,7 @@
 #ifndef vnsw_agent_vm_interface_hpp
 #define vnsw_agent_vm_interface_hpp
 
+#include <vnc_cfg_types.h>
 /////////////////////////////////////////////////////////////////////////////
 // Implementation of VM Port interfaces
 /////////////////////////////////////////////////////////////////////////////
@@ -13,6 +14,7 @@ typedef vector<SgEntryRef> SgList;
 struct VmInterfaceData;
 struct VmInterfaceConfigData;
 struct VmInterfaceIpAddressData;
+struct VmInterfaceOsOperStateData;
 struct VmInterfaceMirrorData;
 
 /////////////////////////////////////////////////////////////////////////////
@@ -166,6 +168,36 @@ public:
         SecurityGroupEntrySet list_;
     };
 
+    struct VrfAssignRule : ListEntry {
+        VrfAssignRule();
+        VrfAssignRule(const VrfAssignRule &rhs);
+        VrfAssignRule(uint32_t id, 
+                      const autogen::MatchConditionType &match_condition_,
+                      const std::string &vrf_name, bool ignore_acl);
+        ~VrfAssignRule();
+        bool operator == (const VrfAssignRule &rhs) const;
+        bool operator() (const VrfAssignRule &lhs,
+                         const VrfAssignRule &rhs) const;
+        bool IsLess(const VrfAssignRule *rhs) const;
+
+        const uint32_t id_;
+        const std::string vrf_name_;
+        const VrfEntryRef vrf_;
+        bool ignore_acl_;
+        autogen::MatchConditionType match_condition_;
+    };
+    typedef std::set<VrfAssignRule, VrfAssignRule> VrfAssignRuleSet;
+
+    struct VrfAssignRuleList {
+        VrfAssignRuleList() : list_() { }
+        ~VrfAssignRuleList() { };
+        void Insert(const VrfAssignRule *rhs);
+        void Update(const VrfAssignRule *lhs, const VrfAssignRule *rhs);
+        void Remove(VrfAssignRuleSet::iterator &it);
+
+        VrfAssignRuleSet list_;
+    };
+
     enum Trace {
         ADD,
         DELETE,
@@ -186,7 +218,7 @@ public:
         vm_project_uuid_(nil_uuid()), vxlan_id_(0), layer2_forwarding_(true),
         ipv4_forwarding_(true), mac_set_(false), vlan_id_(kInvalidVlanId),
         parent_(NULL), sg_list_(), floating_ip_list_(), service_vlan_list_(),
-        static_route_list_() { 
+        static_route_list_(), vrf_assign_rule_list_(), vrf_assign_acl_(NULL) {
         ipv4_active_ = false;
         l2_active_ = false;
     }
@@ -204,7 +236,8 @@ public:
         vm_project_uuid_(vm_project_uuid), vxlan_id_(0),
         layer2_forwarding_(true), ipv4_forwarding_(true), mac_set_(false),
         vlan_id_(vlan_id), parent_(parent), sg_list_(), floating_ip_list_(),
-        service_vlan_list_(), static_route_list_() {
+        service_vlan_list_(), static_route_list_(), vrf_assign_rule_list_(),
+        vrf_assign_acl_(NULL) {
         ipv4_active_ = false;
         l2_active_ = false;
     }
@@ -215,7 +248,7 @@ public:
         const VmInterface &intf=static_cast<const VmInterface &>(rhs);
         return uuid_ < intf.uuid_;
     }
-    virtual void GetOsParams();
+    virtual void GetOsParams(Agent *agent);
     void SendTrace(Trace ev);
 
     // DBEntry vectors
@@ -262,6 +295,11 @@ public:
     const SecurityGroupEntryList &sg_list() const {
         return sg_list_;
     }
+
+    const VrfAssignRuleList &vrf_assign_rule_list() const {
+        return vrf_assign_rule_list_;
+    }
+
     void set_vxlan_id(int vxlan_id) { vxlan_id_ = vxlan_id; }
     void set_subnet_bcast_addr(const Ip4Address &addr) {
         subnet_bcast_addr_ = addr;
@@ -279,7 +317,6 @@ public:
     void CopySgIdList(SecurityGroupList *sg_id_list) const;
     bool NeedMplsLabel() const;
     bool IsVxlanMode() const;
-    bool GetDhcpSnoopIp(const std::string &name, Ip4Address *ip) const;
     bool SgExists(const boost::uuids::uuid &id, const SgList &sg_l);
     bool IsMirrorEnabled() const { return mirror_entry_.get() != NULL; }
     bool HasFloatingIp() const { return floating_ip_list_.list_.size() != 0; }
@@ -319,6 +356,7 @@ public:
     void DeleteL2MplsLabel();
     void AddL2Route();
     void UpdateL2();
+    const AclDBEntry* vrf_assign_acl() const { return vrf_assign_acl_.get();}
 private:
     bool IsActive();
     bool IsL3Active();
@@ -340,6 +378,7 @@ private:
     bool OnResyncStaticRoute(VmInterfaceConfigData *data, bool new_ipv4_active);
     bool ResyncMirror(VmInterfaceMirrorData *data);
     bool ResyncIpAddress(const VmInterfaceIpAddressData *data);
+    bool ResyncOsOperState(const VmInterfaceOsOperStateData *data);
     bool ResyncConfig(VmInterfaceConfigData *data);
     bool CopyIpAddress(Ip4Address &addr);
     bool CopyConfig(VmInterfaceConfigData *data, bool *sg_changed);
@@ -361,9 +400,16 @@ private:
     void DeleteL3MplsLabel();
     void UpdateL3TunnelId(bool force_update, bool policy_change);
     void DeleteL3TunnelId();
-    void UpdateMulticastNextHop(bool interface_active);
-    void UpdateL2NextHop(bool old_ipv4_active);
-    void UpdateL3NextHop(bool old_l2_active);
+    void UpdateMulticastNextHop(bool old_ipv4_active, bool old_l2_active);
+    void DeleteMulticastNextHop();
+    void UpdateL2NextHop(bool old_l2_active);
+    void DeleteL2NextHop(bool old_l2_active);
+    void UpdateL3NextHop(bool old_ipv4_active);
+    void DeleteL3NextHop(bool old_ipv4_active);
+    bool L2Activated(bool old_l2_active);
+    bool L3Activated(bool old_ipv4_active);
+    bool L2Deactivated(bool old_l2_active);
+    bool L3Deactivated(bool old_ipv4_active);
     void UpdateL3InterfaceRoute(bool old_ipv4_active, bool force_update,
                              bool policy_change, VrfEntry * old_vrf,
                              const Ip4Address &old_addr);
@@ -388,6 +434,8 @@ private:
 
     void DeleteL2Route(const std::string &vrf_name,
                        const struct ether_addr &mac);
+    void UpdateVrfAssignRule();
+    void DeleteVrfAssignRule();
 
     VmEntryRef vm_;
     VnEntryRef vn_;
@@ -423,6 +471,8 @@ private:
 
     // Peer for interface routes
     std::auto_ptr<LocalVmPortPeer> peer_;
+    VrfAssignRuleList vrf_assign_rule_list_;
+    AclDBEntryRef vrf_assign_acl_;
     DISALLOW_COPY_AND_ASSIGN(VmInterface);
 };
 
@@ -462,7 +512,8 @@ struct VmInterfaceData : public InterfaceData {
         ADD_DEL_CHANGE,
         CONFIG,
         MIRROR,
-        IP_ADDR
+        IP_ADDR,
+        OS_OPER_STATE
     };
 
     VmInterfaceData(Type type) : InterfaceData(), type_(type) {
@@ -501,7 +552,13 @@ struct VmInterfaceIpAddressData : public VmInterfaceData {
     virtual ~VmInterfaceIpAddressData() { }
 };
 
-// Structure used when type=IP_ADDR. Used to update IP-Address of VM-Interface
+// Structure used when type=OS_OPER_STATE Used to update interface os oper-state
+struct VmInterfaceOsOperStateData : public VmInterfaceData {
+    VmInterfaceOsOperStateData() : VmInterfaceData(OS_OPER_STATE) { }
+    virtual ~VmInterfaceOsOperStateData() { }
+};
+
+// Structure used when type=MIRROR. Used to update IP-Address of VM-Interface
 struct VmInterfaceMirrorData : public VmInterfaceData {
     VmInterfaceMirrorData(bool mirror_enable, const std::string &analyzer_name):
         VmInterfaceData(MIRROR), mirror_enable_(mirror_enable),
@@ -557,6 +614,7 @@ struct VmInterfaceConfigData : public VmInterfaceData {
     VmInterface::FloatingIpList floating_ip_list_;
     VmInterface::ServiceVlanList service_vlan_list_;
     VmInterface::StaticRouteList static_route_list_;
+    VmInterface::VrfAssignRuleList vrf_assign_rule_list_;
 };
 
 #endif // vnsw_agent_vm_interface_hpp

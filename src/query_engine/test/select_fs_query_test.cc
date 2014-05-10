@@ -13,6 +13,9 @@
 #include "query.h"
 #include "analytics_query_mock.h"
 
+using boost::get;
+using boost::make_tuple;
+
 using ::testing::Return;
 using ::testing::AnyNumber;
 
@@ -29,8 +32,7 @@ public:
     }
     
     virtual void SetUp() {
-        populate_where_query_result1();
-        populate_where_query_result2();
+        populate_where_query_result();
     }
     
     virtual void TearDown() {
@@ -44,12 +46,15 @@ public:
                        int duration, int tdiff, int pdiff, int psize) :
             tuple_(tuple), start_time_(start_time), duration_(duration),
             tdiff_(tdiff*kSecInMsec), pdiff_(pdiff), psize_(psize),
+            sum_bytes_(0), sum_pkts_(0),
             flow_uuid_(boost::uuids::random_generator()()) {
             uint64_t end_time = start_time_ + duration_*kSecInMsec;
             flow_stats stats;
             for (uint64_t t = start_time_; t < end_time; t += tdiff_) {
                 stats.pkts = pdiff_;
                 stats.bytes = pdiff_*psize_;
+                sum_pkts_ += stats.pkts;
+                sum_bytes_ += stats.bytes;
                 t_stats_.push_back(std::make_pair(t, stats));
             }
         }
@@ -64,6 +69,14 @@ public:
             return t_stats_;
         }
 
+        uint64_t sum_bytes() {
+            return sum_bytes_;
+        }
+
+        uint64_t sum_pkts() {
+            return sum_pkts_;
+        }
+
         boost::uuids::uuid& flow_uuid() {
             return flow_uuid_;
         }
@@ -74,6 +87,8 @@ public:
         int tdiff_;
         int pdiff_;
         int psize_;
+        uint64_t sum_bytes_;
+        uint64_t sum_pkts_;
         boost::uuids::uuid flow_uuid_; 
         std::vector<std::pair<uint64_t, flow_stats> > t_stats_;
         static const uint64_t kSecInMsec = 1000*1000;
@@ -108,24 +123,15 @@ public:
             }
     }
 
-    void populate_where_query_result1() {
+    void populate_where_query_result() {
         for (int i = 0; i < kNumFlows; i++) {
             update_where_query_result(flowseries_data_[i], 
-                                      where_query_result1_);
+                                      where_query_result_);
         }
     }
 
-    std::vector<query_result_unit_t>& wherequery_result1() {
-        return where_query_result1_;
-    }
-
-    void populate_where_query_result2() {
-        update_where_query_result(flowseries_data_[0],
-                                  where_query_result2_);
-    }
-
-    std::vector<query_result_unit_t>& wherequery_result2() {
-        return where_query_result2_;
+    std::vector<query_result_unit_t>& wherequery_result() {
+        return where_query_result_;
     }
 
     void verify_select_fs_query_result(SelectFSQueryTest::BufferT *expected_res,
@@ -213,10 +219,7 @@ public:
     }
 
 private:
-    // contains all flow samples from all flows
-    std::vector<query_result_unit_t> where_query_result1_;
-    // contains flows samples from one flow
-    std::vector<query_result_unit_t> where_query_result2_;
+    std::vector<query_result_unit_t> where_query_result_;
     const static uint64_t end_time_ = 1393915103000000; 
     const static uint64_t start_time_ = end_time_ - (60*1000*1000);
     const static int kNumFlows = 2;
@@ -254,11 +257,11 @@ TEST_F(SelectFSQueryTest, SelectT) {
     
     EXPECT_CALL(analytics_query_mock, where_query_result())
         .Times(1)
-        .WillOnce(Invoke(this, &SelectFSQueryTest::wherequery_result1));
+        .WillOnce(Invoke(this, &SelectFSQueryTest::wherequery_result));
     
     // Fill the expected result
     SelectFSQueryTest::BufferT expected_res;
-    std::vector<query_result_unit_t>& where_qres = wherequery_result1();
+    std::vector<query_result_unit_t>& where_qres = wherequery_result();
     for (std::vector<query_result_unit_t>::const_iterator it = 
          where_qres.begin(); it != where_qres.end(); it++) {
         boost::shared_ptr<fsMetaData> metadata;
@@ -289,7 +292,7 @@ TEST_F(SelectFSQueryTest, SelectTS) {
 
     EXPECT_CALL(analytics_query_mock, where_query_result())
         .Times(1)
-        .WillOnce(Invoke(this, &SelectFSQueryTest::wherequery_result1));
+        .WillOnce(Invoke(this, &SelectFSQueryTest::wherequery_result));
 
     // Fill the expected result
     SelectFSQueryTest::BufferT expected_res;
@@ -322,40 +325,448 @@ TEST_F(SelectFSQueryTest, SelectFlowTuple) {
    
     EXPECT_CALL(analytics_query_mock, where_query_result())
         .Times(1)
-        .WillOnce(Invoke(this, &SelectFSQueryTest::wherequery_result1));
+        .WillOnce(Invoke(this, &SelectFSQueryTest::wherequery_result));
     
     // Fill the expected result
     SelectFSQueryTest::BufferT expected_res;
-    std::vector<query_result_unit_t>& where_qres = wherequery_result1();
-    for (std::vector<query_result_unit_t>::iterator it =
-         where_qres.begin(); it != where_qres.end(); it++) {
+    FlowSeriesData* fs_data = flowseries_data();
+    for (int i = 0; i < num_flows(); i++) {
+        FlowSeriesData::tstats_t& tstats = fs_data[i].t_stats();
+        flow_tuple& tuple = fs_data[i].tuple();
+        for (FlowSeriesData::tstats_t::const_iterator it = tstats.begin();
+             it != tstats.end(); it++) {
+            QEOpServerProxy::OutRowT cmap;
+            cmap.insert(std::make_pair(g_viz_constants.FlowRecordNames[
+                FlowRecordFields::FLOWREC_VROUTER], tuple.vrouter));
+            cmap.insert(std::make_pair(g_viz_constants.FlowRecordNames[
+                FlowRecordFields::FLOWREC_SOURCEVN], tuple.source_vn));
+            cmap.insert(std::make_pair(g_viz_constants.FlowRecordNames[
+                FlowRecordFields::FLOWREC_SOURCEIP], 
+                integerToString(tuple.source_ip)));
+            cmap.insert(std::make_pair(g_viz_constants.FlowRecordNames[
+                FlowRecordFields::FLOWREC_DESTVN], tuple.dest_vn));
+            cmap.insert(std::make_pair(g_viz_constants.FlowRecordNames[
+                FlowRecordFields::FLOWREC_DESTIP], 
+                integerToString(tuple.dest_ip)));
+            cmap.insert(std::make_pair(g_viz_constants.FlowRecordNames[
+                FlowRecordFields::FLOWREC_PROTOCOL], 
+                integerToString(tuple.protocol)));
+            cmap.insert(std::make_pair(g_viz_constants.FlowRecordNames[
+                FlowRecordFields::FLOWREC_SPORT], 
+                integerToString(tuple.source_port)));
+            cmap.insert(std::make_pair(g_viz_constants.FlowRecordNames[
+                FlowRecordFields::FLOWREC_DPORT],
+                integerToString(tuple.dest_port)));
+            boost::shared_ptr<fsMetaData> metadata;
+            QEOpServerProxy::ResultRowT rrow(std::make_pair(cmap, metadata));
+            expected_res.push_back(std::make_pair(rrow, false));
+        }
+    }
+
+    SelectQuery* select_query = new SelectQuery(&analytics_query_mock, 
+                                                json_select);
+    select_query->process_query();
+    verify_select_fs_query_result(&expected_res, select_query->result_.get());
+}
+
+TEST_F(SelectFSQueryTest, SelectStats) {
+    AnalyticsQueryMock analytics_query_mock;
+    select_fs_query_default_expect_init(analytics_query_mock);
+
+    std::map<std::string, std::string> json_select;
+    json_select.insert(std::pair<std::string, std::string>(
+        "select_fields", "[\"sum(packets)\", \"sum(bytes)\"]"));
+
+    EXPECT_CALL(analytics_query_mock, where_query_result())
+        .Times(1)
+        .WillRepeatedly(Invoke(this, &SelectFSQueryTest::wherequery_result));
+    
+    // Fill the expected result
+    FlowSeriesData* fs_data = flowseries_data(); 
+    flow_stats sum_stats;
+    for (int i = 0; i < num_flows(); i++) {
+        sum_stats.pkts += fs_data[i].sum_pkts();
+        sum_stats.bytes += fs_data[i].sum_bytes();
+    }
+    QEOpServerProxy::OutRowT cmap;
+    cmap.insert(std::make_pair(SELECT_SUM_PACKETS, 
+                               integerToString(sum_stats.pkts)));
+    cmap.insert(std::make_pair(SELECT_SUM_BYTES,
+                               integerToString(sum_stats.bytes)));
+    boost::shared_ptr<fsMetaData> metadata;
+    QEOpServerProxy::ResultRowT rrow(std::make_pair(cmap, metadata));
+    SelectFSQueryTest::BufferT expected_res;
+    expected_res.push_back(std::make_pair(rrow, false));
+
+    SelectQuery* select_query = new SelectQuery(&analytics_query_mock, 
+                                                json_select);
+    select_query->process_query();
+    verify_select_fs_query_result(&expected_res, select_query->result_.get());
+}
+
+TEST_F(SelectFSQueryTest, SelectStatsWithFlowcount) {
+    AnalyticsQueryMock analytics_query_mock;
+    select_fs_query_default_expect_init(analytics_query_mock);
+
+    std::map<std::string, std::string> json_select;
+    json_select.insert(std::pair<std::string, std::string>(
+        "select_fields", "[\"sum(packets)\", \"flow_count\"]"));
+
+    EXPECT_CALL(analytics_query_mock, where_query_result())
+        .Times(1)
+        .WillRepeatedly(Invoke(this, &SelectFSQueryTest::wherequery_result));
+
+    // Fill the expected result
+    FlowSeriesData* fs_data = flowseries_data(); 
+    flow_stats sum_stats;
+    for (int i = 0; i < num_flows(); i++) {
+        sum_stats.pkts += fs_data[i].sum_pkts();
+        sum_stats.bytes += fs_data[i].sum_bytes();
+    }
+    QEOpServerProxy::OutRowT cmap;
+    cmap.insert(std::make_pair(SELECT_SUM_PACKETS, 
+                               integerToString(sum_stats.pkts)));
+    cmap.insert(std::make_pair(SELECT_FLOW_COUNT, integerToString(2)));
+    boost::shared_ptr<fsMetaData> metadata;
+    QEOpServerProxy::ResultRowT rrow(std::make_pair(cmap, metadata));
+    SelectFSQueryTest::BufferT expected_res;
+    expected_res.push_back(std::make_pair(rrow, false));
+    
+    SelectQuery* select_query = new SelectQuery(&analytics_query_mock, 
+                                                json_select);
+    select_query->process_query();
+    verify_select_fs_query_result(&expected_res, select_query->result_.get());
+}
+
+TEST_F(SelectFSQueryTest, SelectTFlowTuple) {
+    AnalyticsQueryMock analytics_query_mock;
+    select_fs_query_default_expect_init(analytics_query_mock);
+
+    std::stringstream ss;
+    ss << "[\"T\", \"vrouter\", \"sourcevn\", \"destvn\"]"; 
+    std::map<std::string, std::string> json_select;
+    json_select.insert(std::pair<std::string, std::string>(
+        "select_fields", ss.str())); 
+   
+    EXPECT_CALL(analytics_query_mock, where_query_result())
+        .Times(1)
+        .WillOnce(Invoke(this, &SelectFSQueryTest::wherequery_result));
+    
+    // Fill the expected result
+    SelectFSQueryTest::BufferT expected_res;
+    FlowSeriesData* fs_data = flowseries_data(); 
+    for (int i = 0; i < num_flows(); i++) {
+        FlowSeriesData::tstats_t& tstats = fs_data[i].t_stats();
+        flow_tuple& tuple = fs_data[i].tuple();
+        for (FlowSeriesData::tstats_t::const_iterator it = tstats.begin();
+             it != tstats.end(); it++) {
+            QEOpServerProxy::OutRowT cmap;
+            cmap.insert(std::make_pair(TIMESTAMP_FIELD,
+                integerToString(it->first)));
+            cmap.insert(std::make_pair(g_viz_constants.FlowRecordNames[
+                FlowRecordFields::FLOWREC_VROUTER], tuple.vrouter));
+            cmap.insert(std::make_pair(g_viz_constants.FlowRecordNames[
+                FlowRecordFields::FLOWREC_SOURCEVN], tuple.source_vn));
+            cmap.insert(std::make_pair(g_viz_constants.FlowRecordNames[
+                FlowRecordFields::FLOWREC_DESTVN], tuple.dest_vn));
+            boost::shared_ptr<fsMetaData> metadata;
+            QEOpServerProxy::ResultRowT rrow(std::make_pair(cmap, metadata));
+            expected_res.push_back(std::make_pair(rrow, false));
+        }
+    }
+
+    SelectQuery* select_query = new SelectQuery(&analytics_query_mock, 
+                                                json_select);
+    select_query->process_query();
+    verify_select_fs_query_result(&expected_res, select_query->result_.get());
+}
+
+TEST_F(SelectFSQueryTest, SelectTStats) {
+    AnalyticsQueryMock analytics_query_mock;
+    select_fs_query_default_expect_init(analytics_query_mock);
+    
+    std::map<std::string, std::string> json_select;
+    json_select.insert(std::pair<std::string, std::string>(
+        "select_fields", "[\"T\", \"bytes\", \"packets\"]")); 
+   
+    EXPECT_CALL(analytics_query_mock, where_query_result())
+        .Times(1)
+        .WillOnce(Invoke(this, &SelectFSQueryTest::wherequery_result));
+
+    // Fill the expected result
+    SelectFSQueryTest::BufferT expected_res;
+    FlowSeriesData* fs_data = flowseries_data(); 
+    for (int i = 0; i < num_flows(); i++) {
+        FlowSeriesData::tstats_t& tstats = fs_data[i].t_stats();
+        for (FlowSeriesData::tstats_t::const_iterator it = tstats.begin();
+             it != tstats.end(); it++) {
+            boost::shared_ptr<fsMetaData> metadata;
+            QEOpServerProxy::OutRowT cmap;
+            cmap.insert(std::make_pair(TIMESTAMP_FIELD, 
+                                       integerToString(it->first)));
+            cmap.insert(std::make_pair(SELECT_PACKETS, 
+                                       integerToString(it->second.pkts)));
+            cmap.insert(std::make_pair(SELECT_BYTES,
+                                       integerToString(it->second.bytes)));
+            QEOpServerProxy::ResultRowT rrow(std::make_pair(cmap, metadata));
+            expected_res.push_back(std::make_pair(rrow, false));
+        }
+    }
+    
+    SelectQuery* select_query = new SelectQuery(&analytics_query_mock, 
+                                                json_select);
+    select_query->process_query();
+    verify_select_fs_query_result(&expected_res, select_query->result_.get());
+}
+
+TEST_F(SelectFSQueryTest, SelectFlowTupleStats) {
+    AnalyticsQueryMock analytics_query_mock;
+    select_fs_query_default_expect_init(analytics_query_mock);
+
+    std::stringstream ss;
+    ss << "[\"sourcevn\", \"sourceip\", \"sum(bytes)\", \"sum(packets)\"]";
+    std::map<std::string, std::string> json_select;
+    json_select.insert(std::pair<std::string, std::string>(
+        "select_fields", ss.str()));
+
+    EXPECT_CALL(analytics_query_mock, where_query_result())
+        .Times(1)
+        .WillRepeatedly(Invoke(this, &SelectFSQueryTest::wherequery_result));
+
+    // Fill the expected result
+    SelectFSQueryTest::BufferT expected_res;
+    FlowSeriesData* fs_data = flowseries_data(); 
+    for (int i = 0; i < num_flows(); i++) {
+        flow_tuple& tuple = fs_data[i].tuple();
         boost::shared_ptr<fsMetaData> metadata;
         QEOpServerProxy::OutRowT cmap;
-        boost::uuids::uuid uuid; 
-        flow_stats stats;
-        flow_tuple tuple;
-        it->get_uuid_stats_8tuple(uuid, stats, tuple);
-        cmap.insert(std::make_pair(g_viz_constants.FlowRecordNames[
-            FlowRecordFields::FLOWREC_VROUTER], tuple.vrouter));
         cmap.insert(std::make_pair(g_viz_constants.FlowRecordNames[
             FlowRecordFields::FLOWREC_SOURCEVN], tuple.source_vn));
         cmap.insert(std::make_pair(g_viz_constants.FlowRecordNames[
             FlowRecordFields::FLOWREC_SOURCEIP], 
             integerToString(tuple.source_ip)));
+        cmap.insert(std::make_pair(SELECT_SUM_PACKETS, 
+                                   integerToString(fs_data[i].sum_pkts())));
+        cmap.insert(std::make_pair(SELECT_SUM_BYTES,
+                                   integerToString(fs_data[i].sum_bytes())));
+        QEOpServerProxy::ResultRowT rrow(std::make_pair(cmap, metadata));
+        expected_res.push_back(std::make_pair(rrow, false));
+    }
+
+    SelectQuery* select_query = new SelectQuery(&analytics_query_mock, 
+                                                json_select);
+    select_query->process_query();
+    verify_select_fs_query_result(&expected_res, select_query->result_.get());
+}
+
+TEST_F(SelectFSQueryTest, SelectFlowTupleStatsWithFlowcount) {
+    AnalyticsQueryMock analytics_query_mock;
+    select_fs_query_default_expect_init(analytics_query_mock);
+
+    std::stringstream ss;
+    ss << "[\"sourcevn\", \"sum(bytes)\", \"flow_count\"]";
+    std::map<std::string, std::string> json_select;
+    json_select.insert(std::pair<std::string, std::string>(
+        "select_fields", ss.str()));
+
+    EXPECT_CALL(analytics_query_mock, where_query_result())
+        .Times(1)
+        .WillRepeatedly(Invoke(this, &SelectFSQueryTest::wherequery_result));
+
+    // Fill the expected result
+    SelectFSQueryTest::BufferT expected_res;
+    FlowSeriesData* fs_data = flowseries_data(); 
+    uint64_t sum_bytes;
+    for (int i = 0; i < num_flows(); i++) {
+        sum_bytes += fs_data[i].sum_bytes();
+    }
+    flow_tuple& tuple = fs_data[0].tuple();
+    boost::shared_ptr<fsMetaData> metadata;
+    QEOpServerProxy::OutRowT cmap;
+    cmap.insert(std::make_pair(g_viz_constants.FlowRecordNames[
+        FlowRecordFields::FLOWREC_SOURCEVN], tuple.source_vn));
+    cmap.insert(std::make_pair(SELECT_SUM_BYTES,
+        integerToString(sum_bytes)));
+    cmap.insert(std::make_pair(SELECT_FLOW_COUNT, 
+        integerToString(num_flows())));
+    QEOpServerProxy::ResultRowT rrow(std::make_pair(cmap, metadata));
+    expected_res.push_back(std::make_pair(rrow, false));
+
+    SelectQuery* select_query = new SelectQuery(&analytics_query_mock, 
+                                                json_select);
+    select_query->process_query();
+    verify_select_fs_query_result(&expected_res, select_query->result_.get());
+}
+
+TEST_F(SelectFSQueryTest, SelectTSFlowTuple) {
+    AnalyticsQueryMock analytics_query_mock;
+    select_fs_query_default_expect_init(analytics_query_mock);
+
+    int granularity = 25;
+    std::stringstream ss;
+    ss << "[\"T=" << granularity << "\", " << "\"sourcevn\", \"sourceip\""
+       << ", \"sport\"]";
+    std::map<std::string, std::string> json_select;
+    json_select.insert(std::pair<std::string, std::string>(
+        "select_fields", ss.str())); 
+    
+    EXPECT_CALL(analytics_query_mock, where_query_result())
+        .Times(1)
+        .WillOnce(Invoke(this, &SelectFSQueryTest::wherequery_result));
+    
+    // Fill the expected result
+    SelectFSQueryTest::BufferT expected_res;
+    FlowSeriesData* fs_data = flowseries_data();
+    uint64_t gmsec = granularity*1000*1000;
+    boost::tuple<uint64_t, flow_tuple> expt[] = {
+        make_tuple(start_time(), fs_data[0].tuple()),
+        make_tuple(start_time(), fs_data[1].tuple()),
+        make_tuple(start_time()+gmsec, fs_data[0].tuple()),
+        make_tuple(start_time()+gmsec, fs_data[1].tuple()),
+        make_tuple(start_time()+(gmsec*2), fs_data[0].tuple())
+    };
+    for (int i = 0; i < 5; i++) {
+        QEOpServerProxy::OutRowT cmap;
+        cmap.insert(std::make_pair(TIMESTAMP_FIELD, 
+            integerToString(get<0>(expt[i]))));
         cmap.insert(std::make_pair(g_viz_constants.FlowRecordNames[
-            FlowRecordFields::FLOWREC_DESTVN], tuple.dest_vn));
+            FlowRecordFields::FLOWREC_SOURCEVN], get<1>(expt[i]).source_vn));
         cmap.insert(std::make_pair(g_viz_constants.FlowRecordNames[
-            FlowRecordFields::FLOWREC_DESTIP], 
-            integerToString(tuple.dest_ip)));
-        cmap.insert(std::make_pair(g_viz_constants.FlowRecordNames[
-            FlowRecordFields::FLOWREC_PROTOCOL], 
-            integerToString(tuple.protocol)));
+            FlowRecordFields::FLOWREC_SOURCEIP], 
+            integerToString(get<1>(expt[i]).source_ip)));
         cmap.insert(std::make_pair(g_viz_constants.FlowRecordNames[
             FlowRecordFields::FLOWREC_SPORT], 
-            integerToString(tuple.source_port)));
+            integerToString(get<1>(expt[i]).source_port)));
+        boost::shared_ptr<fsMetaData> metadata;
+        QEOpServerProxy::ResultRowT rrow(std::make_pair(cmap, metadata));
+        expected_res.push_back(std::make_pair(rrow, false));
+    }
+
+    SelectQuery* select_query = new SelectQuery(&analytics_query_mock, 
+                                                json_select);
+    select_query->process_query();
+    verify_select_fs_query_result(&expected_res, select_query->result_.get());
+}
+
+TEST_F(SelectFSQueryTest, SelectTSStats) {
+    AnalyticsQueryMock analytics_query_mock;
+    select_fs_query_default_expect_init(analytics_query_mock);
+
+    int granularity = 12;
+    std::stringstream ss;
+    ss << "[\"T=" << granularity << "\", " << "\"sum(packets)\"]";
+    std::map<std::string, std::string> json_select;
+    json_select.insert(std::pair<std::string, std::string>(
+        "select_fields", ss.str())); 
+    
+    EXPECT_CALL(analytics_query_mock, where_query_result())
+        .Times(1)
+        .WillOnce(Invoke(this, &SelectFSQueryTest::wherequery_result));
+    
+    // Fill the expected result
+    SelectFSQueryTest::BufferT expected_res;
+    FlowSeriesData* fs_data = flowseries_data();
+    uint64_t gmsec = granularity*1000*1000;
+    boost::tuple<uint64_t, uint64_t> expt[] = {
+        make_tuple(start_time(), 6),
+        make_tuple(start_time()+gmsec, 8),
+        make_tuple(start_time()+(gmsec*2), 5),
+        make_tuple(start_time()+(gmsec*3), 2),
+        make_tuple(start_time()+(gmsec*4), 2)
+    };
+    for (int i = 0; i < 5; i++) {
+        QEOpServerProxy::OutRowT cmap;
+        cmap.insert(std::make_pair(TIMESTAMP_FIELD, 
+                    integerToString(get<0>(expt[i]))));
+        cmap.insert(std::make_pair(SELECT_SUM_PACKETS, 
+                    integerToString(get<1>(expt[i]))));
+        boost::shared_ptr<fsMetaData> metadata;
+        QEOpServerProxy::ResultRowT rrow(std::make_pair(cmap, metadata));
+        expected_res.push_back(std::make_pair(rrow, false));
+    }
+    
+    SelectQuery* select_query = new SelectQuery(&analytics_query_mock, 
+                                                json_select);
+    select_query->process_query();
+    verify_select_fs_query_result(&expected_res, select_query->result_.get());
+}
+
+TEST_F(SelectFSQueryTest, SelectTFlowTupleStats) {
+    AnalyticsQueryMock analytics_query_mock;
+    select_fs_query_default_expect_init(analytics_query_mock);
+   
+    std::stringstream ss;
+    ss << "[\"T\", \"destvn\", \"destip\", \"bytes\"]";
+    std::map<std::string, std::string> json_select;
+    json_select.insert(std::pair<std::string, std::string>(
+        "select_fields", ss.str())); 
+   
+    EXPECT_CALL(analytics_query_mock, where_query_result())
+        .Times(1)
+        .WillOnce(Invoke(this, &SelectFSQueryTest::wherequery_result));
+    
+    // Fill the expected result
+    SelectFSQueryTest::BufferT expected_res;
+    FlowSeriesData* fs_data = flowseries_data(); 
+    for (int i = 0; i < num_flows(); i++) {
+        FlowSeriesData::tstats_t& tstats = fs_data[i].t_stats();
+        flow_tuple& tuple = fs_data[i].tuple();
+        for (FlowSeriesData::tstats_t::const_iterator it = tstats.begin();
+             it != tstats.end(); it++) {
+            boost::shared_ptr<fsMetaData> metadata;
+            QEOpServerProxy::OutRowT cmap;
+            cmap.insert(std::make_pair(TIMESTAMP_FIELD, 
+                integerToString(it->first)));
+            cmap.insert(std::make_pair(g_viz_constants.FlowRecordNames[
+                FlowRecordFields::FLOWREC_DESTVN], tuple.dest_vn));
+            cmap.insert(std::make_pair(g_viz_constants.FlowRecordNames[
+                FlowRecordFields::FLOWREC_DESTIP], 
+                integerToString(tuple.dest_ip)));
+            cmap.insert(std::make_pair(SELECT_BYTES,
+                integerToString(it->second.bytes)));
+            QEOpServerProxy::ResultRowT rrow(std::make_pair(cmap, metadata));
+            expected_res.push_back(std::make_pair(rrow, false));
+        }
+    }
+    
+    SelectQuery* select_query = new SelectQuery(&analytics_query_mock, 
+                                                json_select);
+    select_query->process_query();
+    verify_select_fs_query_result(&expected_res, select_query->result_.get());
+}
+
+TEST_F(SelectFSQueryTest, SelectTSFlowTupleStats) {
+    AnalyticsQueryMock analytics_query_mock;
+    select_fs_query_default_expect_init(analytics_query_mock);
+
+    int granularity = 45;
+    std::stringstream ss;
+    ss << "[\"T=" << granularity << "\", " << "\"sourcevn\", "
+       << "\"sum(packets)\"]";
+    std::map<std::string, std::string> json_select;
+    json_select.insert(std::pair<std::string, std::string>(
+        "select_fields", ss.str())); 
+    
+    EXPECT_CALL(analytics_query_mock, where_query_result())
+        .Times(1)
+        .WillOnce(Invoke(this, &SelectFSQueryTest::wherequery_result));
+    
+    // Fill the expected result
+    SelectFSQueryTest::BufferT expected_res;
+    FlowSeriesData* fs_data = flowseries_data();
+    boost::tuple<uint64_t, flow_tuple, uint64_t> expt[] = {
+        make_tuple(start_time(), fs_data[0].tuple(), 23),
+        make_tuple(start_time()+granularity*1000*1000, fs_data[0].tuple(), 3)
+    };
+    for (int i = 0; i < 2; i++) {
+        QEOpServerProxy::OutRowT cmap;
+        cmap.insert(std::make_pair(TIMESTAMP_FIELD, 
+            integerToString(get<0>(expt[i]))));
         cmap.insert(std::make_pair(g_viz_constants.FlowRecordNames[
-            FlowRecordFields::FLOWREC_DPORT],
-            integerToString(tuple.dest_port)));
+            FlowRecordFields::FLOWREC_SOURCEVN], get<1>(expt[i]).source_vn));
+        cmap.insert(std::make_pair(SELECT_SUM_PACKETS, 
+            integerToString(get<2>(expt[i]))));
+        boost::shared_ptr<fsMetaData> metadata;
         QEOpServerProxy::ResultRowT rrow(std::make_pair(cmap, metadata));
         expected_res.push_back(std::make_pair(rrow, false));
     }

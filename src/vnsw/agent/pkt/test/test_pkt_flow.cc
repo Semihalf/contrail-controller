@@ -10,7 +10,7 @@
 
 #define MAX_VNET 4
 
-void RouterIdDepInit() {
+void RouterIdDepInit(Agent *agent) {
 }
 
 struct TestFlowKey {
@@ -200,7 +200,7 @@ public:
     static void FlowAdd(int hash_id, int vrf, const char *sip, const char *dip,
                         int proto, int sport, int dport, const char *nat_sip,
                         const char *nat_dip, int nat_vrf) {
-        boost::shared_ptr<PktInfo> pkt_1(new PktInfo());
+        boost::shared_ptr<PktInfo> pkt_1(new PktInfo(NULL, 0));
         PktFlowInfo flow_info_1(pkt_1, Agent::GetInstance()->pkt()->flow_table());
         PktFlowInfo *flow_info = &flow_info_1;
         MatchPolicy policy;
@@ -366,7 +366,7 @@ protected:
         AddLink("floating-ip-pool", "fip-pool1", "virtual-network", "vn4");
         AddLink("virtual-machine-interface", "flow0", "floating-ip", "fip1");
         client->WaitForIdle();
-        peer_ = new BgpPeer(Ip4Address(1), "BGP Peer 1", NULL, -1);
+        peer_ = CreateBgpPeer(Ip4Address(1), "BGP Peer 1");
         Ip4Address gw_ip = Ip4Address::from_string("11.1.1.254");
         //Add a gateway route pointing to pkt0
         VrfEntry *vrf = VrfGet("vrf5");
@@ -412,7 +412,7 @@ protected:
         EXPECT_EQ(0U, agent()->GetVmTable()->Size());
         EXPECT_EQ(0U, agent()->GetVnTable()->Size());
         EXPECT_EQ(0U, agent()->GetAclTable()->Size());
-        delete static_cast<Peer *>(peer_);
+        DeleteBgpPeer(peer_);
     }
 
     Agent *agent() {return agent_;}
@@ -1552,7 +1552,19 @@ TEST_F(FlowTest, FlowAudit) {
     WAIT_FOR(1000, 1000, (agent()->pkt()->flow_table()->Size() == 0U));
     KFlowPurgeHold();
 
-    FlowAdd(1, 1, "1.1.1.1", "2.2.2.2", 1, 0, 0, "3.3.3.3", "2.2.2.2", 1);
+    string vrf_name =
+        Agent::GetInstance()->GetVrfTable()->FindVrfFromId(1)->GetName();
+    TestFlow flow[] = {
+        {
+            TestFlowPkt("1.1.1.1", "2.2.2.2", 1, 0, 0, vrf_name,
+                    flow0->id(), 1),
+            {
+            }
+        }
+    };
+
+    CreateFlow(flow, 1);
+
     EXPECT_TRUE(FlowTableWait(2));
     EXPECT_TRUE(KFlowHoldAdd(10, 1, "1.1.1.1", "2.2.2.2", 1, 0, 0));
     RunFlowAudit();
@@ -1575,7 +1587,7 @@ TEST_F(FlowTest, FlowAudit) {
 
 //Test flow deletion on ACL deletion
 TEST_F(FlowTest, AclDelete) {
-    AddAcl("acl1", 1, "vn5" , "vn5");
+    AddAcl("acl1", 1, "vn5" , "vn5", "pass");
     client->WaitForIdle();
     uint32_t sport = 30;
     for (uint32_t i = 0; i < 1; i++) {
@@ -1586,6 +1598,30 @@ TEST_F(FlowTest, AclDelete) {
                             flow1->id(), 1),
                 {
                     new VerifyVn("vn5", "vn5")
+                }
+            }
+        };
+        CreateFlow(flow, 1);
+    }
+
+    //Delete the acl
+    DelOperDBAcl(1);
+    client->WaitForIdle();
+    EXPECT_TRUE(FlowTableWait(0));
+}
+
+//Src port and dest port should be ignored for non TCP and UDP flows
+TEST_F(FlowTest, ICMPPortIgnoreTest) {
+    AddAcl("acl1", 1, "vn5" , "vn5", "pass");
+    client->WaitForIdle();
+    for (uint32_t i = 0; i < 1; i++) {
+        TestFlow flow[] = {
+            {
+                TestFlowPkt(vm2_ip, vm1_ip, IPPROTO_ICMP, 0, 0, "vrf5",
+                            flow1->id(), 1),
+                {
+                    new VerifyVn("vn5", "vn5"),
+                    new VerifyFlowAction(TrafficAction::PASS)
                 }
             }
         };
@@ -1640,8 +1676,7 @@ TEST_F(FlowTest, FlowOnDeletedVrf) {
     //Flow find should fail as interface is delete marked
     FlowEntry *fe = FlowGet(vrf_id, "11.1.1.3", vm1_ip,
                             IPPROTO_TCP, 30, 40);
-    EXPECT_TRUE(fe != NULL);
-    EXPECT_TRUE(fe->is_flags_set(FlowEntry::ShortFlow) == true);
+    EXPECT_TRUE(fe != NULL && fe->is_flags_set(FlowEntry::ShortFlow) == true);
 
     DeleteVmportEnv(input, 1, false);
     client->WaitForIdle();
@@ -2141,6 +2176,65 @@ TEST_F(FlowTest, LinkLocalFlow_Fail2) {
 
     DelLinkLocalConfig();
     client->WaitForIdle();
+}
+
+// Check that flow limit per VM works
+TEST_F(FlowTest, FlowLimit_1) {
+    Agent::GetInstance()->SetRouterId(Ip4Address::from_string(vhost_ip_addr));
+    uint32_t vm_flows = Agent::GetInstance()->pkt()->flow_table()->max_vm_flows();
+    Agent::GetInstance()->pkt()->flow_table()->set_max_vm_flows(3);
+
+    /* Add Local VM route of vrf3 to vrf5 */
+    CreateLocalRoute("vrf5", vm4_ip, flow3, 19);
+    /* Add Local VM route of vrf5 to vrf3 */
+    CreateLocalRoute("vrf3", vm1_ip, flow0, 16);
+
+    TestFlow flow[] = {
+        //Send a ICMP request from local VM in vn5 to local VM in vn3
+        {
+            TestFlowPkt(vm1_ip, vm4_ip, 1, 0, 0, "vrf5", 
+                    flow0->id()),
+            {
+                new VerifyVn("vn5", "vn3"),
+            }
+        },
+        //Send an ICMP reply from local VM in vn3 to local VM in vn5
+        {
+            TestFlowPkt(vm4_ip, vm1_ip, 1, 0, 0, "vrf3", 
+                    flow3->id()),
+            {
+                new VerifyVn("vn3", "vn5"),
+            }
+        },
+        //Send a TCP packet from local VM in vn5 to local VM in vn3
+        {
+            TestFlowPkt(vm1_ip, vm4_ip, IPPROTO_TCP, 200, 300, "vrf5", 
+                    flow0->id()),
+            {
+                new VerifyVn("vn5", "vn3"),
+            }
+        },
+        //Send an TCP packet from local VM in vn3 to local VM in vn5
+        {
+            TestFlowPkt(vm4_ip, vm1_ip, IPPROTO_TCP, 300, 200, "vrf3", 
+                    flow3->id()),
+            {
+                new VerifyVn("vn3", "vn5"),
+            }
+        }
+    };
+
+    CreateFlow(flow, 4);
+    client->WaitForIdle();
+    EXPECT_EQ(4U, Agent::GetInstance()->pkt()->flow_table()->Size());
+    EXPECT_TRUE(agent()->stats()->flow_drop_due_to_max_limit() > 0);
+
+    //1. Remove remote VM routes
+    DeleteRoute("vrf5", vm4_ip);
+    DeleteRoute("vrf3", vm1_ip);
+    client->WaitForIdle();
+    client->WaitForIdle();
+    Agent::GetInstance()->pkt()->flow_table()->set_max_vm_flows(vm_flows);
 }
 
 TEST_F(FlowTest, Flow_introspect_delete_all) {

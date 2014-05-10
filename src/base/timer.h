@@ -60,7 +60,7 @@ public:
         ErrorHandler;
 
     Timer(boost::asio::io_service &service, const std::string &name,
-          int task_id, int task_instance);
+          int task_id, int task_instance, bool delete_on_completion = false);
     virtual ~Timer();
 
     // Start a timer
@@ -74,6 +74,9 @@ public:
     // would use the same time, the timer was initially started with
     //
     bool Start(int time, Handler handler, ErrorHandler error_handler = NULL);
+
+    //Can be called only from callback
+    bool Reschedule(int time);
 
     // Cancel a running timer
     bool Cancel();
@@ -91,6 +94,10 @@ public:
     bool cancelled() const {
         tbb::mutex::scoped_lock lock(mutex_);
         return (state_ == Cancelled); 
+    }
+
+    bool IsDeleteOnCompletion() const {
+        return delete_on_completion_;
     }
 
     // Only for state machine test
@@ -146,6 +153,7 @@ private:
     int task_id_;
     int task_instance_;
     uint32_t seq_no_;
+    bool delete_on_completion_;
     tbb::atomic<int> refcount_;
 };
 
@@ -177,7 +185,8 @@ public:
     static Timer *CreateTimer(boost::asio::io_service &service,
                               const std::string &name,
                               int task_id = Timer::GetTimerTaskId(),
-                              int task_instance = Timer::GetTimerInstanceId());
+                              int task_instance = Timer::GetTimerInstanceId(),
+                              bool delete_on_completion = false);
     static bool DeleteTimer(Timer *Timer);
 
 private:

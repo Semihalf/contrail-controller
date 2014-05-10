@@ -144,13 +144,25 @@ private:
     T *ptr_;
 };
 
-static boost::posix_time::ptime epoch_ptime(boost::gregorian::date(1970,1,1));
-
 /* timestamp - returns usec since epoch */
 static inline uint64_t UTCTimestampUsec() {
-    boost::posix_time::ptime t2(boost::posix_time::microsec_clock::universal_time());
-    boost::posix_time::time_duration diff = t2 - epoch_ptime; 
-    return diff.total_microseconds();
+    struct timespec ts;
+    if (clock_gettime(CLOCK_REALTIME, &ts) != 0) {
+        assert(0);
+    }
+
+    return ts.tv_sec * 1000000 + ts.tv_nsec/1000;
+}
+
+// Monotonically increasing timer starting from an arbitrary value
+// 10x more efficient than UTCTimestampUsec
+static inline uint64_t ClockMonotonicUsec() {
+    struct timespec ts;
+    if (clock_gettime(CLOCK_MONOTONIC, &ts) != 0) {
+        assert(0);
+    }
+
+    return ts.tv_sec * 1000000 + ts.tv_nsec/1000;
 }
 
 static inline boost::posix_time::ptime UTCUsecToPTime(uint64_t tusec) {
@@ -215,6 +227,16 @@ static inline bool ValidateIPAddressString(std::string ip_address_str,
     }
 
     return true;
+}
+
+static inline uint32_t NetmaskToPrefix(uint32_t netmask) {
+    uint32_t count = 0;
+
+    while (netmask) {
+        count++;
+        netmask = (netmask - 1) & netmask;
+    }
+    return count;
 }
 
 // Validate a list of <ip-address>:<port> endpoints.
@@ -294,31 +316,34 @@ inline const std::string integerToString<>(const uint8_t &num) {
 
 // Converts string into a number
 template <typename NumberType>
-static inline void stringToInteger(const std::string& str, NumberType &num) {
-    std::stringstream ss(str);
-    ss >> num;
+inline bool stringToInteger(const std::string& str, NumberType &num) {
+    char *endptr;
+    num = strtoul(str.c_str(), &endptr, 10);
+    return endptr[0] == '\0';
 }
 
-// int8_t must be handled properly because stringstream sees int8_t
-// as a text type instead of an integer type
-template <>
-inline void stringToInteger<>(const std::string& str, int8_t &num) {
-    int16_t tmp;
-    std::stringstream ss(str);
-    ss >> tmp;
-    assert(tmp > -128 && tmp < 128);
-    num = (int8_t)tmp;
+template <typename NumberType>
+inline bool stringToLongLong(const std::string& str, NumberType &num) {
+    char *endptr;
+    num = strtoull(str.c_str(), &endptr, 10);
+    return endptr[0] == '\0';
 }
 
-// uint8_t must be handled properly because stringstream sees uint8_t
-// as a text type instead of an integer type
 template <>
-inline void stringToInteger<>(const std::string& str, uint8_t &num) {
-    uint16_t tmp;
-    std::stringstream ss(str);
-    ss >> tmp;
-    assert(tmp < 256);
-    num = (uint8_t)tmp;
+inline bool stringToInteger<>(const std::string& str, int64_t &num) {
+    return stringToLongLong(str, num);
+}
+
+template <>
+inline bool stringToInteger<>(const std::string& str, uint64_t &num) {
+    return stringToLongLong(str, num);
+}
+
+template <>
+inline bool stringToInteger<>(const std::string& str, double &num) {
+    char *endptr;
+    num = strtod(str.c_str(), &endptr);
+    return endptr[0] == '\0';
 }
 
 //
@@ -390,6 +415,34 @@ static inline std::string GetVNFromRoutingInstance(const std::string &vn) {
     boost::split(tokens, vn, boost::is_any_of(":"), boost::token_compress_on);
     if (tokens.size() < 3) return "";
     return tokens[0] + ":" + tokens[1] + ":" + tokens[2];
+}
+
+template<typename PtrMapType, typename KeyType, typename ValueStatsType,
+    typename OutputStatsType>
+void GetDiffStats(PtrMapType &stats_map, PtrMapType &old_stats_map,
+    std::vector<OutputStatsType> &v_output_stats) {
+    // Send diffs 
+    for (typename PtrMapType::const_iterator it = stats_map.begin();
+         it != stats_map.end(); it++) {
+         // Get new stats
+         const ValueStatsType *nstats(it->second);
+         KeyType key(it->first);
+         typename PtrMapType::iterator oit = old_stats_map.find(key);
+         // If entry does not exist in old map, insert it
+         if (oit == old_stats_map.end()) {
+             oit = (old_stats_map.insert(key, new ValueStatsType)).first;
+         }
+         // Get old stats
+         ValueStatsType *ostats(oit->second);
+         // Subtract the old from new
+         ValueStatsType dstats(*nstats - *ostats);
+         // Update old
+         *ostats = *nstats;
+         // Populate diff stats
+         OutputStatsType output_stats;
+         dstats.Get(key, output_stats);
+         v_output_stats.push_back(output_stats);
+    }
 }
 
 #endif /* UTIL_H_ */

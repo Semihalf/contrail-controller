@@ -7,7 +7,7 @@
 
 #define MAX_VNET 4
 
-void RouterIdDepInit() {
+void RouterIdDepInit(Agent *agent) {
 }
 
 const std::string svn_name("svn");
@@ -237,7 +237,7 @@ public:
         t->InitFlowKey(&key);
         FlowEntry *flow = Agent::GetInstance()->pkt()->flow_table()->Allocate(key);
 
-        boost::shared_ptr<PktInfo> pkt_info(new PktInfo());
+        boost::shared_ptr<PktInfo> pkt_info(new PktInfo(NULL, 0));
         PktFlowInfo info(pkt_info, Agent::GetInstance()->pkt()->flow_table());
         PktInfo *pkt = pkt_info.get();
         info.source_vn = t->svn_;

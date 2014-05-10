@@ -47,7 +47,7 @@
 
 using namespace pugi;
 
-void RouterIdDepInit() {
+void RouterIdDepInit(Agent *agent) {
 }
 
 // Create vm-port and vn
@@ -60,8 +60,8 @@ class AgentBgpXmppPeerTest : public AgentXmppChannel {
 public:
     AgentBgpXmppPeerTest(XmppChannel *channel, std::string xs, 
                          std::string lr, uint8_t xs_idx) :
-        AgentXmppChannel(channel, xs, lr, xs_idx), rx_count_(0),
-        rx_channel_event_queue_ (
+        AgentXmppChannel(Agent::GetInstance(), channel, xs, lr, xs_idx), 
+        rx_count_(0), rx_channel_event_queue_ (
             TaskScheduler::GetInstance()->GetTaskId("xmpp::StateMachine"), 0,
             boost::bind(&AgentBgpXmppPeerTest::ProcessChannelEvent, this, _1)) {
     }
@@ -72,8 +72,7 @@ public:
     }
 
     bool ProcessChannelEvent(xmps::PeerState state) { 
-        AgentXmppChannel::HandleXmppClientChannelEvent(
-            static_cast<AgentXmppChannel *>(this), state);
+        AgentXmppChannel::HandleAgentXmppClientChannelEvent(static_cast<AgentXmppChannel *>(this), state);
         return true;
     }
 
@@ -137,7 +136,6 @@ protected:
     AgentXmppUnitTest() : thread_(&evm_) {}
  
     virtual void SetUp() {
-        AgentIfMapVmExport::Init();
         xs_p = new XmppServer(&evm_, XmppInit::kControlNodeJID);
         xs_s = new XmppServer(&evm_, XmppInit::kControlNodeJID);
         xc_p = new XmppClient(&evm_);
@@ -163,10 +161,16 @@ protected:
         xc_s->Shutdown();
         client->WaitForIdle();
 
+        TaskScheduler::GetInstance()->Stop();
+        Agent::GetInstance()->controller()->unicast_cleanup_timer().cleanup_timer_->Fire();
+        TaskScheduler::GetInstance()->Start();
+        client->WaitForIdle();
+        Agent::GetInstance()->controller()->Cleanup();
+        client->WaitForIdle();
+ 
         mock_peer.reset();
         mock_peer_s.reset();
 
-        AgentIfMapVmExport::Shutdown();
 
         TcpServerManager::DeleteServer(xs_p);
         TcpServerManager::DeleteServer(xs_s);
@@ -362,7 +366,8 @@ protected:
 
     void XmppConnectionSetUp() {
 
-        Agent::GetInstance()->SetControlNodeMulticastBuilder(NULL);
+        Agent::GetInstance()->controller()->increment_multicast_sequence_number();
+        Agent::GetInstance()->set_cn_mcast_builder(NULL);
 
         //Create control-node bgp mock peer 
 	mock_peer.reset(new ControlNodeMockBgpXmppPeer());
@@ -387,7 +392,7 @@ protected:
 	    boost::bind(&AgentBgpXmppPeerTest::HandleXmppChannelEvent, bgp_peer.get(), _2));
 	
 	// server connection
-        WAIT_FOR(100, 10000,
+        WAIT_FOR(1000, 10000,
             ((sconnection = xs_p->FindConnection("agent-a")) != NULL));
         assert(sconnection);
 
@@ -414,7 +419,7 @@ protected:
 	    boost::bind(&AgentBgpXmppPeerTest::HandleXmppChannelEvent, bgp_peer_s.get(), _2));
 
 	// server connection
-        WAIT_FOR(100, 10000,
+        WAIT_FOR(1000, 10000,
             ((sconnection_s = xs_s->FindConnection("agent-bb")) != NULL));
         assert(sconnection_s);
 
@@ -424,14 +429,14 @@ protected:
     void XmppSubnetSetUp() {
 
 	//wait for connection establishment
-        WAIT_FOR(100, 10000, (sconnection->GetStateMcState() == xmsm::ESTABLISHED));
-        WAIT_FOR(100, 10000, (cchannel_p->GetPeerState() == xmps::READY));
-        WAIT_FOR(100, 10000, (sconnection_s->GetStateMcState() == xmsm::ESTABLISHED));
-        WAIT_FOR(100, 10000, (cchannel_s->GetPeerState() == xmps::READY));
+        WAIT_FOR(1000, 10000, (sconnection->GetStateMcState() == xmsm::ESTABLISHED));
+        WAIT_FOR(1000, 10000, (cchannel_p->GetPeerState() == xmps::READY));
+        WAIT_FOR(1000, 10000, (sconnection_s->GetStateMcState() == xmsm::ESTABLISHED));
+        WAIT_FOR(1000, 10000, (cchannel_s->GetPeerState() == xmps::READY));
 
 	//expect subscribe for __default__ at the mock server
-	WAIT_FOR(100, 10000, (mock_peer.get()->Count() == 1));
-	WAIT_FOR(100, 10000, (mock_peer_s.get()->Count() == 1));
+	WAIT_FOR(1000, 10000, (mock_peer.get()->Count() == 1));
+	WAIT_FOR(1000, 10000, (mock_peer_s.get()->Count() == 1));
 
 	//IpamInfo for subnet address belonging to vn
 	IpamInfo ipam_info[] = {
@@ -467,7 +472,7 @@ protected:
 	SendRouteMessage(mock_peer_s.get(), "vrf1", "1.1.1.1/32", 
 			 MplsTable::kStartLabel);
 	// Route reflected to vrf1
-	WAIT_FOR(100, 10000, (bgp_peer_s.get()->Count() == 1));
+	WAIT_FOR(1000, 10000, (bgp_peer_s.get()->Count() == 1));
 
         // Unicast route will be reflected by mock_peer
 
@@ -475,15 +480,15 @@ protected:
 	EXPECT_TRUE(VmPortActive(input, 1));
 	EXPECT_TRUE(RouteFind("vrf1", addr, 32));
 	rt = RouteGet("vrf1", addr, 32);
-        WAIT_FOR(100, 10000, (rt->GetActivePath() != NULL));
-        WAIT_FOR(100, 10000, rt->dest_vn_name().size() > 0);
+        WAIT_FOR(1000, 10000, (rt->GetActivePath() != NULL));
+        WAIT_FOR(1000, 10000, rt->dest_vn_name().size() > 0);
 	EXPECT_STREQ(rt->dest_vn_name().c_str(), "vn1");
 
 	// Send route, back to vrf1
 	SendRouteMessage(mock_peer_s.get(), "vrf1", "1.1.1.2/32", 
 			 MplsTable::kStartLabel+1);
 	// Route reflected to vrf1
-	WAIT_FOR(100, 10000, (bgp_peer_s.get()->Count() == 2));
+	WAIT_FOR(1000, 10000, (bgp_peer_s.get()->Count() == 2));
 
         // Unicast route will be reflected by mock_peer 
 
@@ -500,7 +505,7 @@ protected:
 			      "1.1.1.255", alloc_label,  
                               "127.0.0.4", alloc_label+10);
 	// Bcast Route with updated olist 
-	WAIT_FOR(100, 10000, (bgp_peer_s.get()->Count() == 3));
+	WAIT_FOR(1000, 10000, (bgp_peer_s.get()->Count() == 3));
 
 	NextHop *nh = const_cast<NextHop *>(rt->GetActiveNextHop());
 	CompositeNH *cnh = static_cast<CompositeNH *>(nh);
@@ -509,14 +514,14 @@ protected:
 	ASSERT_TRUE(nh->GetType() == NextHop::COMPOSITE);
 	obj = MulticastHandler::GetInstance()->FindGroupObject(cnh->vrf_name(),
 			cnh->GetGrpAddr());
-	ASSERT_TRUE(obj->GetSourceMPLSLabel() > 0);
-    WAIT_FOR(100, 10000, (cnh->ComponentNHCount() == 3));
+	WAIT_FOR(1000, 1000, (obj->GetSourceMPLSLabel() != 0));
+    WAIT_FOR(1000, 10000, (cnh->ComponentNHCount() == 3));
 
 	//Verify mpls table
 	MplsLabel *mpls = 
 	    Agent::GetInstance()->GetMplsTable()->FindMplsLabel(alloc_label);
 	ASSERT_TRUE(mpls == NULL);
-    WAIT_FOR(100, 10000, (Agent::GetInstance()->GetMplsTable()->Size() == 5));
+    WAIT_FOR(1000, 10000, (Agent::GetInstance()->GetMplsTable()->Size() == 5));
 	ASSERT_TRUE(Agent::GetInstance()->GetMplsTable()->Size() == 5);
 
 	// Verify presence of all broadcast route in mcast table
@@ -529,7 +534,7 @@ protected:
 			      "255.255.255.255", alloc_label+1,  
                               "127.0.0.4", alloc_label + 11);
 	// Bcast Route with updated olist
-	WAIT_FOR(100, 10000, (bgp_peer_s.get()->Count() == 4));
+	WAIT_FOR(1000, 10000, (bgp_peer_s.get()->Count() == 4));
 
 	nh = const_cast<NextHop *>(rt_m->GetActiveNextHop());
 	ASSERT_TRUE(nh != NULL);
@@ -537,13 +542,13 @@ protected:
 	cnh = static_cast<CompositeNH *>(nh);
 	obj = MulticastHandler::GetInstance()->FindGroupObject(cnh->vrf_name(),
 			cnh->GetGrpAddr());
-	ASSERT_TRUE(obj->GetSourceMPLSLabel() > 0);
-        ASSERT_TRUE(cnh->ComponentNHCount() == 3);
-	
+	WAIT_FOR(1000, 1000, (obj->GetSourceMPLSLabel() != 0));
+    ASSERT_TRUE(cnh->ComponentNHCount() == 3);
+
 	//Verify mpls table
-	mpls = Agent::GetInstance()->GetMplsTable()->FindMplsLabel(alloc_label+ 1);
-	ASSERT_TRUE(mpls == NULL);
-	ASSERT_TRUE(Agent::GetInstance()->GetMplsTable()->Size() == 6);
+	WAIT_FOR(1000, 1000, (Agent::GetInstance()->GetMplsTable()->
+                          FindMplsLabel(alloc_label+ 1) == NULL));
+	WAIT_FOR(1000, 1000, (Agent::GetInstance()->GetMplsTable()->Size() == 6));
     }
 
     void XmppSubnetTearDown() {
@@ -591,6 +596,8 @@ TEST_F(AgentXmppUnitTest, SubnetBcast_Test_FailOver) {
     //bring-down the channel, which is the elected
     //multicast tree builder (i.e 127.0.0.1)
     bgp_peer_s.get()->AgentBgpXmppPeerTest::HandleXmppChannelEvent(xmps::NOT_READY); 
+    WAIT_FOR(1000, 10000, (Agent::GetInstance()->
+                           GetControlNodeMulticastBuilder() != NULL));
     client->WaitForIdle();
 
     ch = Agent::GetInstance()->GetControlNodeMulticastBuilder();
@@ -619,11 +626,17 @@ TEST_F(AgentXmppUnitTest, SubnetBcast_Test_FailOver) {
     ASSERT_TRUE(cnh->ComponentNHCount() == 3);
 
     //Verify label deallocated from Mpls Table
-    EXPECT_TRUE(Agent::GetInstance()->GetMplsTable()->Size() == 4);
+    if (Agent::GetInstance()->headless_agent_mode()) {
+        EXPECT_TRUE(Agent::GetInstance()->GetMplsTable()->Size() == 6);
+    } else {
+        EXPECT_TRUE(Agent::GetInstance()->GetMplsTable()->Size() == 4);
+    }
+    // headless
+    //EXPECT_TRUE(Agent::GetInstance()->GetMplsTable()->Size() == 4);
 
     //expect subnet and all braodcast routes to newly elected
     //multicast builder
-    WAIT_FOR(100, 10000, (mock_peer.get()->Count() == 9));
+    WAIT_FOR(1000, 10000, (mock_peer.get()->Count() == 9));
 
     //we could add olists from mock_peer due to
     //local-vms on another agent attached to mock_peer
@@ -632,6 +645,8 @@ TEST_F(AgentXmppUnitTest, SubnetBcast_Test_FailOver) {
     //Now bring-up the multicast tree builder with
     //the lower-ip
     bgp_peer_s.get()->AgentBgpXmppPeerTest::HandleXmppChannelEvent(xmps::READY); 
+    WAIT_FOR(1000, 10000, (Agent::GetInstance()->
+                           GetControlNodeMulticastBuilder() != NULL));
     client->WaitForIdle();
 
     ch = Agent::GetInstance()->GetControlNodeMulticastBuilder();
@@ -640,15 +655,17 @@ TEST_F(AgentXmppUnitTest, SubnetBcast_Test_FailOver) {
     EXPECT_STREQ(ch->GetXmppServer().c_str(), "127.0.0.1");
 
     //expect dissociate to the older peer, 127.0.0.2
-    WAIT_FOR(100, 10000, (mock_peer.get()->Count() == 12));
+    WAIT_FOR(1000, 10000, (mock_peer.get()->Count() == 12));
 
     //expect subscribe, 2VM routes, 
     //subnet and all braodcast routes to newly elected
     //multicast builder
-    WAIT_FOR(100, 10000, (mock_peer_s.get()->Count() == 18));
+    WAIT_FOR(1000, 10000, (mock_peer_s.get()->Count() == 18));
 
     //bring-down non multicast builder
     bgp_peer.get()->AgentBgpXmppPeerTest::HandleXmppChannelEvent(xmps::NOT_READY);
+    WAIT_FOR(1000, 10000, (Agent::GetInstance()->
+                           GetControlNodeMulticastBuilder() != NULL));
     client->WaitForIdle();
 
     //multicast builder should be unchanged
@@ -659,11 +676,13 @@ TEST_F(AgentXmppUnitTest, SubnetBcast_Test_FailOver) {
 
     //expect no messages except config subscribe
     //control-node as 127.0.0.2 came up first
-    WAIT_FOR(100, 10000, (mock_peer_s.get()->Count() == 18));
+    WAIT_FOR(1000, 10000, (mock_peer_s.get()->Count() == 18));
 
 
     //bring-up non multicast builder
     bgp_peer.get()->AgentBgpXmppPeerTest::HandleXmppChannelEvent(xmps::READY); 
+    WAIT_FOR(1000, 10000, (Agent::GetInstance()->
+                           GetControlNodeMulticastBuilder() != NULL));
     client->WaitForIdle(5);
 
     //multicast builder should be unchanged
@@ -673,7 +692,7 @@ TEST_F(AgentXmppUnitTest, SubnetBcast_Test_FailOver) {
     EXPECT_STREQ(ch->GetXmppServer().c_str(), "127.0.0.1");
 
     //expect subscribe + 2VM routes
-    WAIT_FOR(100, 10000, (mock_peer.get()->Count() == 18));
+    WAIT_FOR(1000, 10000, (mock_peer.get()->Count() == 18));
 
     //cleanup all config links via config
     XmppSubnetTearDown();
@@ -712,16 +731,3 @@ TEST_F(AgentXmppUnitTest, SubnetBcast_DBWalk_Cancel) {
 
 }
 
-int main(int argc, char **argv) {
-    GETUSERARGS();
-    client = TestInit(init_file, ksync_init);
-    Agent::GetInstance()->SetXmppServer("127.0.0.2", 0);
-    Agent::GetInstance()->SetXmppServer("127.0.0.1", 1);
-    Agent::GetInstance()->SetAgentMcastLabelRange(0);
-    Agent::GetInstance()->SetAgentMcastLabelRange(1);
-    
-    int ret = RUN_ALL_TESTS();
-    Agent::GetInstance()->GetEventManager()->Shutdown();
-    AsioStop();
-    return ret;
-}

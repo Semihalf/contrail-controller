@@ -6,6 +6,7 @@
 #include <netinet/ether.h>
 #endif
 #include <boost/uuid/uuid_io.hpp>
+#include <tbb/mutex.h>
 
 #include "base/logging.h"
 #include "db/db.h"
@@ -30,18 +31,15 @@
 #include <vnc_cfg_types.h>
 #include <oper/agent_sandesh.h>
 #include <oper/sg.h>
-#include <ksync/interface_ksync.h>
-#include <ksync/ksync_init.h>
-#include "sandesh/sandesh_trace.h"
-#include "sandesh/common/vns_types.h"
-#include "sandesh/common/vns_constants.h"
+#include <sandesh/sandesh_trace.h>
+#include <sandesh/common/vns_types.h>
+#include <sandesh/common/vns_constants.h>
 
 #include <services/dns_proto.h>
 
 using namespace std;
 using namespace boost::uuids;
 
-bool Interface::test_mode_;
 InterfaceTable *InterfaceTable::interface_table_;
 
 /////////////////////////////////////////////////////////////////////////////
@@ -70,7 +68,7 @@ DBEntry *InterfaceTable::Add(const DBRequest *req) {
     intf->id_ = index_table_.Insert(intf);
 
     // Get the os-ifindex and mac of interface
-    intf->GetOsParams();
+    intf->GetOsParams(agent());
 
     intf->Add();
     intf->SendTrace(Interface::ADD);
@@ -91,7 +89,7 @@ bool InterfaceTable::OnChange(DBEntry *entry, const DBRequest *req) {
         InetInterface *intf = static_cast<InetInterface *>(entry);
         if (intf) {
             // Get the os-ifindex and mac of interface
-            intf->GetOsParams();
+            intf->GetOsParams(agent());
             intf->OnChange(static_cast<InetInterfaceData *>(req->data.get()));
             ret = true;
         }
@@ -107,7 +105,8 @@ bool InterfaceTable::OnChange(DBEntry *entry, const DBRequest *req) {
 // RESYNC supported only for VM_INTERFACE
 bool InterfaceTable::Resync(DBEntry *entry, DBRequest *req) {
     InterfaceKey *key = static_cast<InterfaceKey *>(req->key.get());
-    assert(key->type_ == Interface::VM_INTERFACE);
+    if (key->type_ != Interface::VM_INTERFACE)
+        return false;
 
     VmInterfaceData *vm_data = static_cast<VmInterfaceData *>(req->data.get());
     VmInterface *intf = static_cast<VmInterface *>(entry);
@@ -230,7 +229,7 @@ Interface::Interface(Type type, const uuid &uuid, const string &name,
     vrf_(vrf), label_(MplsTable::kInvalidLabel), 
     l2_label_(MplsTable::kInvalidLabel), ipv4_active_(true), l2_active_(true),
     id_(kInvalidIndex), dhcp_enabled_(true), dns_enabled_(true), mac_(),
-    os_index_(kInvalidIndex) { 
+    os_index_(kInvalidIndex), test_oper_state_(true) { 
 }
 
 Interface::~Interface() { 
@@ -239,18 +238,20 @@ Interface::~Interface() {
     }
 }
 
-void Interface::GetOsParams() {
-    if (test_mode_) {
+void Interface::GetOsParams(Agent *agent) {
+    if (agent->test_mode()) {
         static int dummy_ifindex = 0;
-        os_index_ = ++dummy_ifindex;
-        bzero(&mac_, sizeof(mac_));
+        if (os_index_ == kInvalidIndex) {
+            os_index_ = ++dummy_ifindex;
+            bzero(&mac_, sizeof(mac_));
 #if defined(__linux__)
-        mac_.ether_addr_octet[5] = os_index_;
+            mac_.ether_addr_octet[5] = os_index_;
 #elif defined(__FreeBSD__)
         mac_.octet[5] = os_index_;
 #endif
+       os_oper_state_ = test_oper_state_;
 
-        return;
+       return;
     }
 
     struct ifreq ifr;
@@ -271,6 +272,22 @@ void Interface::GetOsParams() {
         bzero(&mac_, sizeof(mac_));
         close(fd);
         return;
+    }
+
+
+    if (ioctl(fd, SIOCGIFFLAGS, (void *)&ifr) < 0) {
+        LOG(ERROR, "Error <" << errno << ": " << strerror(errno) << 
+            "> querying mac-address for interface <" << name_ << ">");
+        os_index_ = Interface::kInvalidIndex;
+        bzero(&mac_, sizeof(mac_));
+        os_oper_state_ = false;
+        close(fd);
+        return;
+    }
+
+    os_oper_state_ = false;
+    if ((ifr.ifr_flags & (IFF_UP | IFF_RUNNING)) == (IFF_UP | IFF_RUNNING)) {
+        os_oper_state_ = true;
     }
     close(fd);
 
@@ -314,6 +331,13 @@ void PacketInterface::CreateReq(InterfaceTable *table,
     table->Enqueue(&req);
 }
 
+void PacketInterface::Create(InterfaceTable *table, const std::string &ifname) {
+    DBRequest req(DBRequest::DB_ENTRY_ADD_CHANGE);
+    req.key.reset(new PacketInterfaceKey(nil_uuid(), ifname));
+    req.data.reset(new PacketInterfaceData());
+    table->Process(req);
+}
+
 // Enqueue DBRequest to delete a Pkt Interface
 void PacketInterface::DeleteReq(InterfaceTable *table,
                                 const std::string &ifname) {
@@ -323,6 +347,12 @@ void PacketInterface::DeleteReq(InterfaceTable *table,
     table->Enqueue(&req);
 }
 
+void PacketInterface::Delete(InterfaceTable *table, const std::string &ifname) {
+    DBRequest req(DBRequest::DB_ENTRY_DELETE);
+    req.key.reset(new PacketInterfaceKey(nil_uuid(), ifname));
+    req.data.reset(NULL);
+    table->Process(req);
+}
 /////////////////////////////////////////////////////////////////////////////
 // Ethernet Interface routines
 /////////////////////////////////////////////////////////////////////////////
@@ -340,6 +370,14 @@ void PhysicalInterface::CreateReq(InterfaceTable *table, const string &ifname,
     table->Enqueue(&req);
 }
 
+void PhysicalInterface::Create(InterfaceTable *table, const string &ifname,
+                               const string &vrf_name) {
+    DBRequest req(DBRequest::DB_ENTRY_ADD_CHANGE);
+    req.key.reset(new PhysicalInterfaceKey(ifname));
+    req.data.reset(new PhysicalInterfaceData(vrf_name));
+    table->Process(req);
+}
+
 // Enqueue DBRequest to delete a Host Interface
 void PhysicalInterface::DeleteReq(InterfaceTable *table, const string &ifname) {
     DBRequest req(DBRequest::DB_ENTRY_DELETE);
@@ -348,8 +386,23 @@ void PhysicalInterface::DeleteReq(InterfaceTable *table, const string &ifname) {
     table->Enqueue(&req);
 }
 
+void PhysicalInterface::Delete(InterfaceTable *table, const string &ifname) {
+    DBRequest req(DBRequest::DB_ENTRY_DELETE);
+    req.key.reset(new PhysicalInterfaceKey(ifname));
+    req.data.reset(NULL);
+    table->Process(req);
+}
+
 /////////////////////////////////////////////////////////////////////////////
 // DHCP Snoop routines
+// DHCP Snoop entry can be added from 3 different places,
+// - Interface added from config
+// - Address learnt from DHCP Snoop on fabric interface
+// - Address learnt from vrouter when agent restarts
+//
+// DHCP Snoop entry is deleted from 2 places
+// - Interface deleted from config
+// - Audit of entries read from vrouter on restart and config table
 /////////////////////////////////////////////////////////////////////////////
 
 // Get DHCP IP address. First try to find entry in DHCP Snoop table.
@@ -357,26 +410,17 @@ void PhysicalInterface::DeleteReq(InterfaceTable *table, const string &ifname) {
 //
 // InterfaceKScan table is populated on agent restart
 const Ip4Address InterfaceTable::GetDhcpSnoopEntry(const std::string &ifname) {
+    tbb::mutex::scoped_lock lock(dhcp_snoop_mutex_);
     const DhcpSnoopIterator it = dhcp_snoop_map_.find(ifname);
     if (it != dhcp_snoop_map_.end()) {
-        return it->second;
-    }
-
-    // No entry in DHCP Snoop table. 
-    // See if there is entry in InterfaceKscanData
-    InterfaceKScan *kscan = agent_->ksync()->interface_scanner();
-    if (kscan) {
-        uint32_t addr;
-        if (kscan->FindInterfaceKScanData(ifname, addr)) {
-            AddDhcpSnoopEntry(ifname, Ip4Address(addr));
-            return Ip4Address(addr);
-        }
+        return it->second.addr_;
     }
 
     return Ip4Address(0);
 }
 
 void InterfaceTable::DeleteDhcpSnoopEntry(const std::string &ifname) {
+    tbb::mutex::scoped_lock lock(dhcp_snoop_mutex_);
     const DhcpSnoopIterator it = dhcp_snoop_map_.find(ifname);
     if (it == dhcp_snoop_map_.end()) {
         return;
@@ -385,11 +429,51 @@ void InterfaceTable::DeleteDhcpSnoopEntry(const std::string &ifname) {
     return dhcp_snoop_map_.erase(it);
 }
 
-void InterfaceTable::AddDhcpSnoopEntry(const std::string &ifname,
-                                       const Ip4Address &addr) {
-    dhcp_snoop_map_[ifname] = addr;
+// Set config_seen_ flag in DHCP Snoop entry.
+// Create the DHCP Snoop entry, if not already present
+void InterfaceTable::DhcpSnoopSetConfigSeen(const std::string &ifname) {
+    tbb::mutex::scoped_lock lock(dhcp_snoop_mutex_);
+    const DhcpSnoopIterator it = dhcp_snoop_map_.find(ifname);
+    Ip4Address addr(0);
+
+    if (it != dhcp_snoop_map_.end()) {
+        addr = it->second.addr_;
+    }
+    dhcp_snoop_map_[ifname] = DhcpSnoopEntry(addr, true);
 }
 
+void InterfaceTable::AddDhcpSnoopEntry(const std::string &ifname,
+                                       const Ip4Address &addr) {
+    tbb::mutex::scoped_lock lock(dhcp_snoop_mutex_);
+    DhcpSnoopEntry entry(addr, false);
+    const DhcpSnoopIterator it = dhcp_snoop_map_.find(ifname);
+
+    if (it != dhcp_snoop_map_.end()) {
+        // Retain config_entry_ flag from old entry
+        if (it->second.config_entry_) {
+            entry.config_entry_ = true;
+        }
+
+        // If IP address is not specified, retain old IP address
+        if (addr.to_ulong() == 0) {
+            entry.addr_ = it->second.addr_;
+        }
+    }
+
+    dhcp_snoop_map_[ifname] = entry;
+}
+
+// Audit DHCP Snoop table. Delete the entries which are not seen from config
+void InterfaceTable::AuditDhcpSnoopTable() {
+    tbb::mutex::scoped_lock lock(dhcp_snoop_mutex_);
+    DhcpSnoopIterator it = dhcp_snoop_map_.begin();
+    while (it != dhcp_snoop_map_.end()){
+        DhcpSnoopIterator del_it = it++;
+        if (del_it->second.config_entry_ == false) {
+            dhcp_snoop_map_.erase(del_it);
+        }
+    }
+}
 /////////////////////////////////////////////////////////////////////////////
 // Sandesh routines
 /////////////////////////////////////////////////////////////////////////////
@@ -468,6 +552,10 @@ void Interface::SetItfSandeshData(ItfSandeshData &data) const {
 
             if (vintf->os_index() == Interface::kInvalidIndex) {
                 common_reason += "no-dev ";
+            }
+
+            if (vintf->os_oper_state() == false) {
+                common_reason += "os-state-down ";
             }
 
             if (!ipv4_active_) {

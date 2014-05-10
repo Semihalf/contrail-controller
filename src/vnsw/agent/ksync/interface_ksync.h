@@ -89,7 +89,6 @@ public:
     virtual ~InterfaceKSyncObject();
 
     KSync *ksync() const { return ksync_; }
-    const char *physical_interface_mac() const {return physical_interface_mac_;}
 
     void Init();
     void InitTest();
@@ -99,8 +98,6 @@ public:
 
 private:
     KSync *ksync_;
-    char physical_interface_mac_[ETHER_ADDR_LEN];
-    int test_mode;
     DISALLOW_COPY_AND_ASSIGN(InterfaceKSyncObject);
 };
 

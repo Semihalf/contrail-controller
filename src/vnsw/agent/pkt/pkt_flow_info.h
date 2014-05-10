@@ -18,8 +18,8 @@ struct MatchPolicy;
 struct PktControlInfo {
     PktControlInfo() : 
         vrf_(NULL), intf_(NULL), rt_(NULL), vn_(NULL), vm_(NULL), 
-        vlan_nh_(false), vlan_tag_(0) { };
-    virtual ~PktControlInfo() { };
+        vlan_nh_(false), vlan_tag_(0) { }
+    virtual ~PktControlInfo() { }
 
     const VrfEntry *vrf_;
     const Interface *intf_;
@@ -71,6 +71,8 @@ public:
                                           const VnEntry *vn,
                                           MatchPolicy *m_policy);
     void RewritePktInfo(uint32_t index);
+    void VrfTranslate(const PktInfo *pkt, PktControlInfo *ctrl,
+                      PktControlInfo *rev_flow);
     uint32_t LinkLocalBindPort(const VmEntry *vm, uint8_t proto);
 
 public:

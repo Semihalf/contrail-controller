@@ -21,6 +21,7 @@ import copy
 import argparse
 import ConfigParser
 from pprint import pformat
+#import GreenletProfiler
 
 import logging
 logger = logging.getLogger(__name__)
@@ -80,6 +81,8 @@ _WEB_HOST = '0.0.0.0'
 _WEB_PORT = 8082
 
 _ACTION_RESOURCES = [
+    {'uri': '/ref-update', 'link_name': 'ref-update',
+     'method_name': 'ref_update_http_post'},
     {'uri': '/fqname-to-id', 'link_name': 'name-to-id',
      'method_name': 'fq_name_to_id_http_post'},
     {'uri': '/id-to-fqname', 'link_name': 'id-to-name',
@@ -93,6 +96,10 @@ _ACTION_RESOURCES = [
      'method_name': 'db_check'},
     {'uri': '/fetch-records', 'link_name': 'fetch-records',
      'method_name': 'fetch_records'},
+    {'uri': '/start-profile', 'link_name': 'start-profile',
+     'method_name': 'start_profile'},
+    {'uri': '/stop-profile', 'link_name': 'stop-profile',
+     'method_name': 'stop_profile'},
 ]
 
 
@@ -155,6 +162,9 @@ class VncApiServer(VncApiServerGen):
                                            self._args.listen_port)
         super(VncApiServer, self).__init__()
         self._pipe_start_app = None
+
+        #GreenletProfiler.set_clock_type('wall')
+        self._profile_info = None
 
         # REST interface initialization
         self._get_common = self._http_get_common
@@ -302,10 +312,8 @@ class VncApiServer(VncApiServerGen):
             self._db_init_entries()
 
         # recreate subnet operating state from DB
-        (ok, vn_fq_names) = self._db_conn.dbe_list('virtual-network')
-        for vn_fq_name in vn_fq_names:
-            vn_uuid = self._db_conn.fq_name_to_uuid(
-                'virtual-network', vn_fq_name)
+        (ok, vn_fq_names_uuids) = self._db_conn.dbe_list('virtual-network')
+        for vn_fq_name, vn_uuid in vn_fq_names_uuids:
             try:
                 (ok, vn_dict) = self._db_conn.dbe_read(
                     'virtual-network', {'uuid': vn_uuid})
@@ -381,6 +389,46 @@ class VncApiServer(VncApiServerGen):
             root='/usr/share/doc/python-vnc_cfg_api_server/build/html')
     # end documentation_http_get
 
+    def ref_update_http_post(self):
+        self._post_common(bottle.request, None, None)
+        obj_type = bottle.request.json['type']
+        obj_uuid = bottle.request.json['uuid']
+        ref_type = bottle.request.json['ref-type'].replace('-', '_')
+        operation = bottle.request.json['operation']
+        ref_uuid = bottle.request.json.get('ref-uuid')
+        ref_fq_name = bottle.request.json.get('ref-fq-name')
+        attr = bottle.request.json.get('attr')
+
+        if not ref_uuid and not ref_fq_name:
+            bottle.abort(404, 'Either ref-uuid or ref-fq-name must be specified')
+
+        if not ref_uuid:
+            try:
+                ref_uuid = self._db_conn.fq_name_to_uuid(ref_type, ref_fq_name)
+            except NoIdError:
+                bottle.abort(404, 'Name ' + pformat(fq_name) + ' not found')
+
+        # type-specific hook
+        r_class = self._resource_classes.get(obj_type)
+        if r_class:
+            try:
+                fq_name = self._db_conn.uuid_to_fq_name(obj_uuid)
+            except NoIdError:
+                bottle.abort(404, 'UUID ' + obj_uuid + ' not found')
+            obj_dict = {ref_type+'_refs': [{'to':ref_fq_name, 'uuid': ref_uuid, 'attr':attr}]}
+            (ok, put_result) = r_class.http_put(obj_uuid, fq_name, obj_dict, self._db_conn)
+            if not ok:
+                (code, msg) = put_result
+                self.config_object_error(id, None, obj_type, 'ref_update', msg)
+                abort(code, msg)
+        obj_type = obj_type.replace('-', '_')
+        try:
+            id = self._db_conn.ref_update(obj_type, obj_uuid, ref_type, ref_uuid, {'attr': attr}, operation)
+        except NoIdError:
+            bottle.abort(404, 'uuid ' + obj_uuid + ' not found')
+        return {'uuid': id}
+    # end ref_update_id_http_post
+
     def fq_name_to_id_http_post(self):
         self._post_common(bottle.request, None, None)
         obj_type = bottle.request.json['type'].replace('-', '_')
@@ -444,6 +492,24 @@ class VncApiServer(VncApiServerGen):
         result = self._db_conn.db_read()
         return {'results': result}
     # end fetch_records
+
+    def start_profile(self):
+        #GreenletProfiler.start()
+        pass
+    # end start_profile
+
+    def stop_profile(self):
+        pass
+        #GreenletProfiler.stop()
+        #stats = GreenletProfiler.get_func_stats()
+        #self._profile_info = stats.print_all()
+
+        #return self._profile_info
+    # end stop_profile
+
+    def get_profile_info(self):
+        return self._profile_info
+    # end get_profile_info
 
     def get_resource_class(self, resource_type):
         if resource_type in self._resource_classes:
@@ -532,7 +598,7 @@ class VncApiServer(VncApiServerGen):
 
         config = None
         if args.conf_file:
-            config = ConfigParser.SafeConfigParser()
+            config = ConfigParser.SafeConfigParser({'admin_token': None})
             config.read([args.conf_file])
             defaults.update(dict(config.items("DEFAULTS")))
             if 'multi_tenancy' in config.options('DEFAULTS'):
@@ -672,6 +738,11 @@ class VncApiServer(VncApiServerGen):
                 conf_sections=conf_sections)
             self._extension_mgrs['resourceApi'] = ExtensionManager(
                 'vnc_cfg_api.resourceApi',
+                api_server_ip=self._args.listen_ip_addr,
+                api_server_port=self._args.listen_port,
+                conf_sections=conf_sections)
+            self._extension_mgrs['neutronApi'] = ExtensionManager(
+                'vnc_cfg_api.neutronApi',
                 api_server_ip=self._args.listen_ip_addr,
                 api_server_port=self._args.listen_port,
                 conf_sections=conf_sections)
@@ -861,13 +932,25 @@ class VncApiServer(VncApiServerGen):
     def _http_get_common(self, request, uuid=None):
         # TODO check api + resource perms etc.
         if self._args.multi_tenancy and uuid:
-            return self._permissions.check_perms_read(request, uuid)
+            if isinstance(uuid, list):
+                for u_id in uuid:
+                    ok, result = self._permissions.check_perms_read(request,
+                                                                    u_id)
+                    if not ok:
+                        return ok, result
+            else:
+                return self._permissions.check_perms_read(request, uuid)
 
         return (True, '')
     # end _http_get_common
 
     def _http_put_common(self, request, obj_type, obj_uuid, obj_fq_name,
                          obj_dict):
+        # If not connected to zookeeper do not allow operations that
+        # causes the state change
+        if not self._db_conn._zk_db.is_connected():
+            return (False,
+                    (503, "Not connected to zookeeper. Not able to perform requested action"))
         if obj_dict:
             fq_name_str = ":".join(obj_fq_name)
 
@@ -928,6 +1011,11 @@ class VncApiServer(VncApiServerGen):
     # parent_type needed for perms check. None for derived objects (eg.
     # routing-instance)
     def _http_delete_common(self, request, obj_type, uuid, parent_type):
+        # If not connected to zookeeper do not allow operations that
+        # causes the state change
+        if not self._db_conn._zk_db.is_connected():
+            return (False,
+                    (503, "Not connected to zookeeper. Not able to perform requested action"))
         fq_name_str = ":".join(self._db_conn.uuid_to_fq_name(uuid))
         apiConfig = VncApiCommon(identifier_name=fq_name_str)
         apiConfig.operation = 'delete'
@@ -976,6 +1064,11 @@ class VncApiServer(VncApiServerGen):
     # end _http_delete_common
 
     def _http_post_common(self, request, obj_type, obj_dict):
+        # If not connected to zookeeper do not allow operations that
+        # causes the state change
+        if not self._db_conn._zk_db.is_connected():
+            return (False,
+                    (503, "Not connected to zookeeper. Not able to perform requested action"))
         if not obj_dict:
             # TODO check api + resource perms etc.
             return (True, None)
@@ -1194,8 +1287,12 @@ def main(args_str=None):
 
 # end main
 
-if __name__ == "__main__":
+def server_main(args_str=None):
     import cgitb
     cgitb.enable(format='text')
 
     main()
+#server_main
+
+if __name__ == "__main__":
+    server_main()

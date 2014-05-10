@@ -5,7 +5,6 @@
 #include "vr_defs.h"
 #include "cmn/agent_cmn.h"
 #include "oper/route_common.h"
-#include "ksync/interface_ksync.h"
 #include "pkt/pkt_init.h"
 #include "services/dhcp_proto.h"
 #include "services/services_types.h"
@@ -33,11 +32,12 @@ DhcpHandler::DhcpHandler(Agent *agent, boost::shared_ptr<PktInfo> info,
 
 bool DhcpHandler::Run() {
     DhcpProto *dhcp_proto = agent()->GetDhcpProto();
-    Interface *itf = agent()->GetInterfaceTable()->FindInterface(GetIntf());
+    Interface *itf =
+        agent()->GetInterfaceTable()->FindInterface(GetInterfaceIndex());
     if (itf == NULL) {
         dhcp_proto->IncrStatsOther();
         DHCP_TRACE(Error, "Received DHCP packet on invalid interface : "
-                   << GetIntf());
+                   << GetInterfaceIndex());
         return true;
     }
 
@@ -50,13 +50,13 @@ bool DhcpHandler::Run() {
     if (itf->type() != Interface::VM_INTERFACE) {
         dhcp_proto->IncrStatsErrors();
         DHCP_TRACE(Error, "Received DHCP packet on non VM port interface : "
-                   << GetIntf());
+                   << GetInterfaceIndex());
         return true;
     }
     vm_itf_ = static_cast<VmInterface *>(itf);
     if (!vm_itf_->ipv4_forwarding()) {
         DHCP_TRACE(Error, "DHCP request on VM port with disabled ipv4 service: "
-                   << GetIntf());
+                   << GetInterfaceIndex());
         return true;
     }
 
@@ -95,7 +95,7 @@ bool DhcpHandler::Run() {
         case DHCP_DECLINE:
             dhcp_proto->IncrStatsDecline();
             DHCP_TRACE(Error, "DHCP Client declined the offer : vrf = " << 
-                       pkt_info_->vrf << " ifindex = " << GetIntf());
+                       pkt_info_->vrf << " ifindex = " << GetInterfaceIndex());
             return true;
 
         case DHCP_ACK:
@@ -143,7 +143,7 @@ bool DhcpHandler::ReadOptions() {
         memcmp(dhcp_->options, DHCP_OPTIONS_COOKIE, 4)) {
         agent()->GetDhcpProto()->IncrStatsErrors();
         DHCP_TRACE(Error, "DHCP options cookie missing; vrf = " <<
-                   pkt_info_->vrf << " ifindex = " << GetIntf());
+                   pkt_info_->vrf << " ifindex = " << GetInterfaceIndex());
         return false;
     }
 
@@ -205,7 +205,7 @@ void DhcpHandler::FillDhcpInfo(uint32_t addr, int plen, uint32_t gw, uint32_t dn
 
 
 bool DhcpHandler::FindLeaseData() {
-    config_.ifindex = GetIntf();
+    config_.ifindex = GetInterfaceIndex();
     Ip4Address ip = vm_itf_->ip_addr();
     // Change client name to VM name; this is the name assigned to the VM
     client_name_ = vm_itf_->vm_name();
@@ -215,12 +215,10 @@ bool DhcpHandler::FindLeaseData() {
                 Inet4UnicastAgentRouteTable::FindResolveRoute(
                              vm_itf_->vrf()->GetName(), ip);
             if (rt) {
-                uint8_t plen = rt->plen();
                 uint32_t gw = agent()->GetGatewayId().to_ulong();
-                uint32_t mask = plen ? (0xFFFFFFFF << (32 - plen)) : 0;
                 boost::system::error_code ec;
-                if ((rt->addr().to_ulong() & mask) == 
-                    Ip4Address::from_string("169.254.0.0", ec).to_ulong())
+                if (IsIp4SubnetMember(rt->addr(),
+                    Ip4Address::from_string("169.254.0.0", ec), rt->plen()))
                     gw = 0;
                 FillDhcpInfo(ip.to_ulong(), rt->plen(), gw, gw);
                 return true;
@@ -234,9 +232,7 @@ bool DhcpHandler::FindLeaseData() {
         const std::vector<VnIpam> &ipam = vm_itf_->vn()->GetVnIpam();
         unsigned int i;
         for (i = 0; i < ipam.size(); ++i) {
-            uint32_t mask = ipam[i].plen ? (0xFFFFFFFF << (32 - ipam[i].plen)) : 0;
-            if ((ip.to_ulong() & mask) == 
-                (ipam[i].ip_prefix.to_ulong() & mask)) {
+            if (IsIp4SubnetMember(ip, ipam[i].ip_prefix, ipam[i].plen)) {
                 uint32_t default_gw = ipam[i].default_gw.to_ulong();
                 FillDhcpInfo(ip.to_ulong(), ipam[i].plen, default_gw, default_gw);
                 return true;
@@ -744,7 +740,8 @@ void DhcpHandler::SendDhcpResponse() {
 #error "Unsupported platform"
 #endif
 
-    Send(len, GetIntf(), pkt_info_->vrf, AGENT_CMD_SWITCH, PktHandler::DHCP);
+    Send(len, GetInterfaceIndex(), pkt_info_->vrf,
+         AGENT_CMD_SWITCH, PktHandler::DHCP);
 }
 
 void DhcpHandler::UpdateStats() {
