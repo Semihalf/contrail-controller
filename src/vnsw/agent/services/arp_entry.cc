@@ -161,7 +161,6 @@ void ArpEntry::AddArpRoute(bool resolved) {
 #else
 #error "Unsupported platform"
 #endif
-    memcpy(mac.ether_addr_octet, mac_address_, ETH_ALEN);
     if (arp_nh && arp_nh->GetResolveState() && 
         memcmp(&mac, arp_nh->GetMac(), sizeof(mac)) == 0) {
         // MAC address unchanged, ignore
@@ -192,7 +191,13 @@ bool ArpEntry::DeleteArpRoute() {
         return true;
 
     struct ether_addr mac;
+#if defined(__linux__)
     memcpy(mac.ether_addr_octet, mac_address_, ETH_ALEN);
+#elif defined(__FreeBSD__)
+    memcpy(mac.octet, mac_address_, ETHER_ADDR_LEN);
+#else
+#error "Unsupported platform"
+#endif
     stringstream mac_string;
     mac_string << ether_ntoa((struct ether_addr *)&mac);
     ARP_TRACE(Trace, "Delete", ip.to_string(), vrf_name, mac_string.str());

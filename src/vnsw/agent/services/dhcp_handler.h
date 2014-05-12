@@ -89,7 +89,7 @@ struct dhcphdr {
 struct ConfigRecord {
     ConfigRecord() : ip_addr(0), subnet_mask(0), bcast_addr(0), gw_addr(0), 
                      dns_addr(0), ifindex(0), plen(0), lease_time(-1) {
-        memset(mac_addr, 0, ETH_ALEN);
+        memset(mac_addr, 0, ETHER_ADDR_LEN);
     }
 
     uint32_t ip_addr;

@@ -251,7 +251,11 @@ static void BuildVrfAndServiceVlanInfo(Agent *agent,
                 << rule.service_chain_address << " : " << vrf_node->name());
 
             ether_addr smac;
+#if defined(__linux__)
             memcpy(smac.ether_addr_octet, agent->vrrp_mac(), ETHER_ADDR_LEN);
+#elif defined(__FreeBSD__)
+            memcpy(smac.octet, agent->vrrp_mac(), ETHER_ADDR_LEN);
+#endif
             ether_addr dmac = *ether_aton(Agent::BcastMac().c_str());
             if (rule.src_mac != Agent::NullString()) {
                 smac = *ether_aton(rule.src_mac.c_str());
@@ -988,7 +992,7 @@ void VmInterface::GetOsParams(Agent *agent) {
     memcpy(mac_.ether_addr_octet, agent->vrrp_mac(), ETHER_ADDR_LEN);
     os_oper_state_ = true;
 #elif defined(__FreeBSD__)
-    memcpy(mac_.octet, agent_vrrp_mac, ETHER_ADDR_LEN);
+    memcpy(mac_.octet, agent->vrrp_mac(), ETHER_ADDR_LEN);
 #else
 #error "Unsupported platform"
 #endif

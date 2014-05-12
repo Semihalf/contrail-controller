@@ -666,7 +666,8 @@ void DnsHandler::SendDnsResponse() {
            dest_ip, ntohs(pkt_info_->transp.udp->uh_sport));
     dns_resp_size_ += sizeof(ip);
     IpHdr(dns_resp_size_, src_ip, dest_ip, IPPROTO_UDP);
-    EthHdr(agent_vrrp_mac, dest_mac, 0x800);
+    EthHdr(agent()->vhost_interface()->mac().octet, dest_mac,
+           IP_PROTOCOL);
     dns_resp_size_ += sizeof(ether_header);
 #else
 #error "Unsupported platform"

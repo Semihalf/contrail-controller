@@ -247,11 +247,12 @@ void Interface::GetOsParams(Agent *agent) {
 #if defined(__linux__)
             mac_.ether_addr_octet[5] = os_index_;
 #elif defined(__FreeBSD__)
-        mac_.octet[5] = os_index_;
+            mac_.octet[5] = os_index_;
 #endif
-       os_oper_state_ = test_oper_state_;
+        }
+        os_oper_state_ = test_oper_state_;
 
-       return;
+        return;
     }
 
     struct ifreq ifr;

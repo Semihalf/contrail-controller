@@ -3,6 +3,7 @@
 #
 
 # -*- mode: python; -*-
+return
 
 Import('AgentEnv')
 env = AgentEnv.Clone()

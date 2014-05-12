@@ -9,7 +9,7 @@ vpath = '#/third_party/gperftools-2.1'
 config_opts = '--prefix=' + str(Dir('#/build'))
 config_opts += ' --enable-frame-pointers'
 # + ' enable_heap_checker=yes'
-cmd = ('(cd ' + Dir('.').abspath + '; ' + str(Dir(vpath)) +
+cmd = ('(cd ' + Dir('.').abspath + '; LIBS=-lexecinfo ' + str(Dir(vpath)) +
        '/configure' + ' ' + config_opts + '; make clean; make; make install)')
 
 gperftools_make = env.Command('config.status', str(Dir(vpath)), cmd)

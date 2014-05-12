@@ -114,7 +114,8 @@ void IcmpHandler::SendResponse() {
     len += sizeof(ip);
     IpHdr(len, htonl(pkt_info_->ip_daddr), 
           htonl(pkt_info_->ip_saddr), IPPROTO_ICMP);
-    EthHdr(agent_vrrp_mac, pkt_info_->eth->ether_shost, 0x800);
+    EthHdr(agent()->vhost_interface()->mac().octet,
+           pkt_info_->eth->ether_shost, IP_PROTOCOL);
     len += sizeof(ether_header);
 #else
 #error "Unsupported platform"

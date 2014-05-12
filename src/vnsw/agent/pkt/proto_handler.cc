@@ -83,8 +83,8 @@ void ProtoHandler::IpHdr(uint16_t len, in_addr_t src, in_addr_t dest,
     ip->frag_off = 0;
     ip->ttl = 16;
     ip->protocol = protocol;
-    ip->check = 0; 
-    ip->saddr = src; 
+    ip->check = 0;
+    ip->saddr = src;
     ip->daddr = dest;
 
     ip->check = Csum((uint16_t *)ip, ip->ihl * 4, 0);
@@ -99,8 +99,8 @@ void ProtoHandler::IpHdr(uint16_t len, in_addr_t src, in_addr_t dest,
     ip->ip_off = 0;
     ip->ip_ttl = 16;
     ip->ip_p = protocol;
-    ip->ip_sum = 0; 
-    ip->ip_src.s_addr = src; 
+    ip->ip_sum = 0;
+    ip->ip_src.s_addr = src;
     ip->ip_dst.s_addr = dest;
 
     ip->ip_sum = Csum((uint16_t *)ip, ip->ip_hl * 4, 0);
@@ -117,12 +117,12 @@ void ProtoHandler::UdpHdr(uint16_t len, in_addr_t src, uint16_t src_port,
     udp->source = htons(src_port);
     udp->dest = htons(dest_port);
     udp->len = htons(len);
-    udp->check = 0; 
+    udp->check = 0;
 #elif defined(__FreeBSD__)
     udp->uh_sport = htons(src_port);
     udp->uh_dport = htons(dest_port);
     udp->uh_ulen = htons(len);
-    udp->uh_sum = 0; 
+    udp->uh_sum = 0;
 #else
 #error "Unsupported platform"
 #endif
@@ -132,29 +132,6 @@ void ProtoHandler::UdpHdr(uint16_t len, in_addr_t src, uint16_t src_port,
 #endif
 }
 
-#if defined(__linux__)
-#elif defined(__FreeBSD__)
-    struct tcphdr *tcp = pkt_info_->transp.tcp;
-    tcp->th_sport = htons(sport);
-    tcp->th_dport = htons(dport);
-
-    if (is_syn) {
-	tcp->th_flags = TH_SYN;
-    } else {
-        //If not sync, by default we are sending an ack
-	tcp->th_flags = TH_ACK;
-    }
-
-    tcp->th_seq = htons(seq_no);
-    tcp->th_ack = htons(seq_no + 1);
-    //Just a random number;
-    tcp->th_win = htons(1000);
-    tcp->th_off = 5;
-    tcp->th_sum = 0;
-    tcp->th_sum = TcpCsum(src, dst, len, tcp);
-#else
-#error "Unsupported platform"
-#endif
 uint32_t ProtoHandler::Sum(uint16_t *ptr, std::size_t len, uint32_t sum) {
     while (len > 1) {
         sum += *ptr++;
@@ -185,35 +162,4 @@ uint16_t ProtoHandler::UdpCsum(in_addr_t src, in_addr_t dest,
     sum = Sum((uint16_t *)&phdr, sizeof(PseudoUdpHdr), sum);
     return Csum((uint16_t *)udp, len, sum);
 }
-
-#if defined(__linux__)
-#elif defined(__FreeBSD__)
-        TcpHdr(htonl(pkt_info_->ip_daddr), ntohs(tcp->th_dport), 
-               htonl(pkt_info_->ip_saddr), ntohs(tcp->th_sport), 
-               false, ntohs(tcp->th_ack), 
-               ntohs(pkt_info_->ip->ip_len) - sizeof(ip));
-#else
-#error "Unsupported platform"
-#endif
-#if defined(__linux__)
-#elif defined(__FreeBSD__)
-        UdpHdr(ntohs(udp->uh_ulen), pkt_info_->ip_daddr, ntohs(udp->uh_dport),
-               pkt_info_->ip_saddr, ntohs(udp->uh_sport));
-#else
-#error "Unsupported platform"
-#endif
-#if defined(__linux__)
-
-#elif defined(__FreeBSD__)
-    ip *ip = pkt_info_->ip;
-
-    IpHdr(ntohs(ip->ip_len), ip->ip_dst.s_addr, ip->ip_src.s_addr, ip->ip_p);
-#else
-#error "Unsupported platform"
-#endif
-#if defined(__linux__)
-#elif defined(__FreeBSD__)
-    ether_header *eth = pkt_info_->eth;
-    EthHdr(eth->ether_dhost, eth->ether_shost, ntohs(eth->ether_type));
-#endif
 ///////////////////////////////////////////////////////////////////////////////

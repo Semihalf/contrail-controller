@@ -917,7 +917,11 @@ void NHKSyncEntry::SetEncap(std::vector<int8_t> &encap) {
 #endif
     } else {
         Agent *agent = ksync_obj_->ksync()->agent();
+#if defined(__linux__)
         smac = agent->vhost_interface()->mac().ether_addr_octet;
+#elif defined(__FreeBSD__)
+        smac = agent->vhost_interface()->mac().octet;
+#endif
     }
     for (int i = 0 ; i < ETHER_ADDR_LEN; i++) {
         encap.push_back(smac[i]);

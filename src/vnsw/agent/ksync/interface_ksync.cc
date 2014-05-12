@@ -221,14 +221,22 @@ bool InterfaceKSyncEntry::Sync(DBEntry *e) {
 
     case Interface::PHYSICAL:
     case Interface::INET:
+#if defined(__linux__)
         memcpy(smac, intf->mac().ether_addr_octet, ETHER_ADDR_LEN);
+#elif defined(__FreeBSD__)
+        memcpy(smac, intf->mac().octet, ETHER_ADDR_LEN);
+#endif
         break;
     default:
         assert(0);
     }
 
     if (memcmp(smac, mac(), ETHER_ADDR_LEN)) {
+#if defined(__linux__)
         memcpy(mac_.ether_addr_octet, smac, ETHER_ADDR_LEN);
+#elif defined(__FreeBSD__)
+        memcpy(mac_.octet, smac, ETHER_ADDR_LEN);
+#endif
         ret = true;
     }
 

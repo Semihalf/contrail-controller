@@ -5,7 +5,13 @@
 #ifndef vnsw_agent_hpp
 #define vnsw_agent_hpp
 
+#if defined(__linux__)
 #include <netinet/ether.h>
+#elif defined(__FreeBSD__)
+#include <net/ethernet.h>
+#else
+#error "Unsupported platform"
+#endif
 
 class AgentParam;
 class AgentInit;

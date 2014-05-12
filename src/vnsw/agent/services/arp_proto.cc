@@ -176,12 +176,6 @@ bool ArpProto::TimerExpiry(ArpKey &key, uint32_t timer_type) {
 
 ArpEntry *ArpProto::gratuitous_arp_entry() const {
     return gratuitous_arp_entry_;
-#if defined(__linux__)
-#elif defined(__FreeBSD__)
-    ServicesSandesh::MacToString(mac.octet, mac_str);
-#else
-#error "Unsupported platform"
-#endif
 }
 
 void ArpProto::set_gratuitous_arp_entry(ArpEntry *entry) {
