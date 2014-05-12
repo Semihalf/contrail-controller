@@ -990,12 +990,12 @@ void VmInterface::GetOsParams(Agent *agent) {
     os_index_ = Interface::kInvalidIndex;
 #if defined(__linux__)
     memcpy(mac_.ether_addr_octet, agent->vrrp_mac(), ETHER_ADDR_LEN);
-    os_oper_state_ = true;
 #elif defined(__FreeBSD__)
     memcpy(mac_.octet, agent->vrrp_mac(), ETHER_ADDR_LEN);
 #else
 #error "Unsupported platform"
 #endif
+    os_oper_state_ = true;
 }
 
 // A VM Interface is L3 active under following conditions,
