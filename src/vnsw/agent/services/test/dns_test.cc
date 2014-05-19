@@ -18,7 +18,7 @@
 #include <pkt/test_tap_interface.h>
 #include <services/services_init.h>
 #include <ksync/ksync_init.h>
-#include <openstack/instance_service_server.h>
+// #include <openstack/instance_service_server.h>
 #include <oper/vrf.h>
 #include <pugixml/pugixml.hpp>
 #include <services/dns_proto.h>
@@ -317,9 +317,10 @@ public:
 
     void CheckSendXmppUpdate() {
         // Call the SendXmppUpdate directly and check that all items are done
-        AgentDnsXmppChannel *tmp_xmpp_channel = new AgentDnsXmppChannel(NULL, "server", 0);
+        AgentDnsXmppChannel *tmp_xmpp_channel = 
+            new AgentDnsXmppChannel(Agent::GetInstance(), NULL, "server", 0);
         Agent *agent = Agent::GetInstance();
-        boost::shared_ptr<PktInfo> pkt_info(new PktInfo());;
+        boost::shared_ptr<PktInfo> pkt_info(new PktInfo(NULL, 0));;
         DnsHandler *dns_handler = new DnsHandler(agent, pkt_info, *agent->GetEventManager()->io_service());
         DnsUpdateData data;
         FillDnsUpdateData(data, 10);
@@ -687,7 +688,7 @@ TEST_F(DnsTest, DnsDropTest) {
     Agent::GetInstance()->GetDnsProto()->ClearStats();
 }
 
-void RouterIdDepInit() {
+void RouterIdDepInit(Agent *agent) {
 }
 
 int main(int argc, char *argv[]) {

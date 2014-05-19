@@ -58,22 +58,27 @@ public:
             static_cast<DBTablePartition *>(table->GetTablePartition(inst_id_));
         BgpRoute *route;
 
-        // As of now, this code walks through all the prefixes even if we are
-        // searching for a specific one. We can improve it by doing a lookup
-        if (table->name() == req_->get_start_routing_table()) {
+        bool exact_lookup = false;
+        if (!req_->get_prefix().empty() && !req_->get_longer_match()) {
+            exact_lookup = true;
+            auto_ptr<DBEntry> key = table->AllocEntryStr(req_->get_prefix());
+            route = static_cast<BgpRoute *>(partition->Find(key.get()));
+        } else if (table->name() == req_->get_start_routing_table()) {
             auto_ptr<DBEntry> key = table->AllocEntryStr(req_->get_start_prefix());
             route = static_cast<BgpRoute *>(partition->lower_bound(key.get()));
         } else {
             route = static_cast<BgpRoute *>(partition->GetFirst());
         }
         for (int i = 0; route && (!count || i < count);
-                route = static_cast<BgpRoute *>(partition->GetNext(route)), i++) {
+             route = static_cast<BgpRoute *>(partition->GetNext(route)), i++) {
             if (!MatchPrefix(req_->get_prefix(), route,
                              req_->get_longer_match()))
                 continue;
             ShowRoute show_route;
             route->FillRouteInfo(table, &show_route);
             route_list.push_back(show_route);
+            if (exact_lookup)
+                break;
         }
     }
 
@@ -120,12 +125,28 @@ bool ShowRouteHandler::CallbackS1(const Sandesh *sr,
     ShowRouteHandler handler(req, inst_id);
     BgpSandeshContext *bsc = static_cast<BgpSandeshContext *>(req->client_context());
     RoutingInstanceMgr *rim = bsc->bgp_server->routing_instance_mgr();
+
+    string exact_routing_table = req->get_routing_table();
+    string exact_routing_instance;
+    string start_routing_instance;
+    if (exact_routing_table.empty()) {
+        exact_routing_instance = req->get_routing_instance();
+    } else {
+        exact_routing_instance =
+            RoutingInstance::GetVrfFromTableName(exact_routing_table);
+    }
+    if (exact_routing_instance.empty()) {
+        start_routing_instance = req->get_start_routing_instance();
+    } else {
+        start_routing_instance = exact_routing_instance;
+    }
+
     RoutingInstanceMgr::NameIterator i =
-            rim->name_lower_bound(req->get_start_routing_instance());
+        rim->name_lower_bound(start_routing_instance);
     uint32_t count = 0;
-    for (;i != rim->name_end(); i++) {
-        if (!handler.match(req->get_routing_instance(), i->first))
-            continue;
+    while (i != rim->name_end()) {
+        if (!handler.match(exact_routing_instance, i->first))
+            break;
         RoutingInstance::RouteTableList::const_iterator j;
         if (req->get_start_routing_instance() == i->first)
             j = i->second->GetTables().lower_bound(req->get_start_routing_table());
@@ -148,7 +169,7 @@ bool ShowRouteHandler::CallbackS1(const Sandesh *sr,
 
             vector<ShowRoute> route_list;
             handler.BuildShowRouteTable(table, route_list,
-                                req->get_count()?req->get_count() - count : 0);
+                req->get_count() ? req->get_count() - count : 0);
             if (route_list.size()) {
                 srt.set_routes(route_list);
                 mydata->route_table_list.push_back(srt);
@@ -157,6 +178,8 @@ bool ShowRouteHandler::CallbackS1(const Sandesh *sr,
             if (req->get_count() && count >= req->get_count()) break;
         }
         if (req->get_count() && count >= req->get_count()) break;
+
+        i++;
     }
     return true;
 }
@@ -1293,22 +1316,24 @@ public:
             if (!bic->neighbors().size())
                 continue;
 
-	        for (BgpInstanceConfig::NeighborMap::const_iterator loc2 =
+            for (BgpInstanceConfig::NeighborMap::const_iterator loc2 =
                  bic->neighbors().begin();
-	             loc2 != bic->neighbors().end(); ++loc2) {
-	            const autogen::BgpRouterParams &peer = loc2->second->peer_config();
+                 loc2 != bic->neighbors().end(); ++loc2) {
+                const autogen::BgpRouterParams &peer = loc2->second->peer_config();
 
-	            ShowBgpNeighborConfig nbr;
-	            nbr.set_instance_name(loc2->second->InstanceName());
-	            nbr.set_name(loc2->second->name());
-	            nbr.set_vendor(peer.vendor);
-	            nbr.set_autonomous_system(peer.autonomous_system);
-	            nbr.set_identifier(peer.identifier);
-	            nbr.set_address(peer.address);
-	            nbr.set_address_families(loc2->second->address_families());
+                ShowBgpNeighborConfig nbr;
+                nbr.set_instance_name(loc2->second->InstanceName());
+                nbr.set_name(loc2->second->name());
+                nbr.set_local_identifier(loc2->second->local_identifier());
+                nbr.set_local_as(loc2->second->local_as());
+                nbr.set_vendor(peer.vendor);
+                nbr.set_autonomous_system(peer.autonomous_system);
+                nbr.set_identifier(peer.identifier);
+                nbr.set_address(peer.address);
+                nbr.set_address_families(loc2->second->address_families());
 
-	            nbr_list.push_back(nbr);
-	        }
+                nbr_list.push_back(nbr);
+            }
         }
 
         ShowBgpNeighborConfigResp *resp = new ShowBgpNeighborConfigResp;
@@ -1414,44 +1439,44 @@ void ShowXmppServerReq::HandleRequest() const {
 class ClearComputeNodeHandler {
 public:
     static bool CallbackS1(const Sandesh *sr,
-            const RequestPipeline::PipeSpec ps, int stage, int instNum,
-            RequestPipeline::InstData *data) {
+        const RequestPipeline::PipeSpec ps, int stage, int instNum,
+        RequestPipeline::InstData *data) {
 
         const ClearComputeNodeConnection *req =
             static_cast<const ClearComputeNodeConnection *>(ps.snhRequest_.get());
-	BgpSandeshContext *bsc =
-	    static_cast<BgpSandeshContext *>(req->client_context());
-	XmppServer *server = bsc->xmpp_peer_manager->xmpp_server();
-     
-	ClearComputeNodeConnectionResp *resp = new ClearComputeNodeConnectionResp;
-	if (req->get_hostname_or_all().compare("all") != 0) {
-	    XmppConnection *connection = 
-		server->FindConnectionbyHostName(req->get_hostname_or_all());
-	    if (connection) {
-	       server->ClearConnection(connection);
-	       resp->set_sucess(true);
-	    } else {
-	       resp->set_sucess(false);
-	    }
-	} else {
-	    if (server->ConnectionsCount()) {
-		server->ClearAllConnections();
-		resp->set_sucess(true);
-	    } else {
-		resp->set_sucess(false);
-	    }
-	}
+        BgpSandeshContext *bsc =
+            static_cast<BgpSandeshContext *>(req->client_context());
+        XmppServer *server = bsc->xmpp_peer_manager->xmpp_server();
 
-	resp->set_context(req->context());
-	resp->Response();
-	return(true);
+        ClearComputeNodeConnectionResp *resp = new ClearComputeNodeConnectionResp;
+        if (req->get_hostname_or_all().compare("all") != 0) {
+            XmppConnection *connection =
+                server->FindConnectionbyHostName(req->get_hostname_or_all());
+            if (connection) {
+                server->ClearConnection(connection);
+                resp->set_sucess(true);
+            } else {
+                resp->set_sucess(false);
+            }
+        } else {
+            if (server->ConnectionsCount()) {
+                server->ClearAllConnections();
+                resp->set_sucess(true);
+            } else {
+                resp->set_sucess(false);
+            }
+        }
+
+        resp->set_context(req->context());
+        resp->Response();
+        return(true);
     }
 };
 
 void ClearComputeNodeConnection::HandleRequest() const {
 
     if (ControlNode::GetTestMode() == false) {
-	ClearComputeNodeConnectionResp *resp = new ClearComputeNodeConnectionResp;
+        ClearComputeNodeConnectionResp *resp = new ClearComputeNodeConnectionResp;
         resp->set_context(context());
         resp->set_more(false);
         resp->Response();

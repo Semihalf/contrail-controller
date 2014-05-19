@@ -13,7 +13,9 @@ setup(
     package_data={'': ['*.html', '*.css', '*.xml']},
     zip_safe=False,
     long_description="VNC Configuration Schema Transformer",
-    install_requires=[
-        'zc_zookeeper_static',
-    ]
+    entry_points = {
+         'console_scripts' : [
+             'contrail-schema = schema_transformer.to_bgp:server_main',
+         ],
+    },
 )

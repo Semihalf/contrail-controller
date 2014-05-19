@@ -28,12 +28,10 @@ The control-node daemon code is located under (src/{bgp,control-node,ifmap,xmpp}
 The compute-node agent (src/vnsw) is a deamon than runs on every
 compute node and programs the data-plane in the host operating system.
 
-
 Data gathered from all these components is collected into a logically centralized database (src/{analytics,opserver}).
 
 ### Contributing code
 * Sign the [CLA](https://secure.echosign.com/public/hostedForm?formid=6G36BHPX974EXY)
-* Push your changes to a topic branch in your fork of the repository.
-* Submit a pull request to the contrail repository.
+* Submit change requests via gerrit at http://review.opencontrail.org.
 
 [![ga](https://www.google-analytics.com/__utm.gif?utmac=UA-44166833-1&utmp=contrail-controller%2FREADME.md&utmdt=README.md)](https://www.google-analytics.com)

@@ -46,6 +46,8 @@ public:
         if (restart) {
             timer_->Start(timer_->time_, timer_->handler_,
                           timer_->error_handler_);
+        } else if (timer_->delete_on_completion_) {
+            TimerManager::DeleteTimer(timer_.get());
         }
         return true;
     }
@@ -72,10 +74,11 @@ private:
 };
 
 Timer::Timer(boost::asio::io_service &service, const std::string &name,
-          int task_id, int task_instance)
+          int task_id, int task_instance, bool delete_on_completion)
     : boost::asio::monotonic_deadline_timer(service), name_(name), handler_(NULL),
     error_handler_(NULL), state_(Init), timer_task_(NULL), time_(0),
-    task_id_(task_id), task_instance_(task_instance), seq_no_(0) {
+    task_id_(task_id), task_instance_(task_instance), seq_no_(0),
+    delete_on_completion_(delete_on_completion) {
     refcount_ = 0;
 }
 
@@ -112,6 +115,18 @@ bool Timer::Start(int time, Handler handler, ErrorHandler error_handler) {
     SetState(Running);
     async_wait(boost::bind(Timer::StartTimerTask, this, TimerPtr(this), time, 
                            seq_no_, boost::asio::placeholders::error));
+    return true;
+}
+
+bool Timer::Reschedule(int time)
+{
+    if (state_ != Fired)
+        return false;
+
+    if (time < 0)
+        return false;
+
+    time_ = time;
     return true;
 }
 
@@ -171,8 +186,9 @@ tbb::mutex TimerManager::mutex_;
 
 Timer *TimerManager::CreateTimer(
             boost::asio::io_service &service, const std::string &name,
-            int task_id, int task_instance) {
-    Timer *timer = new Timer(service, name, task_id, task_instance);
+            int task_id, int task_instance, bool delete_on_completion) {
+    Timer *timer = new Timer(service, name, task_id, task_instance,
+                             delete_on_completion);
     AddTimer(timer);
     return timer;
 }
@@ -192,7 +208,9 @@ void TimerManager::AddTimer(Timer *timer) {
 bool TimerManager::DeleteTimer(Timer *timer) {
     if (!timer || timer->fired()) return false;
 
-    timer->Cancel();
+    if (!timer->Cancel() && timer->IsDeleteOnCompletion())
+        return false;
+
     tbb::mutex::scoped_lock lock(mutex_);
     timer_ref_.erase(TimerPtr(timer));
 

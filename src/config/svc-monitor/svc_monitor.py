@@ -59,6 +59,8 @@ _SVC_VNS = {_MGMT_STR:  [_SVC_VN_MGMT,  '250.250.1.0/24'],
 _CHECK_SVC_VM_HEALTH_INTERVAL = 30
 _CHECK_CLEANUP_INTERVAL = 5
 
+# zookeeper client connection
+_zookeeper_client = None
 
 class SvcMonitor(object):
 
@@ -295,18 +297,19 @@ class SvcMonitor(object):
         return si_fq_str.split(':')[1]
     # enf _get_si_fq_str_to_proj_name
 
-    def _get_vn_id(self, proj_obj, vn_fq_name,
+    def _get_vn_id(self, proj_obj, vn_fq_name_str,
                    shared_vn_name=None,
                    shared_vn_subnet=None):
         vn_id = None
 
-        if vn_fq_name:
+        if vn_fq_name_str:
+            vn_fq_name = vn_fq_name_str.split(':')
             # search for provided VN
             try:
                 vn_id = self._vnc_lib.fq_name_to_id(
                     'virtual-network', vn_fq_name)
             except NoIdError:
-                self._svc_syslog("Error: vn_name %s not found" % (vn_name))
+                self._svc_syslog("Error: vn_fq_name %s not found" % (vn_fq_name_str))
         else:
             # search or create shared VN
             domain_name, proj_name = proj_obj.get_fq_name()
@@ -323,8 +326,10 @@ class SvcMonitor(object):
 
     def _set_svc_vm_if_properties(self, vmi_obj, vn_obj):
         # confirm service vm by checking reference to service instance
-        vm_obj = self._vnc_lib.virtual_machine_read(
-            fq_name_str=vmi_obj.parent_name)
+        vm_id = get_vm_id_from_interface(vmi_obj)
+        if vm_id is None:
+            return
+        vm_obj = self._vnc_lib.virtual_machine_read(id=vm_id)
         si_list = vm_obj.get_service_instance_refs()
         if not si_list:
             return
@@ -376,6 +381,9 @@ class SvcMonitor(object):
         # set static routes
         if st_if.get_static_route_enable():
             static_routes = si_if.get_static_routes()
+            if not static_routes:
+                static_routes = {'route':[]}
+
             try:
                 domain_name, proj_name = si_obj.get_parent_fq_name()
                 rt_name = si_obj.uuid + ' ' + str(idx)
@@ -443,17 +451,12 @@ class SvcMonitor(object):
                 func = getattr(si_props, funcname)
                 vn_fq_name_str = func()
 
-            vn_fq_name = None
-            if vn_fq_name_str:
-                domain, proj, vn_name = vn_fq_name_str.split(':')
-                vn_fq_name = [domain, proj, vn_name]
-
             if itf_type in _SVC_VNS:
-                vn_id = self._get_vn_id(proj_obj, vn_fq_name,
+                vn_id = self._get_vn_id(proj_obj, vn_fq_name_str,
                                         _SVC_VNS[itf_type][0],
                                         _SVC_VNS[itf_type][1])
             else:
-                vn_id = self._get_vn_id(proj_obj, vn_fq_name)
+                vn_id = self._get_vn_id(proj_obj, vn_fq_name_str)
             if vn_id is None:
                 continue
             nic['net-id'] = vn_id
@@ -567,7 +570,7 @@ class SvcMonitor(object):
             else:
                 funcname = "get_" + itf_type + "_virtual_network"
                 func = getattr(si_props, funcname)
-                si_vn_str = func()
+                si_vn_str = ':'.join(func())
             if not si_vn_str:
                 continue
 
@@ -737,8 +740,10 @@ class SvcMonitor(object):
             return
 
         # check if this is a service vm
-        vm_obj = self._vnc_lib.virtual_machine_read(
-            fq_name_str=vmi_obj.parent_name)
+        vm_id = get_vm_id_from_interface(vmi_obj)
+        if vm_id is None:
+            return
+        vm_obj = self._vnc_lib.virtual_machine_read(id=vm_id)
         si_list = vm_obj.get_service_instance_refs()
         if si_list:
             fq_name = si_list[0]['to']
@@ -832,8 +837,6 @@ class SvcMonitor(object):
                     funcname = "_delmsg_" + meta_name.replace('-', '_')
                 elif result_type in ['searchResult', 'updateResult']:
                     funcname = "_addmsg_" + meta_name.replace('-', '_')
-                    self._svc_syslog("%s with %s/%s" %
-                                     (funcname, meta_name, idents))
                 # end if result_type
                 try:
                     func = getattr(self, funcname)
@@ -871,7 +874,7 @@ class SvcMonitor(object):
             si_if = si_if_list[idx]
             static_routes = si_if.get_static_routes()
             if not static_routes:
-                continue
+                static_routes = {'route':[]}
 
             # update static routes
             try:
@@ -993,6 +996,10 @@ class SvcMonitor(object):
 def launch_arc(monitor, ssrc_mapc):
     arc_mapc = arc_initialize(monitor._args, ssrc_mapc)
     while True:
+        # If not connected to zookeeper Pause the operations 
+        if not _zookeeper_client.is_connected():
+            time.sleep(1)
+            continue
         try:
             pollreq = PollRequest(arc_mapc.get_session_id())
             result = arc_mapc.call('poll', pollreq)
@@ -1253,15 +1260,20 @@ def run_svc_monitor(args=None):
 
 
 def main(args_str=None):
+    global _zookeeper_client
     if not args_str:
         args_str = ' '.join(sys.argv[1:])
     args = parse_args(args_str)
 
-    _disc_service = ZookeeperClient("svc-monitor", args.zk_server_ip)
-    _disc_service.master_election("/svc-monitor", os.getpid(),
+    _zookeeper_client = ZookeeperClient("svc-monitor", args.zk_server_ip)
+    _zookeeper_client.master_election("/svc-monitor", os.getpid(),
                                   run_svc_monitor, args)
 # end main
 
-if __name__ == '__main__':
+def server_main():
     cgitb.enable(format='text')
     main()
+# end server_main
+
+if __name__ == '__main__':
+    server_main()

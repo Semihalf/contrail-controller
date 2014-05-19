@@ -5,7 +5,9 @@
 #ifndef vnsw_agent_param_hpp
 #define vnsw_agent_param_hpp
 
+#include <boost/property_tree/ptree.hpp>
 #include <boost/program_options.hpp>
+
 class VirtualGatewayConfigTable;
 
 // Class handling agent configuration parameters from config file and 
@@ -33,7 +35,7 @@ public:
         Ip4Address gw_;
     };
 
-    AgentParam();
+    AgentParam(Agent *agent);
     virtual ~AgentParam();
 
     bool IsVHostConfigured() {
@@ -65,9 +67,11 @@ public:
     const int xmpp_instance_count() const { return xmpp_instance_count_; }
     const std::string &tunnel_type() const { return tunnel_type_; }
     const std::string &metadata_shared_secret() const { return metadata_shared_secret_; }
+    float max_vm_flows() const { return max_vm_flows_; }
     uint32_t linklocal_system_flows() const { return linklocal_system_flows_; }
     uint32_t linklocal_vm_flows() const { return linklocal_vm_flows_; }
     uint32_t flow_cache_timeout() const {return flow_cache_timeout_;}
+    bool headless_mode() const {return headless_mode_;}
 
     const std::string &config_file() const { return config_file_; }
     const std::string &program_name() const { return program_name_;}
@@ -89,6 +93,7 @@ public:
     const std::string &vmware_physical_port() const {
         return vmware_physical_port_;
     }
+    bool debug() const { return debug_; }
 
     Mode mode() const { return mode_; }
     bool isXenMode() const { return mode_ == MODE_XEN; }
@@ -103,16 +108,58 @@ public:
     void LogConfig() const;
     void InitVhostAndXenLLPrefix();
     void set_test_mode(bool mode);
+    bool test_mode() const { return test_mode_; }
 private:
-    void ComputeLinkLocalFlowLimits();
+    void ComputeFlowLimits();
     void InitFromSystem();
     void InitFromConfig();
     void InitFromArguments
         (const boost::program_options::variables_map &var_map);
+    template <typename ValueType>
+    bool GetOptValue(const boost::program_options::variables_map &var_map, 
+                     ValueType &var, const std::string &val);
+    template <typename ValueType>
+    bool GetValueFromTree(ValueType &var, const std::string &val);
+    bool GetIpAddress(const std::string &str, Ip4Address *addr);
+    bool ParseIp(const std::string &key, Ip4Address *server);
+    bool ParseServerList(const std::string &key, Ip4Address *s1, Ip4Address *s2);
+    void ParseIpArgument(const boost::program_options::variables_map &var_map, 
+                         Ip4Address &server, const std::string &key);
+    bool ParseServerListArguments
+    (const boost::program_options::variables_map &var_map, Ip4Address &server1,
+     Ip4Address &server2, const std::string &key);
+    void ParseCollector();
+    void ParseVirtualHost();
+    void ParseDiscovery();
+    void ParseNetworks();
+    void ParseHypervisor();
+    void ParseDefaultSection();
+    void ParseMetadataProxy();
+    void ParseFlows();
+    void ParseHeadlessMode();
+
+    void ParseCollectorArguments
+        (const boost::program_options::variables_map &v);
+    void ParseVirtualHostArguments
+        (const boost::program_options::variables_map &v);
+    void ParseDiscoveryArguments
+        (const boost::program_options::variables_map &v);
+    void ParseNetworksArguments
+        (const boost::program_options::variables_map &v);
+    void ParseHypervisorArguments
+        (const boost::program_options::variables_map &v);
+    void ParseDefaultSectionArguments
+        (const boost::program_options::variables_map &v);
+    void ParseMetadataProxyArguments
+        (const boost::program_options::variables_map &v);
+    void ParseFlowArguments
+        (const boost::program_options::variables_map &v);
+    void ParseHeadlessModeArguments
+        (const boost::program_options::variables_map &v);
 
     PortInfo vhost_;
     std::string eth_port_;
-    int xmpp_instance_count_;
+    uint16_t xmpp_instance_count_;
     Ip4Address xmpp_server_1_;
     Ip4Address xmpp_server_2_;
     Ip4Address dns_server_1_;
@@ -123,9 +170,10 @@ private:
     PortInfo xen_ll_;
     std::string tunnel_type_;
     std::string metadata_shared_secret_;
-    uint32_t linklocal_system_flows_;
-    uint32_t linklocal_vm_flows_;
-    uint32_t flow_cache_timeout_;
+    float max_vm_flows_;
+    uint16_t linklocal_system_flows_;
+    uint16_t linklocal_vm_flows_;
+    uint16_t flow_cache_timeout_;
 
     // Parameters configured from command linke arguments only (for now)
     std::string config_file_;
@@ -142,7 +190,10 @@ private:
     int flow_stats_interval_;
     std::string vmware_physical_port_;
     bool test_mode_;
+    bool debug_;
+    boost::property_tree::ptree tree_;
     std::auto_ptr<VirtualGatewayConfigTable> vgw_config_table_;
+    bool headless_mode_;
 
     DISALLOW_COPY_AND_ASSIGN(AgentParam);
 };

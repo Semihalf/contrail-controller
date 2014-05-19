@@ -388,8 +388,10 @@ class VncCassandraClient(VncCassandraClientGen):
     _USERAGENT_KV_CF_NAME = 'useragent_keyval_table'
 
     def __init__(self, db_client_mgr, cass_srv_list, reset_config):
+        super(VncCassandraClient, self).__init__()
         self._db_client_mgr = db_client_mgr
         self._reset_config = reset_config
+        self._cache_uuid_to_fq_name = {}
         self._cassandra_init(cass_srv_list)
     # end __init__
 
@@ -567,6 +569,7 @@ class VncCassandraClient(VncCassandraClientGen):
             ref_info['to'] = self.uuid_to_fq_name(ref_uuid)
         except NoIdError as e:
             ref_info['to'] = ['ERROR']
+
         if ref_data:
             try:
                 ref_info['attr'] = ref_data['attr']
@@ -670,13 +673,38 @@ class VncCassandraClient(VncCassandraClientGen):
             return False
     # end is_latest
 
+    def cache_uuid_to_fq_name_add(self, id, fq_name):
+        self._cache_uuid_to_fq_name[id] = fq_name
+    # end cache_uuid_to_fq_name_add
+
+    def cache_uuid_to_fq_name_del(self, id):
+        try:
+            del self._cache_uuid_to_fq_name[id]
+        except KeyError:
+            pass
+    # end cache_uuid_to_fq_name_del
+
+    def update_last_modified(self, bch, obj_uuid, id_perms=None):
+        if id_perms is None:
+            id_perms = json.loads(self._obj_uuid_cf.get(obj_uuid, ['prop:id_perms'])['prop:id_perms'])
+        id_perms['last_modified'] = datetime.datetime.utcnow().isoformat()
+        self._update_prop(bch, obj_uuid, 'id_perms', {'id_perms': id_perms})
+    # end update_last_modified
+
     def uuid_to_fq_name(self, id):
         try:
-            fq_name_json = self._obj_uuid_cf.get(
-                id, columns=['fq_name'])['fq_name']
-        except pycassa.NotFoundException:
-            raise NoIdError(id)
-        return json.loads(fq_name_json)
+            #TODO remove from cache on delete_notify
+            return self._cache_uuid_to_fq_name[id]
+        except KeyError:
+            try:
+                fq_name_json = self._obj_uuid_cf.get(
+                    id, columns=['fq_name'])['fq_name']
+            except pycassa.NotFoundException:
+                raise NoIdError(id)
+
+            fq_name = json.loads(fq_name_json)
+            self.cache_uuid_to_fq_name_add(id, fq_name)
+            return fq_name
     # end uuid_to_fq_name
 
     def uuid_to_obj_type(self, id):
@@ -841,7 +869,8 @@ class VncKombuClient(object):
             try:
                 self._obj_update_q.put(*args, **kwargs)
                 break
-            except socket.error as e:
+            except Exception as e:
+                logger.info("Disconnected from rabbitmq. Reinitializing connection: %s" % str(e))
                 time.sleep(1)
                 self._init_server_conn(self._rabbit_ip, self._rabbit_user, self._rabbit_password, self._rabbit_vhost)
     # end _obj_update_q_put
@@ -857,7 +886,8 @@ class VncKombuClient(object):
             while True:
                 try:
                     message = queue.get()
-                except socket.error as e:
+                except Exception as e:
+                    logger.info("Disconnected from rabbitmq. Reinitializing connection: %s" % str(e))
                     self._init_server_conn(self._rabbit_ip, self._rabbit_user, self._rabbit_password, self._rabbit_vhost)
                     # never reached
                     continue
@@ -875,7 +905,12 @@ class VncKombuClient(object):
                 except Exception as e:
                     print "Exception in _dbe_oper_subscribe: " + str(e)
                 finally:
-                    message.ack()
+                    try:
+                        message.ack()
+                    except Exception as e:
+                        logger.info("Disconnected from rabbitmq. Reinitializing connection: %s" % str(e))
+                        self._init_server_conn(self._rabbit_ip, self._rabbit_user, self._rabbit_password, self._rabbit_vhost)
+                        # never reached
 
     #end _dbe_oper_subscribe
 
@@ -933,6 +968,9 @@ class VncKombuClient(object):
 
     def _dbe_delete_notification(self, obj_info):
         obj_dict = obj_info['obj_dict']
+
+        db_client_mgr = self._db_client_mgr
+        db_client_mgr._cassandra_db.cache_uuid_to_fq_name_del(obj_dict['uuid'])
 
         r_class = self._db_client_mgr.get_resource_class(obj_info['type'])
         if r_class:
@@ -1016,6 +1054,10 @@ class VncZkClient(object):
                                              fq_name_str)
         self._zk_client.delete_node(zk_path)
     # end delete_fq_name_to_uuid_mapping
+
+    def is_connected(self):
+        return self._zk_client.is_connected()
+    # end is_connected
 
 # end VncZkClient
 
@@ -1129,7 +1171,8 @@ class VncDbClient(object):
             obj_type = json.loads(obj_cols['type'])
             method = getattr(self._cassandra_db,
                              "_cassandra_%s_read" % (obj_type))
-            (ok, obj_dict) = method(obj_uuid)
+            (ok, obj_dicts) = method([obj_uuid])
+            obj_dict = obj_dicts[0]
 
             # TODO remove backward compat create mapping in zk
             try:
@@ -1177,7 +1220,7 @@ class VncDbClient(object):
             obj_type = json.loads(obj_cols['type'])
             method = getattr(self._cassandra_db,
                              "_cassandra_%s_read" % (obj_type))
-            (ok, obj_dict) = method(obj_uuid)
+            (ok, obj_dict) = method([obj_uuid])
         except Exception as e:
             return {'uuid': obj_uuid, 'type': obj_type, 'error': str(e)}
     # end _dbe_check
@@ -1188,10 +1231,11 @@ class VncDbClient(object):
             obj_type = json.loads(obj_cols['type'])
             method = getattr(self._cassandra_db,
                              "_cassandra_%s_read" % (obj_type))
-            (ok, obj_dict) = method(obj_uuid)
-            obj_dict['type'] = obj_type
-            obj_dict['uuid'] = obj_uuid
-            return obj_dict
+            (ok, obj_dict) = method([obj_uuid])
+            result_dict = obj_dict[0]
+            result_dict['type'] = obj_type
+            result_dict['uuid'] = obj_uuid
+            return result_dict
         except Exception as e:
             return {'uuid': obj_uuid, 'type': obj_type, 'error': str(e)}
     # end _dbe_read
@@ -1207,7 +1251,7 @@ class VncDbClient(object):
                 (ok, obj_uuid) = self._alloc_set_uuid(obj_type, obj_dict)
         except ResourceExistsError:
             return (409, '' + pformat(obj_dict['fq_name']) +
-                ' already exists with uuid: ' + obj_uuid)
+                ' already exists with uuid: ' + obj_dict['uuid'])
 
         parent_type = obj_dict.get('parent_type', None)
         method_name = obj_type.replace('-', '_')
@@ -1244,12 +1288,27 @@ class VncDbClient(object):
         method = getattr(
             self._cassandra_db, "_cassandra_%s_read" % (method_name))
         try:
-            (ok, cassandra_result) = method(obj_ids['uuid'], obj_fields)
+            (ok, cassandra_result) = method([obj_ids['uuid']], obj_fields)
+        except NoIdError as e:
+            return (False, str(e))
+
+        return (ok, cassandra_result[0])
+    # end dbe_read
+
+    def dbe_read_multi(self, obj_type, obj_ids_list, obj_fields=None):
+        method_name = obj_type.replace('-', '_')
+        method = getattr(
+            self._cassandra_db, "_cassandra_%s_read" % (method_name))
+        try:
+            (ok, cassandra_result) = method([obj_id['uuid']
+                                                for obj_id in obj_ids_list],
+                                            obj_fields)
         except NoIdError as e:
             return (False, str(e))
 
         return (ok, cassandra_result)
-    # end dbe_read
+    # end dbe_read_multi
+
 
     def dbe_is_latest(self, obj_ids, tstamp):
         try:
@@ -1271,12 +1330,15 @@ class VncDbClient(object):
         return (ok, cassandra_result)
     # end dbe_update
 
-    def dbe_list(self, obj_type, parent_uuid=None):
+    def dbe_list(self, obj_type, parent_uuids=None, back_ref_uuids=None,
+                 obj_uuids=None, count=False):
         method_name = obj_type.replace('-', '_')
         method = getattr(
             self._cassandra_db, "_cassandra_%s_list" % (method_name))
-        (ok, cassandra_result) = method(parent_uuid)
-
+        (ok, cassandra_result) = method(parent_uuids=parent_uuids,
+                                        back_ref_uuids=back_ref_uuids,
+                                        obj_uuids=obj_uuids,
+                                        count=count)
         return (ok, cassandra_result)
     # end dbe_list
 
@@ -1369,6 +1431,21 @@ class VncDbClient(object):
     def uuid_to_obj_perms(self, obj_uuid):
         return self._cassandra_db.uuid_to_obj_perms(obj_uuid)
     # end uuid_to_obj_perms
+
+    def ref_update(self, obj_type, obj_uuid, ref_type, ref_uuid, ref_data, operation):
+        obj_uuid_cf = self._cassandra_db._obj_uuid_cf
+        bch = obj_uuid_cf.batch()
+        if operation == 'ADD':
+            self._cassandra_db._create_ref(bch, obj_type, obj_uuid, ref_type, ref_uuid, ref_data)
+        elif operation == 'DELETE':
+            self._cassandra_db._delete_ref(bch, obj_type, obj_uuid, ref_type, ref_uuid)
+        else:
+            pass
+        self._cassandra_db.update_last_modified(bch, obj_uuid)
+        bch.send()
+        self._msgbus.dbe_update_publish(obj_type.replace('_', '-'), {'uuid':obj_uuid})
+        return obj_uuid
+    # ref_update
 
     def get_resource_class(self, resource_type):
         return self._api_svr_mgr.get_resource_class(resource_type)

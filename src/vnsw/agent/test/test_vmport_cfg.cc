@@ -30,7 +30,7 @@
 using namespace std;
 using namespace boost::assign;
 
-void RouterIdDepInit() {
+void RouterIdDepInit(Agent *agent) {
 }
 
 static void ValidateSandeshResponse(Sandesh *sandesh, vector<int> &result) {
@@ -67,7 +67,6 @@ TEST_F(CfgTest, AddDelVmPortNoVn_1) {
     };
 
     client->Reset();
-    AgentIfMapVmExport::Init();
     IntfCfgAdd(input, 0);
     EXPECT_TRUE(client->PortNotifyWait(1));
     EXPECT_TRUE(VmPortInactive(input, 0));
@@ -86,7 +85,6 @@ TEST_F(CfgTest, AddDelVmPortNoVn_1) {
 TEST_F(CfgTest, AddDelExport) {
 
     client->Reset();
-    AgentIfMapVmExport::Init();
 
     CfgIntKey *key = new CfgIntKey(MakeUuid(1)); 
     CfgIntData *data = new CfgIntData();

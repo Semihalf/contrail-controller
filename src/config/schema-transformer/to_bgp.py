@@ -68,8 +68,8 @@ _sandesh = None
 
 # connection to api-server
 _vnc_lib = None
-# discovery service connection
-_disc_service = None
+# zookeeper client connection
+_zookeeper_client = None
 
 
 def _ports_eq(lhs, rhs):
@@ -419,7 +419,7 @@ class VirtualNetworkST(DictST):
         alloc_new = False
         if service_vm not in cls._sc_vlan_allocator_dict:
             cls._sc_vlan_allocator_dict[service_vm] = IndexAllocator(
-                _disc_service, _SERVICE_CHAIN_VLAN_ALLOC_PATH + service_vm,
+                _zookeeper_client, _SERVICE_CHAIN_VLAN_ALLOC_PATH + service_vm,
                 _SERVICE_CHAIN_MAX_VLAN)
 
         vlan_ia = cls._sc_vlan_allocator_dict[service_vm]
@@ -823,7 +823,8 @@ class VirtualNetworkST(DictST):
                 id=vm_analyzer[0]['uuid'])
             if vm_analyzer_obj is None:
                 return (None, None)
-            vmi_refs = vm_analyzer_obj.get_virtual_machine_interfaces()
+            vmi_refs = (vm_analyzer_obj.get_virtual_machine_interfaces() or
+                        vm_analyzer_obj.get_virtual_machine_interface_back_refs())
             if vmi_refs is None:
                 return (None, None)
             for vmi_ref in vmi_refs:
@@ -1087,7 +1088,7 @@ class SecurityGroupST(DictST):
                 self.egress_acl = _vnc_lib.access_control_list_read(
                     id=acl['uuid'])
             elif acl['to'][-1] == 'ingress-access-control-list':
-                self.igress_acl = _vnc_lib.access_control_list_read(
+                self.ingress_acl = _vnc_lib.access_control_list_read(
                     id=acl['uuid'])
             else:
                 _vnc_lib.access_control_list_delete(id=acl['uuid'])
@@ -1165,12 +1166,14 @@ class SecurityGroupST(DictST):
             saddr_match = copy.deepcopy(saddr)
             self._convert_security_group_name_to_id(saddr_match)
             if saddr.security_group == 'local':
+                saddr_match.security_group = None
                 acl_rule_list = egress_acl_rule_list
             for sp in prule.src_ports:
                 for daddr in prule.dst_addresses:
                     daddr_match = copy.deepcopy(daddr)
                     self._convert_security_group_name_to_id(daddr_match)
                     if daddr.security_group == 'local':
+                        daddr.security_group = None
                         acl_rule_list = ingress_acl_rule_list
                     for dp in prule.dst_ports:
                         action = ActionListType(simple_action='pass')
@@ -1475,9 +1478,13 @@ class ServiceChain(DictST):
 
     def process_transparent_service(self, vm_obj, sc_ip_address, service_ri1,
                                     service_ri2):
+        left_found = False
+        right_found = False
         vlan = VirtualNetworkST.allocate_service_chain_vlan(
             vm_obj.uuid, self.name)
-        for interface in vm_obj.get_virtual_machine_interfaces() or []:
+        for interface in (vm_obj.get_virtual_machine_interfaces() or
+                          vm_obj.get_virtual_machine_interface_back_refs()
+                          or []):
             if_obj = _vnc_lib.virtual_machine_interface_read(
                 id=interface['uuid'])
             props = if_obj.get_virtual_machine_interface_properties()
@@ -1488,6 +1495,7 @@ class ServiceChain(DictST):
                 return False
             ri_refs = if_obj.get_routing_instance_refs()
             if interface_type == 'left':
+                left_found = True
                 pbf = PolicyBasedForwardingRuleType()
                 pbf.set_direction('both')
                 pbf.set_vlan_tag(vlan)
@@ -1499,6 +1507,7 @@ class ServiceChain(DictST):
                     if_obj.add_routing_instance(service_ri1.obj, pbf)
                     _vnc_lib.virtual_machine_interface_update(if_obj)
             if interface_type == 'right' and self.direction == '<>':
+                right_found = True
                 pbf = PolicyBasedForwardingRuleType()
                 pbf.set_direction('both')
                 pbf.set_src_mac('02:00:00:00:00:02')
@@ -1509,12 +1518,16 @@ class ServiceChain(DictST):
                         [ref['to'] for ref in (ri_refs or [])]):
                     if_obj.add_routing_instance(service_ri2.obj, pbf)
                     _vnc_lib.virtual_machine_interface_update(if_obj)
-        return True
+        return left_found and (self.direction != '<>' or right_found)
     # end process_transparent_service
 
     def process_in_network_service(self, vm_obj, service, vn1_obj, vn2_obj,
                                    service_ri1, service_ri2):
-        for interface in vm_obj.get_virtual_machine_interfaces() or []:
+        left_found = False
+        right_found = False
+        for interface in (vm_obj.get_virtual_machine_interfaces() or
+                          vm_obj.get_virtual_machine_interface_back_refs()
+                          or []):
             if_obj = _vnc_lib.virtual_machine_interface_read(
                 id=interface['uuid'])
             props = if_obj.get_virtual_machine_interface_properties()
@@ -1536,6 +1549,7 @@ class ServiceChain(DictST):
 
             if interface_type == 'left':
                 if ip_obj:
+                    left_found = True
                     ip_addr = ip_obj.get_instance_ip_address()
                     service_ri1.add_service_info(vn2_obj, service, ip_addr,
                          vn1_obj.get_primary_routing_instance(
@@ -1547,6 +1561,7 @@ class ServiceChain(DictST):
             if (interface_type == 'right' and self.direction == '<>' and
                     not self.nat_service):
                 if ip_obj:
+                    right_found = True
                     ip_addr = ip_obj.get_instance_ip_address()
                     service_ri2.add_service_info(vn1_obj, service, ip_addr,
                          vn2_obj.get_primary_routing_instance(
@@ -1555,7 +1570,8 @@ class ServiceChain(DictST):
                     _sandesh._logger.debug(
                         "No ip address found for interface " + if_obj.name)
                     return False
-        return True
+        return left_found and (self.nat_service or self.direction != '<>' or
+                               right_found)
     # end process_in_network_service
 
     def destroy(self):
@@ -2142,8 +2158,11 @@ class VirtualMachineInterfaceST(DictST):
         # return all networks that refer to those policies
         if self.service_interface_type not in ['left', 'right']:
             return network_set
-        vm_name = self.name.split(':')[0]
-        vm_obj = _vnc_lib.virtual_machine_read(fq_name=[vm_name])
+        vmi_obj = _vnc_lib.virtual_machine_interface_read(fq_name_str=self.name)
+        vm_id = get_vm_id_from_interface(vmi_obj)
+        if vm_id is None:
+            return network_set
+        vm_obj = _vnc_lib.virtual_machine_read(id=vm_id)
         vm_si_refs = vm_obj.get_service_instance_refs()
         if not vm_si_refs:
             return network_set
@@ -2263,14 +2282,14 @@ class SchemaTransformer(object):
 
         # reset zookeeper config
         if self._args.reset_config:
-            _disc_service.delete_node("/id", True);
+            _zookeeper_client.delete_node("/id", True);
 
-        VirtualNetworkST._vn_id_allocator = IndexAllocator(_disc_service,
+        VirtualNetworkST._vn_id_allocator = IndexAllocator(_zookeeper_client,
                                                     _VN_ID_ALLOC_PATH,
                                                     _VN_MAX_ID)
-        SecurityGroupST._sg_id_allocator = IndexAllocator(_disc_service,
+        SecurityGroupST._sg_id_allocator = IndexAllocator(_zookeeper_client,
             _SECURITY_GROUP_ID_ALLOC_PATH, _SECURITY_GROUP_MAX_ID)
-        VirtualNetworkST._rt_allocator = IndexAllocator(_disc_service,
+        VirtualNetworkST._rt_allocator = IndexAllocator(_zookeeper_client,
             _BGP_RTGT_ALLOC_PATH, _BGP_RTGT_MAX_ID)
 
         # Initialize discovery client
@@ -3047,6 +3066,10 @@ class SchemaTransformer(object):
 def launch_arc(transformer, ssrc_mapc):
     arc_mapc = arc_initialize(transformer._args, ssrc_mapc)
     while True:
+        # If not connected to zookeeper Pause the operations 
+        if not _zookeeper_client.is_connected():
+            time.sleep(1)
+            continue
         pollreq = PollRequest(arc_mapc.get_session_id())
         result = arc_mapc.call('poll', pollreq)
         try:
@@ -3100,8 +3123,8 @@ def parse_args(args_str):
     defaults = {
         'ifmap_server_ip': '127.0.0.1',
         'ifmap_server_port': '8443',
-        'ifmap_username': 'test2',
-        'ifmap_password': 'test2',
+        'ifmap_username': 'schema-transformer',
+        'ifmap_password': 'schema-transformer',
         'cassandra_server_list': '127.0.0.1:9160',
         'api_server_ip': '127.0.0.1',
         'api_server_port': '8082',
@@ -3233,15 +3256,19 @@ def run_schema_transformer(args):
 # end run_schema_transformer
     
 def main(args_str=None):
-    global _disc_service
+    global _zookeeper_client
     if not args_str:
         args_str = ' '.join(sys.argv[1:])
     args = parse_args(args_str)
-    _disc_service = ZookeeperClient("schema", args.zk_server_ip)
-    _disc_service.master_election("/schema-transformer", os.getpid(),
+    _zookeeper_client = ZookeeperClient("schema", args.zk_server_ip)
+    _zookeeper_client.master_election("/schema-transformer", os.getpid(),
                                   run_schema_transformer, args)
 # end main
 
-if __name__ == '__main__':
+def server_main():
     cgitb.enable(format='text')
     main()
+# end server_main
+
+if __name__ == '__main__':
+    server_main()

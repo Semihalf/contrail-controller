@@ -896,12 +896,12 @@ void VnDelReq(int id) {
 }
 
 void VrfAddReq(const char *name) {
-    Agent::GetInstance()->GetVrfTable()->CreateVrf(name);
+    Agent::GetInstance()->GetVrfTable()->CreateVrfReq(name);
     usleep(1000);
 }
 
 void VrfDelReq(const char *name) {
-    Agent::GetInstance()->GetVrfTable()->DeleteVrf(name);
+    Agent::GetInstance()->GetVrfTable()->DeleteVrfReq(name);
     usleep(1000);
 }
 
@@ -1264,8 +1264,9 @@ void AddInterfaceRouteTable(const char *name, int id, TestIp4Prefix *rt,
     AddNode("interface-route-table", name, id, buff);
 }
 
-static string AddAclXmlString(const char *node_name, const char *name, int id, 
-                              const char *src_vn, const char *dest_vn) {
+static string AddAclXmlString(const char *node_name, const char *name, int id,
+                              const char *src_vn, const char *dest_vn,
+                              const char *action) {
     char buff[10240];
     sprintf(buff, 
             "<?xml version=\"1.0\"?>\n"
@@ -1290,7 +1291,7 @@ static string AddAclXmlString(const char *node_name, const char *name, int id,
             "                <acl-rule>\n"
             "                    <match-condition>\n"
             "                        <protocol>\n"
-            "                            tcp\n"
+            "                            any\n"
             "                        </protocol>\n"
             "                        <src-address>\n"
             "                            <virtual-network>\n"
@@ -1315,14 +1316,14 @@ static string AddAclXmlString(const char *node_name, const char *name, int id,
             "                    </match-condition>\n"
             "                    <action-list>\n"
             "                        <simple-action>\n"
-            "                            pass\n"
+            "                            %s\n"
             "                        </simple-action>\n"
             "                    </action-list>\n"
             "                </acl-rule>\n"
             "           </access-control-list-entries>\n"
             "       </node>\n"
             "   </update>\n"
-            "</config>\n", node_name, name, id, src_vn, dest_vn);
+            "</config>\n", node_name, name, id, src_vn, dest_vn, action);
     string s(buff);
     return s;
 }
@@ -1331,9 +1332,10 @@ void AddAcl(const char *name, int id) {
     AddNode("access-control-list", name, id);
 }
 
-void AddAcl(const char *name, int id, const char *src_vn, const char *dest_vn) {
+void AddAcl(const char *name, int id, const char *src_vn, const char *dest_vn,
+            const char *action) {
     std::string s = AddAclXmlString("access-control-list", name, id,
-                                    src_vn, dest_vn);
+                                    src_vn, dest_vn, action);
     pugi::xml_document xdoc_;
 
     pugi::xml_parse_result result = xdoc_.load(s.c_str());
@@ -2599,4 +2601,25 @@ bool VmPortServiceVlanCount(int id, unsigned int count) {
         return false;
     }
     return true;
+}
+
+BgpPeer *CreateBgpPeer(const Ip4Address &addr, std::string name) {
+    XmppChannelMock *xmpp_channel = new XmppChannelMock();
+    AgentXmppChannel *channel;
+    channel = new AgentXmppChannel(Agent::GetInstance(), xmpp_channel, 
+                                   "XMPP Server", "", 0);
+    return (new BgpPeer(addr, name, channel, -1));
+}
+
+void DeleteBgpPeer(Peer *peer) {
+    BgpPeer *bgp_peer = static_cast<BgpPeer *>(peer);
+    if (!bgp_peer)
+        return;
+
+    if (bgp_peer->GetBgpXmppPeer()) {
+        if (bgp_peer->GetBgpXmppPeer()->GetXmppChannel())
+            delete bgp_peer->GetBgpXmppPeer()->GetXmppChannel();
+
+    }
+    delete bgp_peer;
 }

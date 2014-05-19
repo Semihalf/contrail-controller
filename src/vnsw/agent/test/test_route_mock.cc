@@ -50,8 +50,8 @@ EventManager evm2;
 ServerThread *thread2;
 test::ControlNodeMock *bgp_peer2;
 
-void RouterIdDepInit() {
-    VNController::Connect();
+void RouterIdDepInit(Agent *agent) {
+    Agent::GetInstance()->controller()->Connect();
 }
 
 void StartControlNodeMock() {
@@ -75,7 +75,7 @@ void StartControlNodeMock() {
 }
 
 void StopControlNodeMock() {
-    VNController::DisConnect();
+    Agent::GetInstance()->controller()->DisConnect();
     client->WaitForIdle();
     TcpServerManager::DeleteServer(Agent::GetInstance()->GetAgentXmppClient(0));
     TcpServerManager::DeleteServer(Agent::GetInstance()->GetAgentXmppClient(1));
@@ -697,7 +697,7 @@ int main(int argc, char *argv[]) {
     client = TestInit(init_file, ksync_init, true, false);
 
     StartControlNodeMock();
-    RouterIdDepInit();
+    RouterIdDepInit(Agent::GetInstance());
     int ret = RUN_ALL_TESTS();
     StopControlNodeMock();
 

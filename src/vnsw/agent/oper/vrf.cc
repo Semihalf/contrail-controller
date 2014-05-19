@@ -52,8 +52,8 @@ class VrfEntry::DeleteActor : public LifetimeActor {
     VrfEntryRef table_;
 };
 
-VrfEntry::VrfEntry(const string &name) : 
-        name_(name), id_(kInvalidIndex), 
+VrfEntry::VrfEntry(const string &name, uint32_t flags) : 
+        name_(name), id_(kInvalidIndex), flags_(flags),
         walkid_(DBTableWalker::kInvalidWalkerId), deleter_(NULL),
         rt_table_db_(), delete_timeout_timer_(NULL) { 
 }
@@ -103,6 +103,14 @@ void VrfEntry::PostAdd() {
                                                         rt_table_db_[type]));
 }
 
+bool VrfEntry::CanDelete(DBRequest *req) {
+    VrfData *data = static_cast<VrfData *>(req->data.get());
+    // Update flags
+    flags_ &= ~data->flags_;
+    // Do not delete the VRF if config VRF or gateway VRF flag is still set
+    return flags_ ? false : true;
+}
+
 DBEntryBase::KeyPtr VrfEntry::GetDBRequestKey() const {
     VrfKey *key = new VrfKey(name_);
     return DBEntryBase::KeyPtr(key);
@@ -132,131 +140,8 @@ Inet4UnicastRouteEntry *VrfEntry::GetUcRoute(const Inet4UnicastRouteEntry &rt_ke
     return table->FindLPM(rt_key);
 }
 
-bool VrfEntry::DelPeerRoutes(DBTablePartBase *part, DBEntryBase *entry, 
-                             Peer *peer) {
-    VrfEntry *vrf = static_cast<VrfEntry *>(entry);
-    DBTableWalker *walker = vrf->get_table()->database()->GetWalker();
-
-    if (entry->IsDeleted()) {
-        return true;
-    }
-
-    if (peer->GetType() == Peer::BGP_PEER) {
-        BgpPeer *bgp_peer = static_cast<BgpPeer *>(peer);
-
-        DBTableBase::ListenerId id = bgp_peer->GetVrfExportListenerId();
-        VrfExport::State *state = 
-            static_cast<VrfExport::State *>(vrf->GetState(part->parent(), id)); 
-        if (state == NULL) {
-            return true;
-        }
-
-        int route_tables;
-        for (route_tables = 0; route_tables < Agent::ROUTE_TABLE_MAX; route_tables++) {
-            AgentRouteTable *table = static_cast<AgentRouteTable *> 
-                (vrf->GetRouteTable(route_tables));
-            if (state->ucwalkid_[route_tables] != DBTableWalker::kInvalidWalkerId) {
-                AGENT_DBWALK_TRACE(AgentDBWalkLog, "Cancel  walk (DelPeerRoutes)", 
-                                   table->GetTableName(),
-                                   state->ucwalkid_[route_tables],
-                                   peer->GetName(), "Del Route",
-                                   peer->NoOfWalks());
-
-                walker->WalkCancel(state->ucwalkid_[route_tables]);
-            }
-            state->ucwalkid_[route_tables] = walker->WalkTable(table, NULL,
-              boost::bind(&AgentRouteTable::DelPeerRoutes, table, _1, _2, peer), 
-              boost::bind(&VrfEntry::DelPeerDone, _1, state, 
-                          route_tables, table->GetTableName(), peer));
-
-            AGENT_DBWALK_TRACE(AgentDBWalkLog, "Start walk (DelPeerRoutes)", 
-                               table->GetTableName(),
-                               state->ucwalkid_[route_tables],
-                               peer->GetName(), "Del Route",
-                               peer->NoOfWalks());
-        }
-        return true;
-    }
-    return false;
-}
-
-void VrfEntry::DelPeerDone(DBTableBase *base, DBState *state, 
-                           uint8_t table_type, const string &table_name,
-                           Peer *peer) {
-    VrfExport::State *vrf_state = static_cast<VrfExport::State *>(state);
-
-    AGENT_DBWALK_TRACE(AgentDBWalkLog, "Done walk(DelPeerDone)", 
-                       table_name, vrf_state->ucwalkid_[table_type],
-                       peer->GetName(), "Add/Del Route",
-                       peer->NoOfWalks());
-
-    vrf_state->ucwalkid_[table_type] = DBTableWalker::kInvalidWalkerId;
-    peer->DecrementWalks();
-    if (peer->NoOfWalks() == 0) {
-        AGENT_DBWALK_TRACE(AgentDBWalkLog, "Done all walks ", 
-                           table_name,
-                           vrf_state->ucwalkid_[table_type],
-                           peer->GetName(), "Add/Del Route",
-                           peer->NoOfWalks());
-        VNController::Cleanup();
-    }
-}
-
 LifetimeActor *VrfEntry::deleter() {
     return deleter_.get();
-}
-
-bool VrfEntry::VrfNotifyEntryWalk(DBTablePartBase *part, DBEntryBase *entry,
-                                  Peer *peer) {
-    VrfEntry *vrf = static_cast<VrfEntry *>(entry);
-    if (peer->GetType() == Peer::BGP_PEER) {
-        BgpPeer *bgp_peer = static_cast<BgpPeer *>(peer);
-
-        DBTableBase::ListenerId id = bgp_peer->GetVrfExportListenerId();
-        VrfExport::State *state = 
-            static_cast<VrfExport::State *>(vrf->GetState(part->parent(), id)); 
-        if (state) {
-            /* state for __default__ instance will not be created if the 
-             * xmpp channel is up the first time as export code registers to 
-             * vrf-table after entry for __default__ instance is created */
-            state->force_chg_ = true;
-        }
-
-        VrfExport::Notify(bgp_peer->GetBgpXmppPeer(), part, entry);
-        return true;
-    }
-
-    return false;
-}
-
-bool VrfEntry::VrfNotifyEntryMulticastWalk(DBTablePartBase *part, 
-                                           DBEntryBase *entry,
-                                           Peer *peer, bool associate) {
-    VrfEntry *vrf = static_cast<VrfEntry *>(entry);
-    if (peer->GetType() == Peer::BGP_PEER) {
-        BgpPeer *bgp_peer = static_cast<BgpPeer *>(peer);
-
-        DBTableBase::ListenerId id = bgp_peer->GetVrfExportListenerId();
-        VrfExport::State *state = 
-            static_cast<VrfExport::State *>(vrf->GetState(part->parent(), id)); 
-
-        Agent *agent = (static_cast<VrfTable *>(vrf->get_table()))->agent();
-        if (state && (vrf->GetName().compare(agent->GetDefaultVrf()) != 0)) {
-
-            int rt_table_cnt;
-            for (rt_table_cnt = 0; rt_table_cnt < Agent::ROUTE_TABLE_MAX;
-                 rt_table_cnt++) {
-                AgentRouteTable *table = static_cast<AgentRouteTable *> 
-                    (vrf->GetRouteTable(rt_table_cnt));
-                table->RouteTableWalkerNotify(vrf, bgp_peer->GetBgpXmppPeer(),
-                                              state, associate, false, true);
-            }
-        }
-
-        return true;
-    }
-
-    return false;
 }
 
 AgentRouteTable *VrfEntry::GetRouteTable(uint8_t table_type) const {
@@ -284,6 +169,12 @@ bool VrfEntry::DBEntrySandesh(Sandesh *sresp, std::string &name) const {
         data.set_ucindex(vrf_id());
         data.set_mcindex(vrf_id());
         data.set_l2index(vrf_id());
+        std::string vrf_flags;
+        if (flags() & VrfData::ConfigVrf)
+            vrf_flags += "Config; ";
+        if (flags() & VrfData::GwVrf)
+            vrf_flags += "Gateway; ";
+        data.set_source(vrf_flags);
 
         std::vector<VrfSandeshData> &list = 
                 const_cast<std::vector<VrfSandeshData>&>(resp->get_vrf_list());
@@ -348,14 +239,14 @@ void VrfEntry::CancelDeleteTimer() {
 
 std::auto_ptr<DBEntry> VrfTable::AllocEntry(const DBRequestKey *k) const {
     const VrfKey *key = static_cast<const VrfKey *>(k);
-    VrfEntry *vrf = new VrfEntry(key->name_);
+    VrfEntry *vrf = new VrfEntry(key->name_, 0);
     return std::auto_ptr<DBEntry>(static_cast<DBEntry *>(vrf));
 }
 
 DBEntry *VrfTable::Add(const DBRequest *req) {
     VrfKey *key = static_cast<VrfKey *>(req->key.get());
-    //VrfData *data = static_cast<VrfData *>(req->data.get());
-    VrfEntry *vrf = new VrfEntry(key->name_);
+    VrfData *data = static_cast<VrfData *>(req->data.get());
+    VrfEntry *vrf = new VrfEntry(key->name_, data->flags_);
 
     // Add VRF into name based tree
     if (FindVrfFromName(key->name_)) {
@@ -371,8 +262,11 @@ DBEntry *VrfTable::Add(const DBRequest *req) {
     return vrf;
 }
 
-// No Change expected for VRF
 bool VrfTable::OnChange(DBEntry *entry, const DBRequest *req) {
+    VrfEntry *vrf = static_cast<VrfEntry *>(entry);
+    VrfData *data = static_cast<VrfData *>(req->data.get());
+    vrf->set_flags(data->flags_);
+
     return false;
 }
 
@@ -461,23 +355,32 @@ AgentRouteTable *VrfTable::GetRouteTable(const string &vrf_name,
     return static_cast<AgentRouteTable *>(it->second);
 }
 
-void VrfTable::CreateVrf(const string &name) {
-    VrfKey *key = new VrfKey(name);
-    VrfData *data = new VrfData();
-    DBRequest req;
-    req.oper = DBRequest::DB_ENTRY_ADD_CHANGE;
-    req.key.reset(key);
-    req.data.reset(data);
+void VrfTable::CreateVrfReq(const string &name, uint32_t flags) {
+    DBRequest req(DBRequest::DB_ENTRY_ADD_CHANGE);
+    req.key.reset(new VrfKey(name));
+    req.data.reset(new VrfData(flags));
     Enqueue(&req);
 }
 
-void VrfTable::DeleteVrf(const string &name) {
-    VrfKey *key = new VrfKey(name);
-    DBRequest req;
-            req.oper = DBRequest::DB_ENTRY_DELETE;
-    req.key.reset(key);
-    req.data.reset(NULL);
+void VrfTable::CreateVrf(const string &name, uint32_t flags) {
+    DBRequest req(DBRequest::DB_ENTRY_ADD_CHANGE);
+    req.key.reset(new VrfKey(name));
+    req.data.reset(new VrfData(flags));
+    Process(req);
+}
+
+void VrfTable::DeleteVrfReq(const string &name, uint32_t flags) {
+    DBRequest req(DBRequest::DB_ENTRY_DELETE);
+    req.key.reset(new VrfKey(name));
+    req.data.reset(new VrfData(flags));
     Enqueue(&req);
+}
+
+void VrfTable::DeleteVrf(const string &name, uint32_t flags) {
+    DBRequest req(DBRequest::DB_ENTRY_DELETE);
+    req.key.reset(new VrfKey(name));
+    req.data.reset(new VrfData(flags));
+    Process(req);
 }
 
 void VrfTable::CreateStaticVrf(const string &name) {
@@ -487,121 +390,7 @@ void VrfTable::CreateStaticVrf(const string &name) {
 
 void VrfTable::DeleteStaticVrf(const string &name) {
     static_vrf_set_.erase(name);
-    DeleteVrf(name);
-}
-
-
-void VrfTable::DelPeerRoutes(Peer *peer, Peer::DelPeerDone cb) {
-    DBTableWalker *walker = db_->GetWalker();
-
-    if (peer->GetPeerVrfUCWalkId() != DBTableWalker::kInvalidWalkerId) {
-        AGENT_DBWALK_TRACE(AgentDBWalkLog, "Cancel  walk ", 
-                           "VrfTable(DelPeerRoutes)",
-                           peer->GetPeerVrfUCWalkId(),
-                           peer->GetName(), "Del VrfEntry",
-                           peer->NoOfWalks());
-
-        walker->WalkCancel(peer->GetPeerVrfUCWalkId());
-    }
-
-    DBTableWalker::WalkId id = walker->WalkTable(this, NULL, 
-                boost::bind(&VrfEntry::DelPeerRoutes, _1, _2, peer), 
-                boost::bind(&VrfTable::DelPeerDone, this, _1, peer, cb));
-    peer->SetPeerVrfUCWalkId(id); 
-
-    AGENT_DBWALK_TRACE(AgentDBWalkLog, "Start  walk ", 
-                       "VrfTable(DelPeerRoutes)",
-                       peer->GetPeerVrfUCWalkId(),
-                       peer->GetName(), "Del VrfEntry",
-                       peer->NoOfWalks());
-}
-
-void VrfTable::DelPeerDone(DBTableBase *base, 
-                           Peer *peer,
-                           Peer::DelPeerDone cb) {
-
-    AGENT_DBWALK_TRACE(AgentDBWalkLog, "Done  walk ", "VrfTable(DelPeerDone)",
-                       peer->GetPeerVrfUCWalkId(),
-                       peer->GetName(), "Del VrfEntry",
-                       peer->NoOfWalks());
-    peer->ResetPeerVrfUCWalkId();
-    peer->DecrementWalks();
-    cb();
-}
-
-void VrfTable::VrfNotifyDone(DBTableBase *base, Peer *peer) {
-
-    AGENT_DBWALK_TRACE(AgentDBWalkLog, "Done  walk ", 
-                       "VrfTable(VrfNotifyDone)",
-                       peer->GetPeerVrfUCWalkId(),
-                       peer->GetName(), "Notify VrfEntry",
-                       peer->NoOfWalks());
-    peer->ResetPeerVrfUCWalkId();
-}
-
-void VrfTable::VrfTableWalkerNotify(Peer *peer) {
-    DBTableWalker *walker = db_->GetWalker();
-
-    if (peer->GetPeerVrfUCWalkId() != DBTableWalker::kInvalidWalkerId) {
-
-        AGENT_DBWALK_TRACE(AgentDBWalkLog, "Cancel walk ", 
-                           "VrfTable(VrfTableWalkerNotify)",
-                           peer->GetPeerVrfUCWalkId(),
-                           peer->GetName(), "Notify VrfEntry",
-                           peer->NoOfWalks());
-        walker->WalkCancel(peer->GetPeerVrfUCWalkId());
-    }
-
-    DBTableWalker::WalkId id = walker->WalkTable(this, NULL, 
-        boost::bind(&VrfEntry::VrfNotifyEntryWalk, _1, _2, peer), 
-        boost::bind(&VrfTable::VrfNotifyDone, this, _1, peer));
-    peer->SetPeerVrfUCWalkId(id);
-
-    AGENT_DBWALK_TRACE(AgentDBWalkLog, "Start walk ", 
-                       "VrfTable(VrfTableWalkerNotify)",
-                       peer->GetPeerVrfUCWalkId(),
-		       peer->GetName(), "Notify VrfEntry",
-                       peer->NoOfWalks());
-}
-
-// Subset walker for subnet and broadcast routes
-void VrfTable::VrfNotifyMulticastDone(DBTableBase *base, 
-                                       Peer *peer) {
-    AGENT_DBWALK_TRACE(AgentDBWalkLog, "Done walk ", 
-                       "VrfTable(VrfNotifyMulticastDone)",
-                       peer->GetPeerVrfMCWalkId(),
-		       peer->GetName(), "Add/Withdraw Route",
-                       peer->NoOfWalks());
-    peer->ResetPeerVrfMCWalkId();
-}
-
-void VrfTable::VrfTableWalkerMulticastNotify(Peer *peer, bool associate) {
-    DBTableWalker *walker = db_->GetWalker();
-
-    if (peer->GetPeerVrfMCWalkId() != 
-        DBTableWalker::kInvalidWalkerId) {
-
-        AGENT_DBWALK_TRACE(AgentDBWalkLog, "Cancel walk ", 
-                           "VrfTable(VrfTableWalkerMulticastNotify)",
-                           peer->GetPeerVrfMCWalkId(),
-		           peer->GetName(),
-                           "Add/Withdraw Route",
-                           peer->NoOfWalks());
-        walker->WalkCancel(peer->GetPeerVrfMCWalkId());
-    }
-
-    DBTableWalker::WalkId id = walker->WalkTable(this, NULL, 
-        boost::bind(&VrfEntry::VrfNotifyEntryMulticastWalk, 
-                    _1, _2, peer, associate), 
-        boost::bind(&VrfTable::VrfNotifyMulticastDone, this, _1, peer));
-    peer->SetPeerVrfMCWalkId(id);
-
-    AGENT_DBWALK_TRACE(AgentDBWalkLog, "Start walk ", 
-                       "VrfTable(VrfTableWalkerMulticastNotify)",
-                       peer->GetPeerVrfMCWalkId(),
-                       peer->GetName(),
-                       (associate)? "Add Route": "Withdraw Route",
-                       peer->NoOfWalks()); 
+    DeleteVrfReq(name);
 }
 
 void VrfTable::Input(DBTablePartition *partition, DBClient *client,
@@ -638,7 +427,7 @@ bool VrfTable::IFNodeToReq(IFMapNode *node, DBRequest &req) {
     //Trigger add or delete only for non fabric VRF
     if (node->IsDeleted()) {
         if (IsStaticVrf(node->name())) {
-            //Fabric, link-local and VGW VRF will not be deleted,
+            //Fabric and link-local VRF will not be deleted,
             //upon config delete
             req.oper = DBRequest::DB_ENTRY_ADD_CHANGE;
         } else {
@@ -670,7 +459,7 @@ bool VrfTable::IFNodeToReq(IFMapNode *node, DBRequest &req) {
 
     //When VRF config delete comes, first enqueue VRF delete
     //so that when link evaluation happens, all point to deleted VRF
-    VrfData *data = new VrfData();
+    VrfData *data = new VrfData(VrfData::ConfigVrf);
     req.key.reset(key);
     req.data.reset(data);
     Enqueue(&req);

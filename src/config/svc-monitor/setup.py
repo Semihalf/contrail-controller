@@ -16,7 +16,11 @@ setup(
     zip_safe=False,
     long_description="VNC Service Monitor",
     install_requires=[
-        'zc_zookeeper_static',
         'zope.interface',
-    ]
+    ],
+    entry_points = {
+        'console_scripts' : [
+            'contrail-svc-monitor = svc_monitor.svc_monitor:server_main',
+        ],
+    },
 )

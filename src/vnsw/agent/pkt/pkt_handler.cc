@@ -78,10 +78,9 @@ const unsigned char *PktHandler::mac_address() {
 }
 
 void PktHandler::CreateInterfaces(const std::string &if_name) {
-    PacketInterface::CreateReq(agent_->GetInterfaceTable(), if_name);
-    InterfaceNH::CreatePacketInterfaceNhReq(if_name);
+    PacketInterface::Create(agent_->GetInterfaceTable(), if_name);
+    InterfaceNH::CreatePacketInterfaceNh(if_name);
 }
-
 
 // Send packet to tap interface
 void PktHandler::Send(uint8_t *msg, std::size_t len, PktModuleName mod) {
@@ -490,7 +489,7 @@ bool PktHandler::IsDHCPPacket(PktInfo *pkt_info) {
 
 // Check if the packet is destined to the VM's default GW
 bool PktHandler::IsGwPacket(const Interface *intf, uint32_t dst_ip) {
-    if (intf->type() != Interface::VM_INTERFACE)
+    if (!intf || intf->type() != Interface::VM_INTERFACE)
         return false;
 
     const VmInterface *vm_intf = static_cast<const VmInterface *>(intf);

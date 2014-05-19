@@ -10,6 +10,7 @@
 #include "route/route.h"
 
 #include "cmn/agent_cmn.h"
+#include "cmn/agent_stats.h"
 #include "init/agent_param.h"
 #include "oper/interface_common.h"
 #include "oper/nexthop.h"
@@ -533,8 +534,10 @@ void PktFlowInfo::FloatingIpSNat(const PktInfo *pkt, PktControlInfo *in,
         static_cast<const VmInterface *>(in->intf_);
     const VmInterface::FloatingIpSet &fip_list = intf->floating_ip_list().list_;
     VmInterface::FloatingIpSet::const_iterator it = fip_list.begin();
+    VmInterface::FloatingIpSet::const_iterator fip_it = fip_list.end();
     FlowTable *ftable = Agent::GetInstance()->pkt()->flow_table();
     const Inet4UnicastRouteEntry *rt = out->rt_;
+    bool change = false;
     // Find Floating-IP matching destination-ip
     for ( ; it != fip_list.end(); ++it) {
         if (it->vrf_.get() == NULL) {
@@ -543,9 +546,31 @@ void PktFlowInfo::FloatingIpSNat(const PktInfo *pkt, PktControlInfo *in,
 
         const Inet4UnicastRouteEntry *rt_match = ftable->GetUcRoute(it->vrf_.get(),
                 Ip4Address(pkt->ip_daddr));
-        if (rt_match != NULL) {
+        if (rt_match == NULL) {
+            continue;
+        }
+        // found the route match
+        // prefer the route with longest prefix match
+        // if prefix length is same prefer route from floating IP
+        // if routes are from fip of difference VRF, prefer the one with lower name.
+        // if both the selected and current FIP is from same vrf prefer the one with lower ip addr.
+        if (out->rt_ == NULL || rt_match->plen() > out->rt_->plen()) {
+            change = true;
+        } else if (rt_match->plen() == out->rt_->plen()) {
+            if (fip_it == fip_list.end()) {
+                change = true;
+            } else if (rt_match->vrf()->GetName() < out->rt_->vrf()->GetName()) {
+                change = true;
+            } else if (rt_match->vrf()->GetName() == out->rt_->vrf()->GetName() &&
+                    it->floating_ip_ < fip_it->floating_ip_) {
+                change = true;
+            }
+        }
+
+        if (change) {
             out->rt_ = rt_match;
-            break;
+            fip_it = it;
+            change = false;
         }
     }
 
@@ -561,20 +586,20 @@ void PktFlowInfo::FloatingIpSNat(const PktInfo *pkt, PktControlInfo *in,
 
     // Floating-ip found. We will change src-ip to floating-ip. Recompute route
     // for new source-ip. All policy decisions will be based on this new route
-    in->rt_ = ftable->GetUcRoute(it->vrf_.get(), it->floating_ip_);
+    in->rt_ = ftable->GetUcRoute(fip_it->vrf_.get(), fip_it->floating_ip_);
     if (in->rt_ == NULL) {
         return;
     }
 
-    dest_vrf = it->vrf_.get()->vrf_id();
-    in->vn_ = it->vn_.get();
+    dest_vrf = fip_it->vrf_.get()->vrf_id();
+    in->vn_ = fip_it->vn_.get();
     // Source-VN for policy processing is based on floating-ip VN
     // Dest-VN will be based on out->rt_ and computed below
-    source_vn = &(it->vn_.get()->GetName());
+    source_vn = &(fip_it->vn_.get()->GetName());
 
     // Setup reverse flow to translate sip.
     nat_done = true;
-    nat_ip_saddr = it->floating_ip_.to_ulong();
+    nat_ip_saddr = fip_it->floating_ip_.to_ulong();
     nat_ip_daddr = pkt->ip_daddr;
     nat_sport = pkt->sport;
     nat_dport = pkt->dport;
@@ -601,6 +626,72 @@ void PktFlowInfo::FloatingIpSNat(const PktInfo *pkt, PktControlInfo *in,
     return;
 }
 
+void PktFlowInfo::VrfTranslate(const PktInfo *pkt, PktControlInfo *in,
+                               PktControlInfo *out) {
+    const Interface *intf = NULL;
+    if (!ingress) {
+        return;
+    }
+
+    intf = in->intf_;
+    if (!intf || intf->type() != Interface::VM_INTERFACE) {
+        return;
+    }
+
+    const VmInterface *vm_intf = static_cast<const VmInterface *>(intf);
+    //If interface has a VRF assign rule, choose the acl and match the
+    //packet, else get the acl attached to VN and try matching the packet to
+    //network acl
+    const AclDBEntry *acl = vm_intf->vrf_assign_acl();
+    if (acl == NULL && vm_intf->vn()) {
+        //Check if the network ACL is present
+        acl = vm_intf->vn()->GetAcl();
+    }
+
+    if (!acl) {
+        return;
+    }
+
+    PacketHeader hdr;
+    hdr.vrf = pkt->vrf;
+    hdr.src_ip = pkt->ip_saddr;
+    hdr.dst_ip = pkt->ip_daddr;
+    hdr.protocol = pkt->ip_proto;
+    if (hdr.protocol == IPPROTO_UDP || hdr.protocol == IPPROTO_TCP) {
+        hdr.src_port = pkt->sport;
+        hdr.dst_port = pkt->dport;
+    } else {
+        hdr.src_port = 0;
+        hdr.dst_port = 0;
+    }
+    hdr.src_policy_id = RouteToVn(in->rt_);
+    hdr.dst_policy_id = RouteToVn(out->rt_);
+
+    if (in->rt_) {
+        const AgentPath *path = in->rt_->GetActivePath();
+        hdr.src_sg_id_l = &(path->sg_list());
+    }
+    if (out->rt_) {
+        const AgentPath *path = out->rt_->GetActivePath();
+        hdr.dst_sg_id_l = &(path->sg_list());
+    }
+
+    MatchAclParams match_acl_param;
+    if (!acl->PacketMatch(hdr, match_acl_param)) {
+        return;
+    }
+
+    if (match_acl_param.action_info.vrf_translate_action_.vrf_name() != "") {
+        VrfKey key(match_acl_param.action_info.vrf_translate_action_.vrf_name());
+        const VrfEntry *vrf = static_cast<const VrfEntry*>
+            (Agent::GetInstance()->GetVrfTable()->FindActiveEntry(&key));
+        out->vrf_ = vrf;
+        if (vrf) {
+            out->rt_ = vrf->GetUcRoute(Ip4Address(pkt->ip_daddr));
+        }
+    }
+}
+
 void PktFlowInfo::IngressProcess(const PktInfo *pkt, PktControlInfo *in,
                                  PktControlInfo *out) {
     // Flow packets are expected only on VMPort interfaces
@@ -619,6 +710,14 @@ void PktFlowInfo::IngressProcess(const PktInfo *pkt, PktControlInfo *in,
     // Compute Out-VRF and Route for dest-ip
     out->vrf_ = in->vrf_;
     out->rt_ = ftable->GetUcRoute(out->vrf_, Ip4Address(pkt->ip_daddr));
+    //Native VRF of the interface and acl assigned vrf would have
+    //exact same route with different nexthop, hence if both ingress
+    //route and egress route are present in native vrf, acl match condition
+    //can be applied
+    if (in->rt_ && out->rt_) {
+        VrfTranslate(pkt, in, out);
+    }
+
     if (out->rt_) {
         // Compute out-intf and ECMP info from out-route
         if (RouteToOutInfo(out->rt_, pkt, this, out)) {
@@ -773,10 +872,20 @@ void PktFlowInfo::Add(const PktInfo *pkt, PktControlInfo *in,
                 pkt->ip_proto, pkt->sport, pkt->dport);
     FlowEntryPtr flow(Agent::GetInstance()->pkt()->flow_table()->Allocate(key));
 
-    if (linklocal_bind_local_port &&
+    // Do not allow more than max flows
+    if ((in->vm_ &&
+         (flow_table->VmFlowCount(in->vm_) + 2) > flow_table->max_vm_flows()) ||
+        (out->vm_ &&
+         (flow_table->VmFlowCount(out->vm_) + 2) > flow_table->max_vm_flows())) {
+        flow_table->agent()->stats()->incr_flow_drop_due_to_max_limit();
+        short_flow = true;
+    }
+
+    if (!short_flow && linklocal_bind_local_port &&
         flow->linklocal_src_port_fd() == PktFlowInfo::kLinkLocalInvalidFd) {
         nat_sport = LinkLocalBindPort(in->vm_, pkt->ip_proto);
         if (!nat_sport) {
+            flow_table->agent()->stats()->incr_flow_drop_due_to_max_limit();
             short_flow = true;
         }
     }

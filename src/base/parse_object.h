@@ -9,9 +9,17 @@
 #include <string.h>
 #include <map>
 #if defined(__linux__)
-#include <endian.h>
+#include <byteswap.h>
 #elif defined(__FreeBSD__)
 #include <sys/endian.h>
+#endif
+
+#ifdef __LITTLE_ENDIAN__
+#define be64_to_host(data) bswap_64(data)
+#define host_to_be64(data) bswap_64(data)
+#else
+#define be64_to_host(data) (data)
+#define host_to_be64(data) (data)
 #endif
 
 static inline uint32_t get_short(const uint8_t *data) {
@@ -60,7 +68,7 @@ static inline void put_value(uint8_t *data, int size, uint64_t value) {
 static inline double get_double(const uint8_t *data) {
     uint64_t *pp = (uint64_t *)data;
 #ifndef __APPLE__
-    uint64_t re = be64toh(*pp);
+    uint64_t re = be64_to_host(*pp);
 #else
     uint64_t re = *pp
 #endif
@@ -76,7 +84,7 @@ static inline void put_double(uint8_t *data, double value) {
     } x;
     x.d = value;
 #ifndef __APPLE__
-    *pp = htobe64(x.u64);
+    *pp = host_to_be64(x.u64);
 #else
     *pp = x.u64;
 #endif

@@ -21,6 +21,7 @@
 
 #include <io/event_manager.h>
 #include <base/logging.h>
+#include <base/task_annotations.h>
 #include <net/address.h>
 #include <db/db.h>
 #include <db/db_entry.h>
@@ -94,5 +95,11 @@ do {\
               SandeshLevel::SYS_INFO, __FILE__, __LINE__, ##__VA_ARGS__);\
 } while (false);
 
+#define AGENT_ASSERT(cond)\
+do {\
+   if (Agent::GetInstance()->debug() == true) {\
+       assert(cond);\
+   }\
+} while (false);
 #endif // vnsw_agent_cmn_hpp
 

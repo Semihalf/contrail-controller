@@ -53,3 +53,5 @@ libksync = env.Library('vnswksync',
                         'vrf_assign_ksync.cc'
                        ])
 
+#.de.TOFIX Disabled tests temporarily
+#env.SConscript('test/SConscript', exports='AgentEnv', duplicate = 0)

@@ -3,13 +3,13 @@
  */
 
 #include <base/logging.h>
-#include "oper/nexthop.h"
-#include "oper/mirror_table.h"
-#include "ksync/interface_ksync.h"
-#include "ksync/nexthop_ksync.h"
-#include "ksync/mpls_ksync.h"
-#include "ksync_init.h"
+#include <oper/nexthop.h>
+#include <oper/mirror_table.h>
 #include <ksync/ksync_index.h>
+#include <ksync/interface_ksync.h>
+#include <ksync/nexthop_ksync.h>
+#include <ksync/mpls_ksync.h>
+#include <ksync/ksync_init.h>
 #include <ksync/ksync_sock.h>
 
 MplsKSyncEntry::MplsKSyncEntry(MplsKSyncObject* obj, const MplsKSyncEntry *me,
@@ -39,11 +39,11 @@ std::string MplsKSyncEntry::ToString() const {
     std::stringstream s;
     NHKSyncEntry *next_hop = nh();
 
+    s << "Mpls : " << label_ << " Index : " << GetIndex();
     if (next_hop) {
-        s << "Mpls : " << label_ << " Index : " << GetIndex() << " NH : " 
-        << next_hop->GetIndex();
+        s << next_hop->ToString();
     } else {
-        s << "Mpls : " << label_ << " Index : " << GetIndex() << " NH : <null>";
+        s << "NextHop :  NULL";
     }
     return s.str();
 }
