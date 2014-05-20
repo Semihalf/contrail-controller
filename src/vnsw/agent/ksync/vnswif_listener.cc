@@ -9,14 +9,14 @@
 #include <linux/netlink.h>
 #include <linux/rtnetlink.h>
 #elif defined(__FreeBSD__)
-#include "netlink.h"
-#include <sys/sysctl.h>
 #include <sys/types.h>
+#include <sys/sysctl.h>
 #include <sys/time.h>
 #include <sys/socket.h>
 #include <net/if.h>
 #include <net/if_dl.h>
 #include <net/route.h>
+#include <strings.h>
 /* net/route.h includes net/radix .h that defines Free macro.
    Definition collides with ksync includes */
 #if defined(Free)
@@ -64,17 +64,15 @@ struct rt_msghdr_common {
     u_char  rtmc_type;
 };
 
-#define RTM_ADDR_MAX (sizeof(struct rt_addresses)/ \
-                      sizeof(struct sockaddr *))
+#define RTM_ADDR_MAX ((int)(sizeof(struct rt_addresses)/ \
+                      sizeof(struct sockaddr *)))
 
 int VnswInterfaceListener::NetmaskLen(int mask)
 {
-    int i = 32;
+    if (mask == 0)
+        return 0;
 
-    while (i > 0 && mask & 1U << (i - 1)) {
-        i--;
-    }
-    return 32 - i;
+    return 33 - ffs(mask);
 }
 
 unsigned int
@@ -87,7 +85,10 @@ VnswInterfaceListener::RTMGetAddresses(
     size_t wsize = *size;
     unsigned int oaf = af;
 
-    while (i < RTM_ADDR_MAX && af != 0 && wsize != 0) {
+    if (!(af & ((unsigned int)-1 >>  (32 - RTM_ADDR_MAX))))
+        return (af & (unsigned int)-1 << RTM_ADDR_MAX);
+
+    while (i < (int)RTM_ADDR_MAX && af != 0 && wsize != 0) {
         if (wsize < SA_SIZE(in)) {
             break;
         }
@@ -96,12 +97,12 @@ VnswInterfaceListener::RTMGetAddresses(
             *out = (struct sockaddr *)in;
             wsize -= SA_SIZE(in);
             in += SA_SIZE(in);
-            i++;
         }
+        i++;
         out++;
         af >>= 1;
     }
-    oaf &= (unsigned int)1 << (32 - i);
+    oaf &= (unsigned int)-1 << i;
 
     *size -= wsize;
 
@@ -128,7 +129,7 @@ VnswInterfaceListener::RTMTypeToString(int type)
         "RTM_DELADDR",
         "RTM_IFINFO",
         "RTM_NEWMADDR",
-        "RTM_DEMADDR",
+        "RTM_DELMADDR",
         "RTM_IFANNOUNCE",
         "RTM_IEEE80211"
     };
@@ -148,18 +149,14 @@ VnswInterfaceListener::RTMProcess(const struct rt_msghdr *rtm, size_t size)
     size_t s = size - sizeof(*rtm);
     char name[IFNAMSIZ] = { 0 };
     Event::Type type;
-    unsigned long mask = 0;
+    unsigned int mask_len = 0;
     struct sockaddr_in *t;
 
     /* This actually is an error */
     if (sizeof(*rtm) > size) {
-        LOG(ERROR, "rtm_msghdr message too short to handle");
+        LOG(ERROR, __PRETTY_FUNCTION__ << ": message too short");
         return NULL;
     }
-
-    /* Interested in Networks only */
-    if (rtm->rtm_flags & RTF_HOST)
-        return NULL;
 
     /* Special case: RTM_DELETE may come without gateway and interface
        index. Do not serve that, event requires if name na gateway
@@ -170,9 +167,28 @@ VnswInterfaceListener::RTMProcess(const struct rt_msghdr *rtm, size_t size)
 
     if (RTMGetAddresses((char *)(rtm + 1) , &s,
         rtm->rtm_addrs, &rta) != 0) {
-        LOG(ERROR, "rt_msghdr message "
+        LOG(ERROR, __PRETTY_FUNCTION__
             << RTMTypeToString(rtm->rtm_type)
             << "IP address extraction failed.");
+        return NULL;
+    }
+
+    if (rtm->rtm_addrs & RTA_NETMASK)
+    {
+        mask_len = NetmaskLen(
+            ntohl(((struct sockaddr_in *)rta.netmask)->sin_addr.s_addr)
+        );
+    }
+
+    /* Only routes to host are supported, which means routes that
+       either have RTF_HOST flags or netmask narrowed to one host
+       (unicast, all 1s) */
+    if (!(rtm->rtm_flags & RTF_HOST || mask_len == 32))
+    {
+        LOG(DEBUG, __PRETTY_FUNCTION__ << ": "
+            << RTMTypeToString(rtm->rtm_type)
+            << " misses requirements for processing");
+
         return NULL;
     }
 
@@ -189,7 +205,6 @@ VnswInterfaceListener::RTMProcess(const struct rt_msghdr *rtm, size_t size)
     Ip4Address dst_addr((unsigned long)ntohl(t->sin_addr.s_addr));
     t = (struct sockaddr_in *)rta.gw;
     Ip4Address gw_addr((unsigned long)ntohl(t->sin_addr.s_addr));
-    mask = ntohl(((struct sockaddr_in *)rta.netmask)->sin_addr.s_addr);
 
     if (rtm->rtm_type == RTM_DELETE) {
         type = Event::DEL_ROUTE;
@@ -202,12 +217,12 @@ VnswInterfaceListener::RTMProcess(const struct rt_msghdr *rtm, size_t size)
     /* "Protocol" the route has been set with */
     char proto = rtm->rtm_flags & (RTF_STATIC | RTF_DYNAMIC);
 
-    LOG(DEBUG, "Handle PF_ROUTE message "
+    LOG(DEBUG, __PRETTY_FUNCTION__ << ": "
         << RTMTypeToString(rtm->rtm_type)
-        << " : " << dst_addr.to_string() << "/" << NetmaskLen(mask)
+        << " : " << dst_addr.to_string() << "/" << mask_len
         << " Interface " << name << " GW " << gw_addr.to_string());
 
-    return new Event(type, dst_addr, NetmaskLen(mask), name, gw_addr,
+    return new Event(type, dst_addr, mask_len, name, gw_addr,
                      proto, rtm->rtm_flags);
 }
 
@@ -222,13 +237,13 @@ VnswInterfaceListener::RTMProcess(const struct ifa_msghdr *rtm, size_t size)
 
     /* This actually is an error */
     if (sizeof(*rtm) > size) {
-        LOG(ERROR, "ifa_msghdr message too short to handle");
+        LOG(ERROR, __PRETTY_FUNCTION__ << ": message too short");
         return NULL;
     }
 
     if (RTMGetAddresses((char *)(rtm + 1) , &s,
         rtm->ifam_addrs, &rta) != 0) {
-        LOG(ERROR, "RTMProcess ifam_msghdr message "
+        LOG(ERROR, __PRETTY_FUNCTION__ << ": message "
             << RTMTypeToString(rtm->ifam_type)
             << "IP address extraction failed.");
         return NULL;
@@ -253,11 +268,11 @@ VnswInterfaceListener::RTMProcess(const struct ifa_msghdr *rtm, size_t size)
     t = (struct sockaddr_in *)rta.ifa;
     Ip4Address addr((unsigned long)ntohl(t->sin_addr.s_addr));
 
-    LOG(DEBUG, "Handle PF_ROUTE message "
+    LOG(DEBUG, __PRETTY_FUNCTION__ << ": message "
         << RTMTypeToString(rtm->ifam_type)
         << " Interface " << name << " IP " << addr.to_string());
 
-    return new VnswInterfaceListener::Event(type, name, addr);
+    return new Event(type, name, addr);
 }
 
 VnswInterfaceListener::Event *
@@ -271,13 +286,13 @@ VnswInterfaceListener::RTMProcess(
 
     /* This actually is an error */
     if (sizeof(*rtm) > size) {
-        LOG(ERROR, "if_msghdr message too short to handle");
+        LOG(ERROR, __PRETTY_FUNCTION__ << ": message too short");
         return NULL;
     }
 
     if (RTMGetAddresses((char *)(rtm + 1) , &s,
         rtm->ifm_addrs, &rta) != 0) {
-        LOG(ERROR, "RTMProcess if_msghdr message "
+        LOG(ERROR, __PRETTY_FUNCTION__ << ": message "
             << RTMTypeToString(rtm->ifm_type)
             << "IP address extraction failed.");
         return NULL;
@@ -296,7 +311,7 @@ VnswInterfaceListener::RTMProcess(
         type = Event::DEL_INTERFACE;
     }
 
-    LOG(DEBUG, "Handle PF_ROUTE message "
+    LOG(DEBUG, __PRETTY_FUNCTION__ << ": message "
         << RTMTypeToString(rtm->ifm_type)
         << " Interface " << name);
 
@@ -326,12 +341,12 @@ int VnswInterfaceListener::RTMDecode(const struct rt_msghdr_common *rtm,
         event = RTMProcess((const struct if_msghdr *)rtm, len);
         break;
     default:
-        LOG(DEBUG, "VnswInterfaceListener got message : "
+        LOG(DEBUG, __PRETTY_FUNCTION__ << ": message "
                 << RTMTypeToString(rtm->rtmc_type));
         break;
     }
 
-    if (event) {
+    if (event != NULL) {
         revent_queue_->Enqueue(event);
     }
     return 0;
@@ -340,12 +355,13 @@ int VnswInterfaceListener::RTMDecode(const struct rt_msghdr_common *rtm,
 int VnswInterfaceListener::RTMProcessBuffer(const void *buffer, size_t size)
 {
     struct rt_msghdr_common *p = (struct rt_msghdr_common *)buffer;
+    int ret = 0;
 
-    while (size != 0 && size >= p->rtmc_msglen) {
-        int ret = RTMDecode((struct rt_msghdr_common *)p, size, 0);
+    while (size != 0 && size >= p->rtmc_msglen && p->rtmc_msglen > 0) {
+        ret = RTMDecode(p, size, 0);
 
         if (ret)
-            return ret;
+            break;
 
         size -= p->rtmc_msglen;
         p = (struct rt_msghdr_common *)((char *)p + p->rtmc_msglen);
@@ -354,10 +370,10 @@ int VnswInterfaceListener::RTMProcessBuffer(const void *buffer, size_t size)
     /* This is not an error since size of buffer, instead of size of
        all messages in that buffer could be given. */
     if (size > 0)
-        LOG(DEBUG, "RTMProcessBuffer Warning: message data left "
-            << "unprocessed(" << size << " bytes)");
+        LOG(DEBUG, __PRETTY_FUNCTION__ 
+            << ": message data left unprocessed(" << size << " bytes)");
 
-    return 0;
+    return ret;
 }
 
 int VnswInterfaceListener::Getfib()
@@ -369,7 +385,8 @@ int VnswInterfaceListener::Getfib()
         return -1;
 
     size = sizeof(fibnum);
-    if (fibnum != -1 &&
+
+    if (fibnum >= 0 &&
         sysctlbyname("net.my_fibnum", &fibnum, &size, NULL, 0) != -1)
     {
         return fibnum;
@@ -384,21 +401,18 @@ int VnswInterfaceListener::RTCreateSocket(int fib)
        hand. */
     int s = socket(PF_ROUTE, SOCK_RAW, AF_UNSPEC);
 
-    if (s < 0) {
-        LOG(ERROR,"RTCreate failed to create socket with error: "
-            << errno);
+    if (s == -1) {
+        LOG(ERROR, __PRETTY_FUNCTION__ << ": failed to create "
+            << "socket with error: " << errno);
         assert(0);
     }
 
-    if (fib == -1)
-        fib = 0;
-
     if (setsockopt(s, SOL_SOCKET, SO_SETFIB, (void *)&fib,
-        sizeof(fib)) < 0) {
-
+        sizeof(fib)) == -1)
+    {
         close(s);
-        LOG(ERROR,"RTCreate failed to setup socket with error: "
-            << errno);
+        LOG(ERROR, __PRETTY_FUNCTION__ << " failed to setup "
+            << "socket with error: " << errno);
         assert(0);
     }
 
@@ -448,8 +462,12 @@ int VnswInterfaceListener::RTInitRoutes(int fib)
     int ret;
     void *p;
 
-    if (fib == -1)
-        mib_len--;
+    /* If fib is -1 then we will force default fib, this is equivalent
+       to providing mib with five ints only (as 6th is None and
+       7th is fib number - or 0 if not provided). See man 3 sysctl,
+       PF_ROUTE. */
+    if (fib < 0)
+        mib_len -= 2;
 
     p = SysctlDump(mib, mib_len, &size, &ret);
 
@@ -534,6 +552,13 @@ void VnswInterfaceListener::Init() {
 #elif defined(__FreeBSD__)
     /* Get routing table */
     int fib = Getfib();
+
+    if (fib < 0) {
+        LOG(ERROR, __PRETTY_FUNCTION__ << ": Failed to get fib. "
+            << "Expected >= 0, obtained " << fib);
+        assert(fib >=0);
+    }
+
     sock_fd_ = RTCreateSocket(fib);
 
     /* Fetch interfaces and IPv4 addresses */
@@ -581,9 +606,7 @@ void VnswInterfaceListener::CreateSocket() {
     boost::asio::local::datagram_protocol protocol;
     sock_.assign(protocol, sock_fd_);
 }
-#endif
 
-#if defined(__linux__)
 // Initiate netlink scan based on type and flags
 void VnswInterfaceListener::InitNetlinkScan(uint32_t type, uint32_t seqno) {
     struct nlmsghdr *nlh;
@@ -742,7 +765,6 @@ static void InterfaceResync(Agent *agent, uint32_t id, bool active) {
     req.data.reset(new VmInterfaceOsOperStateData());
     table->Enqueue(&req);
 }
-#endif
 
 VnswInterfaceListener::HostInterfaceEntry *
 VnswInterfaceListener::GetHostInterfaceEntry(const std::string &name) {
@@ -834,8 +856,14 @@ void VnswInterfaceListener::HandleInterfaceEvent(const Event *event) {
         ResetSeen(event->interface_, false);
     } else {
         SetSeen(event->interface_, false);
+#if defined(__linux__)
         bool up = ((event->flags_ & (IFF_UP | IFF_RUNNING)) == 
                    (IFF_UP | IFF_RUNNING));
+#elif defined(__FreeBSD__)
+        bool up = (event->flags_ & RTF_UP);
+#else
+#error "Unsupported platform"
+#endif
         SetLinkState(event->interface_, up);
 
         // In XEN mode, notify add of XAPI interface
@@ -1058,8 +1086,8 @@ static string EventTypeToString(uint32_t type) {
 }
 #endif
 
-
 bool VnswInterfaceListener::ProcessEvent(Event *event) {
+#if defined(__linux__)
     LOG(DEBUG, "VnswInterfaceListener Event " << EventTypeToString(event->event_) 
         << " Interface " << event->interface_ << " Addr "
         << event->addr_.to_string() << " prefixlen " << (uint32_t)event->plen_
@@ -1092,14 +1120,15 @@ bool VnswInterfaceListener::ProcessEvent(Event *event) {
     }
 
     delete event;
+#endif
     return true;
 }
 
-#if defined(__linux__)
 /****************************************************************************
  * Netlink message handlers
  * Decodes netlink messages and enqueues events to revent_queue_
  ****************************************************************************/
+#if defined(__linux__)
 static string NetlinkTypeToString(uint32_t type) {
     switch (type) {
     case NLMSG_DONE:
@@ -1250,7 +1279,6 @@ static VnswInterfaceListener::Event *HandleNetlinkAddrMsg(struct nlmsghdr *nlh){
     return new VnswInterfaceListener::Event(type, name, Ip4Address(ipaddr),
                                             ifa->ifa_prefixlen, ifa->ifa_flags);
 }
-#endif
 
 int VnswInterfaceListener::NlMsgDecode(struct nlmsghdr *nl, std::size_t len, 
                                        uint32_t seq_no) {
