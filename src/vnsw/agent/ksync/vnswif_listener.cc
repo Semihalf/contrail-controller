@@ -10,6 +10,21 @@
 #include <linux/rtnetlink.h>
 #elif defined(__FreeBSD__)
 #include "netlink.h"
+#include <sys/sysctl.h>
+#include <sys/types.h>
+#include <sys/time.h>
+#include <sys/socket.h>
+#include <net/if.h>
+#include <net/if_dl.h>
+#include <net/route.h>
+/* net/route.h includes net/radix .h that defines Free macro.
+   Definition collides with ksync includes */
+#if defined(Free)
+#undef Free
+#endif
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <errno.h>
 #endif
 #include <net/if.h>
 #include <sys/ioctl.h>
@@ -28,6 +43,442 @@
 #include <ksync/vnswif_listener.h>
 
 extern void RouterIdDepInit(Agent *agent);
+
+#if defined(__FreeBSD__)
+/* Pointers are ordered in the same way as address flags (RTA_*)
+ * from route.h */
+struct rt_addresses {
+    struct sockaddr *dst;
+    struct sockaddr *gw;
+    struct sockaddr *netmask;
+    struct sockaddr *genmask;
+    struct sockaddr *ifp;
+    struct sockaddr *ifa;
+    struct sockaddr *author;
+    struct sockaddr *brd;
+};
+
+struct rt_msghdr_common {
+    u_short rtmc_msglen;
+    u_char  rtmc_version;
+    u_char  rtmc_type;
+};
+
+#define RTM_ADDR_MAX (sizeof(struct rt_addresses)/ \
+                      sizeof(struct sockaddr *))
+
+int VnswInterfaceListener::NetmaskLen(int mask)
+{
+    int i = 32;
+
+    while (i > 0 && mask & 1U << (i - 1)) {
+        i--;
+    }
+    return 32 - i;
+}
+
+unsigned int
+VnswInterfaceListener::RTMGetAddresses(
+    const char *in, size_t *size, unsigned int af,
+    struct rt_addresses *rta)
+{
+    struct sockaddr **out = (struct sockaddr **)rta;
+    int i = 0;
+    size_t wsize = *size;
+    unsigned int oaf = af;
+
+    while (i < RTM_ADDR_MAX && af != 0 && wsize != 0) {
+        if (wsize < SA_SIZE(in)) {
+            break;
+        }
+
+        if (af & 1) {
+            *out = (struct sockaddr *)in;
+            wsize -= SA_SIZE(in);
+            in += SA_SIZE(in);
+            i++;
+        }
+        out++;
+        af >>= 1;
+    }
+    oaf &= (unsigned int)1 << (32 - i);
+
+    *size -= wsize;
+
+    return oaf;
+}
+
+
+const string
+VnswInterfaceListener::RTMTypeToString(int type)
+{
+    static const char *types[] = {
+        "RTM_ADD",
+        "RTM_DELETE",
+        "RTM_CHANGE",
+        "RTM_GET",
+        "RTM_LOSING",
+        "RTM_REDIRECT",
+        "RTM_MISS",
+        "RTM_LOCK",
+        "RTM_OLDADD",
+        "RTM_OLDDEL",
+        "RTM_RESOLVE",
+        "RTM_NEWADDR",
+        "RTM_DELADDR",
+        "RTM_IFINFO",
+        "RTM_NEWMADDR",
+        "RTM_DEMADDR",
+        "RTM_IFANNOUNCE",
+        "RTM_IEEE80211"
+    };
+
+    if (type > 0 && (unsigned long)type < sizeof(types)/sizeof(types[0]))
+        return types[type-1];
+
+    std::stringstream str;
+    str << "UNHANDLED <" << type << ">";
+    return str.str();
+}
+
+VnswInterfaceListener::Event *
+VnswInterfaceListener::RTMProcess(const struct rt_msghdr *rtm, size_t size)
+{
+    struct rt_addresses rta = { 0 };
+    size_t s = size - sizeof(*rtm);
+    char name[IFNAMSIZ] = { 0 };
+    Event::Type type;
+    unsigned long mask = 0;
+    struct sockaddr_in *t;
+
+    /* This actually is an error */
+    if (sizeof(*rtm) > size) {
+        LOG(ERROR, "rtm_msghdr message too short to handle");
+        return NULL;
+    }
+
+    /* Interested in Networks only */
+    if (rtm->rtm_flags & RTF_HOST)
+        return NULL;
+
+    /* Special case: RTM_DELETE may come without gateway and interface
+       index. Do not serve that, event requires if name na gateway
+       that will not be provided */
+    if (rtm->rtm_type == RTM_DELETE &&
+        !(rtm->rtm_addrs & RTA_GATEWAY))
+        return NULL;
+
+    if (RTMGetAddresses((char *)(rtm + 1) , &s,
+        rtm->rtm_addrs, &rta) != 0) {
+        LOG(ERROR, "rt_msghdr message "
+            << RTMTypeToString(rtm->rtm_type)
+            << "IP address extraction failed.");
+        return NULL;
+    }
+
+    /* There might be no interface name within address block, but there
+       is always interface index that can be used to get the name */
+    if (rtm->rtm_addrs & RTA_IFP && rta.ifp != NULL) {
+        struct sockaddr_dl *sd = (struct sockaddr_dl *)rta.ifp;
+        strncpy(name, sd->sdl_data, sd->sdl_nlen);
+    } else {
+        if_indextoname(rtm->rtm_index, name);
+    }
+
+    t = (struct sockaddr_in *)rta.dst;
+    Ip4Address dst_addr((unsigned long)ntohl(t->sin_addr.s_addr));
+    t = (struct sockaddr_in *)rta.gw;
+    Ip4Address gw_addr((unsigned long)ntohl(t->sin_addr.s_addr));
+    mask = ntohl(((struct sockaddr_in *)rta.netmask)->sin_addr.s_addr);
+
+    if (rtm->rtm_type == RTM_DELETE) {
+        type = Event::DEL_ROUTE;
+    } else {
+        /* Handles also RTM_GET message, which is similar in structure
+           but is used for reporting current state */
+        type = Event::ADD_ROUTE;
+    }
+
+    /* "Protocol" the route has been set with */
+    char proto = rtm->rtm_flags & (RTF_STATIC | RTF_DYNAMIC);
+
+    LOG(DEBUG, "Handle PF_ROUTE message "
+        << RTMTypeToString(rtm->rtm_type)
+        << " : " << dst_addr.to_string() << "/" << NetmaskLen(mask)
+        << " Interface " << name << " GW " << gw_addr.to_string());
+
+    return new Event(type, dst_addr, NetmaskLen(mask), name, gw_addr,
+                     proto, rtm->rtm_flags);
+}
+
+VnswInterfaceListener::Event *
+VnswInterfaceListener::RTMProcess(const struct ifa_msghdr *rtm, size_t size)
+{
+    struct rt_addresses rta = { 0 };
+    size_t s = size;
+    char name[IFNAMSIZ] = { 0 };
+    struct sockaddr_in *t;
+    Event::Type type;
+
+    /* This actually is an error */
+    if (sizeof(*rtm) > size) {
+        LOG(ERROR, "ifa_msghdr message too short to handle");
+        return NULL;
+    }
+
+    if (RTMGetAddresses((char *)(rtm + 1) , &s,
+        rtm->ifam_addrs, &rta) != 0) {
+        LOG(ERROR, "RTMProcess ifam_msghdr message "
+            << RTMTypeToString(rtm->ifam_type)
+            << "IP address extraction failed.");
+        return NULL;
+    }
+
+    assert(rta.ifa != NULL);
+
+    if (rtm->ifam_addrs & RTA_IFP && rta.ifp != NULL) {
+        struct sockaddr_dl *sd = (struct sockaddr_dl *)rta.ifp;
+        strncpy(name, sd->sdl_data, sd->sdl_nlen);
+    } else {
+        if_indextoname(rtm->ifam_index, name);
+    }
+
+    if (rtm->ifam_type == RTM_DELADDR) {
+        type = Event::DEL_ADDR;
+    } else {
+        /* RTM_NEWADDR is only other command */
+        type = Event::ADD_ADDR;
+    }
+
+    t = (struct sockaddr_in *)rta.ifa;
+    Ip4Address addr((unsigned long)ntohl(t->sin_addr.s_addr));
+
+    LOG(DEBUG, "Handle PF_ROUTE message "
+        << RTMTypeToString(rtm->ifam_type)
+        << " Interface " << name << " IP " << addr.to_string());
+
+    return new VnswInterfaceListener::Event(type, name, addr);
+}
+
+VnswInterfaceListener::Event *
+VnswInterfaceListener::RTMProcess(
+    const struct if_msghdr *rtm, size_t size)
+{
+    struct rt_addresses rta = { 0 };
+    size_t s = size;
+    char name[IFNAMSIZ] = { 0 };
+    Event::Type type;
+
+    /* This actually is an error */
+    if (sizeof(*rtm) > size) {
+        LOG(ERROR, "if_msghdr message too short to handle");
+        return NULL;
+    }
+
+    if (RTMGetAddresses((char *)(rtm + 1) , &s,
+        rtm->ifm_addrs, &rta) != 0) {
+        LOG(ERROR, "RTMProcess if_msghdr message "
+            << RTMTypeToString(rtm->ifm_type)
+            << "IP address extraction failed.");
+        return NULL;
+    }
+
+    if (rtm->ifm_addrs & RTA_IFP && rta.ifp != NULL) {
+        struct sockaddr_dl *sd = (struct sockaddr_dl *)rta.ifp;
+        strncpy(name, sd->sdl_data, sd->sdl_nlen);
+    } else {
+        if_indextoname(rtm->ifm_index, name);
+    }
+
+    if (rtm->ifm_flags & RTF_UP) {
+        type = Event::ADD_INTERFACE;
+    } else {
+        type = Event::DEL_INTERFACE;
+    }
+
+    LOG(DEBUG, "Handle PF_ROUTE message "
+        << RTMTypeToString(rtm->ifm_type)
+        << " Interface " << name);
+
+    return new Event(type, name, rtm->ifm_flags);
+}
+
+int VnswInterfaceListener::RTMDecode(const struct rt_msghdr_common *rtm,
+    size_t len, uint32_t seq_no)
+{
+    Event *event = NULL;
+    /* Segfault protection */
+    if (len < sizeof(*rtm)) {
+        return 1;
+    }
+
+    switch (rtm->rtmc_type) {
+    case RTM_GET:
+    case RTM_ADD:
+    case RTM_DELETE:
+        event = RTMProcess((const struct rt_msghdr *)rtm, len);
+        break;
+    case RTM_NEWADDR:
+    case RTM_DELADDR:
+        event = RTMProcess((const struct ifa_msghdr *)rtm, len);
+        break;
+    case RTM_IFINFO:
+        event = RTMProcess((const struct if_msghdr *)rtm, len);
+        break;
+    default:
+        LOG(DEBUG, "VnswInterfaceListener got message : "
+                << RTMTypeToString(rtm->rtmc_type));
+        break;
+    }
+
+    if (event) {
+        revent_queue_->Enqueue(event);
+    }
+    return 0;
+}
+
+int VnswInterfaceListener::RTMProcessBuffer(const void *buffer, size_t size)
+{
+    struct rt_msghdr_common *p = (struct rt_msghdr_common *)buffer;
+
+    while (size != 0 && size >= p->rtmc_msglen) {
+        int ret = RTMDecode((struct rt_msghdr_common *)p, size, 0);
+
+        if (ret)
+            return ret;
+
+        size -= p->rtmc_msglen;
+        p = (struct rt_msghdr_common *)((char *)p + p->rtmc_msglen);
+    }
+
+    /* This is not an error since size of buffer, instead of size of
+       all messages in that buffer could be given. */
+    if (size > 0)
+        LOG(DEBUG, "RTMProcessBuffer Warning: message data left "
+            << "unprocessed(" << size << " bytes)");
+
+    return 0;
+}
+
+int VnswInterfaceListener::Getfib()
+{
+    int fibnum;
+    size_t size = sizeof(fibnum);
+
+    if (sysctlbyname("net.fibs", &fibnum, &size, NULL, 0) != 0)
+        return -1;
+
+    size = sizeof(fibnum);
+    if (fibnum != -1 &&
+        sysctlbyname("net.my_fibnum", &fibnum, &size, NULL, 0) != -1)
+    {
+        return fibnum;
+    }
+    return -2;
+}
+
+int VnswInterfaceListener::RTCreateSocket(int fib)
+{
+    /* Interested in link layer and inet messages, so can not
+       specify one family. Filtering will have to be done by
+       hand. */
+    int s = socket(PF_ROUTE, SOCK_RAW, AF_UNSPEC);
+
+    if (s < 0) {
+        LOG(ERROR,"RTCreate failed to create socket with error: "
+            << errno);
+        assert(0);
+    }
+
+    if (fib == -1)
+        fib = 0;
+
+    if (setsockopt(s, SOL_SOCKET, SO_SETFIB, (void *)&fib,
+        sizeof(fib)) < 0) {
+
+        close(s);
+        LOG(ERROR,"RTCreate failed to setup socket with error: "
+            << errno);
+        assert(0);
+    }
+
+    /* Assign native socket to boost asio */
+    boost::asio::local::datagram_protocol protocol;
+    sock_.assign(protocol, s);
+
+    return s;
+}
+
+void *VnswInterfaceListener::SysctlDump(int *mib, int mib_len, size_t *ret_len, int *ret_code)
+{
+    size_t size = 0;
+    void *dump_buf = NULL;
+    int ret = 0;
+
+    if (sysctl(mib, mib_len, NULL, &size, NULL, 0)) {
+        ret = 1;
+        goto exit_here;
+    }
+
+    dump_buf = calloc(size, 1);
+    if (dump_buf == NULL) {
+        ret = 2;
+        goto exit_here;
+    }
+
+    if (sysctl(mib, mib_len, dump_buf, &size, NULL, 0)) {
+        ret = 3;
+        free(dump_buf);
+        size = 0;
+        dump_buf = NULL;
+        goto exit_here;
+    }
+
+exit_here:
+    *ret_code = ret;
+    *ret_len = size;
+    return dump_buf;
+}
+
+int VnswInterfaceListener::RTInitRoutes(int fib)
+{
+    int mib[] = { CTL_NET, PF_ROUTE, 0, AF_INET, NET_RT_DUMP, 0, fib};
+    int mib_len = sizeof(mib)/sizeof(int);
+    size_t size;
+    int ret;
+    void *p;
+
+    if (fib == -1)
+        mib_len--;
+
+    p = SysctlDump(mib, mib_len, &size, &ret);
+
+    if (p != NULL) {
+        ret = RTMProcessBuffer(p, size);
+        free(p);
+    }
+
+    return ret;
+}
+
+int VnswInterfaceListener::RTInitIfAndAddr()
+{
+    int mib[] = { CTL_NET, PF_ROUTE, 0, AF_INET, NET_RT_IFLIST, 0};
+    int mib_len = sizeof(mib)/sizeof(int);
+    size_t size;
+    int ret;
+    void *p;
+
+    p = SysctlDump(mib, mib_len, &size, &ret);
+
+    if (p != NULL) {
+        ret = RTMProcessBuffer(p, size);
+        free(p);
+    }
+
+    return ret;
+}
+#endif
 
 VnswInterfaceListener::VnswInterfaceListener(Agent *agent) : 
     agent_(agent), read_buf_(NULL), sock_fd_(0), 
@@ -80,8 +531,20 @@ void VnswInterfaceListener::Init() {
     /* Fetch routes from kernel asyncronously and update the gateway-id */
     InitNetlinkScan(RTM_GETROUTE, ++seqno_);
 
-    RegisterAsyncHandler();
+#elif defined(__FreeBSD__)
+    /* Get routing table */
+    int fib = Getfib();
+    sock_fd_ = RTCreateSocket(fib);
+
+    /* Fetch interfaces and IPv4 addresses */
+    RTInitIfAndAddr();
+
+    /* Fetch routes */
+    RTInitRoutes(fib);
+#else
+#error "Unsupported platform"
 #endif
+    RegisterAsyncHandler();
 }
 
 void VnswInterfaceListener::Shutdown() { 
@@ -93,9 +556,10 @@ void VnswInterfaceListener::Shutdown() {
 }
 
 // Create netlink socket
-void VnswInterfaceListener::CreateSocket() {
 #if defined(__linux__)
+void VnswInterfaceListener::CreateSocket() {
     sock_fd_ = socket(PF_NETLINK, SOCK_DGRAM, NETLINK_ROUTE);
+
     if (sock_fd_ < 0) {
         LOG(ERROR, "Error <" << errno << ": " << strerror(errno) << 
                 "> creating socket");
@@ -116,11 +580,11 @@ void VnswInterfaceListener::CreateSocket() {
     /* Assign native socket to boost asio */
     boost::asio::local::datagram_protocol protocol;
     sock_.assign(protocol, sock_fd_);
-#endif
 }
+#endif
 
-// Initiate netlink scan based on type and flags
 #if defined(__linux__)
+// Initiate netlink scan based on type and flags
 void VnswInterfaceListener::InitNetlinkScan(uint32_t type, uint32_t seqno) {
     struct nlmsghdr *nlh;
     const uint32_t buf_size = VnswInterfaceListener::kMaxBufferSize;
@@ -161,13 +625,11 @@ void VnswInterfaceListener::InitNetlinkScan(uint32_t type, uint32_t seqno) {
 #endif
 
 void VnswInterfaceListener::RegisterAsyncHandler() {
-#if defined(__linux__)
     read_buf_ = new uint8_t[kMaxBufferSize];
     sock_.async_receive(boost::asio::buffer(read_buf_, kMaxBufferSize), 
                         boost::bind(&VnswInterfaceListener::ReadHandler, this,
                                  boost::asio::placeholders::error,
                                  boost::asio::placeholders::bytes_transferred));
-#endif
 }
 
 void VnswInterfaceListener::ReadHandler(const boost::system::error_code &error,
@@ -182,27 +644,32 @@ void VnswInterfaceListener::ReadHandler(const boost::system::error_code &error,
         LOG(ERROR, "Error < : " << error.message() << 
                    "> reading packet on netlink sock");
     }
+#elif defined(__FreeBSD__)
+    if (error == 0) {
+        RTMDecode((struct rt_msghdr_common *)read_buf_, len, -1);
+    } else {
+        LOG(ERROR, "Error < : " << error.message() <<
+                   "> reading packet on PF_ROUTE sock");
+    }
+#endif
 
     if (read_buf_) {
         delete [] read_buf_;
         read_buf_ = NULL;
     }
     RegisterAsyncHandler();
-#endif
 }
 
 void VnswInterfaceListener::Enqueue(Event *event) {
-#if defined(__linux__)
     revent_queue_->Enqueue(event);
-#endif
 }
+
 
 /****************************************************************************
  * Interface DB notification handler. Triggers add/delete of link-local route
  ****************************************************************************/
 void VnswInterfaceListener::InterfaceNotify(DBTablePartBase *part,
                                             DBEntryBase *e) {
-#if defined(__linux__)
     const VmInterface *vmport = dynamic_cast<VmInterface *>(e);
     if (vmport == NULL) {
         return;
@@ -251,7 +718,6 @@ void VnswInterfaceListener::InterfaceNotify(DBTablePartBase *part,
                                              vmport->name(), addr));
         }
     }
-#endif
     return;
 }
 
@@ -262,7 +728,6 @@ bool VnswInterfaceListener::IsInterfaceActive(const HostInterfaceEntry *entry) {
     return entry->oper_seen_ && entry->host_seen_ && entry->link_up_;
 }
 
-#if defined(__linux__)
 static void InterfaceResync(Agent *agent, uint32_t id, bool active) {
     InterfaceTable *table = agent->GetInterfaceTable();
     Interface *interface = table->FindInterface(id);
@@ -281,37 +746,27 @@ static void InterfaceResync(Agent *agent, uint32_t id, bool active) {
 
 VnswInterfaceListener::HostInterfaceEntry *
 VnswInterfaceListener::GetHostInterfaceEntry(const std::string &name) {
-#if defined(__linux__)
     HostInterfaceTable::iterator it = host_interface_table_.find(name);
     if (it == host_interface_table_.end())
         return NULL;
     return it->second;
-#elif defined(__FreeBSD__)
-    return NULL;
-#endif
-
 }
 
 // Handle transition from In-Active to Active interface
 void VnswInterfaceListener::Activate(const std::string &name, uint32_t id) {
-#if defined(__linux__)
     if (name == agent_->vhost_interface_name()) {
         // link-local routes would have been deleted when vhost link was down.
         // Add all routes again on activation
         AddLinkLocalRoutes();
     }
     InterfaceResync(agent_, id, true);
-#endif
 }
 
 void VnswInterfaceListener::DeActivate(const std::string &name, uint32_t id){
-#if defined(__linux__)
     InterfaceResync(agent_, id, false);
-#endif
 }
 
 void VnswInterfaceListener::SetSeen(const std::string &name, bool oper) {
-#if defined(__linux__)
     HostInterfaceEntry *entry = GetHostInterfaceEntry(name);
     if (entry == NULL) {
         entry = new HostInterfaceEntry();
@@ -330,11 +785,9 @@ void VnswInterfaceListener::SetSeen(const std::string &name, bool oper) {
 
     if (old_active == false)
         Activate(name, entry->oper_id_);
-#endif
 }
 
 void VnswInterfaceListener::ResetSeen(const std::string &name, bool oper) {
-#if defined(__linux__)
     HostInterfaceEntry *entry = GetHostInterfaceEntry(name);
     if (entry == NULL)
         return;
@@ -357,7 +810,6 @@ void VnswInterfaceListener::ResetSeen(const std::string &name, bool oper) {
         host_interface_table_.erase(it);
         delete entry;
     }
-#endif
 }
 
 void VnswInterfaceListener::SetLinkState(const std::string &name, bool link_up){
@@ -539,20 +991,17 @@ void VnswInterfaceListener::UpdateLinkLocalRoute(const Ip4Address &addr,
 
 // Handle link-local route changes resulting from ADD_LL_ROUTE or DEL_LL_ROUTE
 void VnswInterfaceListener::LinkLocalRouteFromLinkLocalEvent(Event *event) {
-#if defined(__linux__)
     if (event->event_ == Event::DEL_LL_ROUTE) {
         ll_addr_table_.erase(event->addr_);
         UpdateLinkLocalRoute(event->addr_, true); } else {
         ll_addr_table_.insert(event->addr_);
         UpdateLinkLocalRoute(event->addr_, false);
     }
-#endif
 }
 
 // For link-local routes added by agent, we treat agent as master. So, force 
 // add the routes again if they are deleted from kernel
 void VnswInterfaceListener::LinkLocalRouteFromRouteEvent(Event *event) {
-#if defined(__linux__)
     if (event->protocol_ != kVnswRtmProto)
         return;
 
@@ -572,16 +1021,13 @@ void VnswInterfaceListener::LinkLocalRouteFromRouteEvent(Event *event) {
          && event->interface_ != agent_->vhost_interface_name())) {
         UpdateLinkLocalRoute(event->addr_, false);
     }
-#endif
 }
 
 void VnswInterfaceListener::AddLinkLocalRoutes() {
-#if defined(__linux__)
     for (LinkLocalAddressTable::iterator it = ll_addr_table_.begin();
          it != ll_addr_table_.end(); ++it) {
         UpdateLinkLocalRoute(*it, false);
     }
-#endif
 }
 
 void VnswInterfaceListener::DelLinkLocalRoutes() {
@@ -612,8 +1058,8 @@ static string EventTypeToString(uint32_t type) {
 }
 #endif
 
+
 bool VnswInterfaceListener::ProcessEvent(Event *event) {
-#if defined(__linux__)
     LOG(DEBUG, "VnswInterfaceListener Event " << EventTypeToString(event->event_) 
         << " Interface " << event->interface_ << " Addr "
         << event->addr_.to_string() << " prefixlen " << (uint32_t)event->plen_
@@ -647,16 +1093,13 @@ bool VnswInterfaceListener::ProcessEvent(Event *event) {
 
     delete event;
     return true;
-#elif defined(__FreeBSD__)
-    return false;
-#endif
 }
 
+#if defined(__linux__)
 /****************************************************************************
  * Netlink message handlers
  * Decodes netlink messages and enqueues events to revent_queue_
  ****************************************************************************/
-#if defined(__linux__)
 static string NetlinkTypeToString(uint32_t type) {
     switch (type) {
     case NLMSG_DONE:
@@ -742,7 +1185,6 @@ static VnswInterfaceListener::Event *HandleNetlinkRouteMsg(struct nlmsghdr *nlh)
     return new VnswInterfaceListener::Event(type, dst_addr, rtm->rtm_dst_len,
                                             name, gw_addr, rtm->rtm_protocol,
                                             rtm->rtm_flags);
-    return NULL;
 }
 
 static VnswInterfaceListener::Event *HandleNetlinkIntfMsg(struct nlmsghdr *nlh){
@@ -812,7 +1254,6 @@ static VnswInterfaceListener::Event *HandleNetlinkAddrMsg(struct nlmsghdr *nlh){
 
 int VnswInterfaceListener::NlMsgDecode(struct nlmsghdr *nl, std::size_t len, 
                                        uint32_t seq_no) {
-#if defined(__linux__)
     Event *event = NULL;
     struct nlmsghdr *nlh = nl;
     for (; (NLMSG_OK(nlh, len)); nlh = NLMSG_NEXT(nlh, len)) {
@@ -845,7 +1286,7 @@ int VnswInterfaceListener::NlMsgDecode(struct nlmsghdr *nl, std::size_t len,
             revent_queue_->Enqueue(event);
         }
     }
-#endif
 
     return 0;
 }
+#endif
