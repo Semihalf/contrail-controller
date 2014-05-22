@@ -48,6 +48,7 @@ public:
         wm_cb_count_(0) {
         exit_callback_running_ = false;
         exit_callback_counter_ = 0;
+        wm_callback_running_ = false;
     }
 
     virtual void SetUp() {
@@ -80,6 +81,21 @@ public:
     void WaterMarkCallback(size_t wm_count) {
         wm_cb_count_ = wm_count;
     }
+    void WaterMarkCallbackSleep1Sec(size_t wm_count, bool high,
+        size_t vwm_size) {
+        EXPECT_FALSE(wm_callback_running_);
+        wm_callback_running_ = true;
+        int count = 0;
+        while (count++ < 10) {
+            usleep(100000);
+            if (high) {
+                EXPECT_EQ(vwm_size, work_queue_.high_water_.size());
+            } else {
+                EXPECT_EQ(vwm_size, work_queue_.low_water_.size());
+            }
+        }
+        wm_callback_running_ = false;
+    }
     bool DequeueTaskReady(bool start_runner) {
         if (start_runner) {
             work_queue_.SetStartRunnerFunc(
@@ -108,6 +124,7 @@ public:
     size_t wm_cb_count_;
     tbb::atomic<int> exit_callback_counter_;
     tbb::atomic<bool> exit_callback_running_;
+    tbb::atomic<bool> wm_callback_running_;
 };
 
 TEST_F(QueueTaskTest, StartRunnerBasic) {
@@ -262,7 +279,7 @@ TEST_F(QueueTaskTest, WaterMarkTest) {
     work_queue_.SetStartRunnerFunc(
         boost::bind(&QueueTaskTest::StartRunnerAlways, this));
     SetWorkQueueMaxIterations(6);
-    work_queue_.SetEntryCallback(
+    work_queue_.SetExitCallback(
         boost::bind(&QueueTaskTest::DequeueTaskReady, this, false));
     work_queue_.MayBeStartRunner();
     task_util::WaitForIdle(1);
@@ -272,7 +289,7 @@ TEST_F(QueueTaskTest, WaterMarkTest) {
     work_queue_.SetStartRunnerFunc(
         boost::bind(&QueueTaskTest::StartRunnerAlways, this));
     SetWorkQueueMaxIterations(1);
-    work_queue_.SetEntryCallback(
+    work_queue_.SetExitCallback(
         boost::bind(&QueueTaskTest::DequeueTaskReady, this, false));
     work_queue_.MayBeStartRunner();
     task_util::WaitForIdle(1);
@@ -286,6 +303,29 @@ TEST_F(QueueTaskTest, WaterMarkTest) {
     task_util::WaitForIdle(1);
     EXPECT_EQ(0, work_queue_.Length());
     EXPECT_EQ(2, wm_cb_count_);
+}
+
+TEST_F(QueueTaskTest, WaterMarkParallelTest) {
+    // Setup high watermarks
+    std::vector<WorkQueue<int>::WaterMarkInfo> vhwm;
+    WorkQueue<int>::WaterMarkInfo hwm(0,
+        boost::bind(&QueueTaskTest::WaterMarkCallbackSleep1Sec,
+                    this, _1, true, 1));
+    vhwm.push_back(hwm);
+    work_queue_.SetHighWaterMark(vhwm);
+    // Enqueue so that watermark callback gets called
+    TaskScheduler *scheduler = TaskScheduler::GetInstance();
+    EnqueueTask *etask;
+    etask = new EnqueueTask(&work_queue_,
+                scheduler->GetTaskId(
+                "::test::QueueTaskTest::WaterMarkParallelTest"), 1);
+    scheduler->Enqueue(etask);
+    // Wait till the watermark callback is running
+    TASK_UTIL_EXPECT_TRUE(wm_callback_running_);
+    // Clear the high watermarks
+    work_queue_.ResetHighWaterMark();
+    // Wait till the watermark callback is finished 
+    TASK_UTIL_EXPECT_FALSE(wm_callback_running_);
 }
 
 TEST_F(QueueTaskTest, OnExitParallelTest) {
@@ -305,6 +345,72 @@ TEST_F(QueueTaskTest, OnExitParallelTest) {
     // Wait till the exit callback is finished
     TASK_UTIL_EXPECT_EQ(exit_callback_counter_, 2);
     TASK_UTIL_EXPECT_FALSE(exit_callback_running_);
+}
+
+TEST_F(QueueTaskTest, DisableEnableTest1) {
+    // Disable the queue
+    work_queue_.set_disable(true);
+
+    // Create a task to enqueue a few entries
+    TaskScheduler *scheduler = TaskScheduler::GetInstance();
+    EnqueueTask *etask = new EnqueueTask(&work_queue_,
+        scheduler->GetTaskId("::test::QueueTaskTest::EnableDisableTest"), 100);
+    scheduler->Enqueue(etask);
+    task_util::WaitForIdle(1);
+
+    // Verify that the entries are still enqueued
+    EXPECT_FALSE(IsWorkQueueRunning());
+    EXPECT_EQ(100, work_queue_.Length());
+    EXPECT_EQ(100, work_queue_.NumEnqueues());
+    EXPECT_EQ(0, work_queue_.NumDequeues());
+    EXPECT_EQ(0, dequeues_);
+
+    // Enable the queue
+    work_queue_.set_disable(false);
+    task_util::WaitForIdle(1);
+
+    // Verify that the entries have been dequeued
+    EXPECT_FALSE(IsWorkQueueRunning());
+    EXPECT_EQ(0, work_queue_.Length());
+    EXPECT_EQ(100, work_queue_.NumEnqueues());
+    EXPECT_EQ(100, work_queue_.NumDequeues());
+    EXPECT_EQ(100, dequeues_);
+}
+
+TEST_F(QueueTaskTest, DisableEnableTest2) {
+    // Stop the scheduler
+    TaskScheduler *scheduler = TaskScheduler::GetInstance();
+    scheduler->Stop();
+
+    // Enqueue a few entries
+    for (int idx = 0; idx < 100; ++idx) {
+        work_queue_.Enqueue(idx);
+    }
+
+    // Disable the queue
+    work_queue_.set_disable(true);
+
+    // Start the scheduler
+    scheduler->Start();
+    task_util::WaitForIdle(1);
+
+    // Verify that the entries are still enqueued
+    EXPECT_FALSE(IsWorkQueueRunning());
+    EXPECT_EQ(100, work_queue_.Length());
+    EXPECT_EQ(100, work_queue_.NumEnqueues());
+    EXPECT_EQ(0, work_queue_.NumDequeues());
+    EXPECT_EQ(0, dequeues_);
+
+    // Enable the queue
+    work_queue_.set_disable(false);
+    task_util::WaitForIdle(1);
+
+    // Verify that the entries have been dequeued
+    EXPECT_FALSE(IsWorkQueueRunning());
+    EXPECT_EQ(0, work_queue_.Length());
+    EXPECT_EQ(100, work_queue_.NumEnqueues());
+    EXPECT_EQ(100, work_queue_.NumDequeues());
+    EXPECT_EQ(100, dequeues_);
 }
 
 int main(int argc, char *argv[]) {

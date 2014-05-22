@@ -275,7 +275,76 @@ bool NHKSyncEntry::IsLess(const KSyncEntry &rhs) const {
 
 std::string NHKSyncEntry::ToString() const {
     std::stringstream s;
-    s << "NH : " << GetIndex() << " Type :" << type_;
+    s << "NextHop Index: " << GetIndex() << " Type: ";
+    switch(type_) {
+    case NextHop::DISCARD: {
+        s << "Discard";
+        break;
+    }
+    case NextHop::RECEIVE: {
+        s << "Receive ";
+        break;
+    }
+    case NextHop::RESOLVE: {
+        s << "Resolve ";
+        break;
+    }
+    case NextHop::ARP: {
+        s << "ARP ";
+        break;
+    }
+    case NextHop::VRF: {
+        s << "VRF assign to ";
+        const VrfEntry* vrf =
+            ksync_obj_->ksync()->agent()->GetVrfTable()->
+            FindVrfFromId(vrf_id_);
+        if (vrf) {
+            s << vrf->GetName() << " ";
+        } else {
+            s << "Invalid ";
+        }
+        break;
+    }
+    case NextHop::INTERFACE: {
+        s << "Interface ";
+        break;
+    }
+    case NextHop::TUNNEL: {
+        s << "Tunnel to ";
+        s << inet_ntoa(dip_);
+        break;
+    }
+    case NextHop::MIRROR: {
+        s << "Mirror to ";
+        s << inet_ntoa(dip_) << ": " << dport_;
+        break;
+    }
+    case NextHop::VLAN: {
+        s << "VLAN interface ";
+        break;
+    }
+    case NextHop::COMPOSITE: {
+        s << "Composite Child members: ";
+        if (component_nh_list_.size() == 0) {
+            s << "Empty ";
+        }
+        for (KSyncComponentNHList::const_iterator it = component_nh_list_.begin();
+             it != component_nh_list_.end(); it++) {
+            KSyncComponentNH component_nh = *it;
+            if (component_nh.nh()) {
+                s << component_nh.nh()->ToString();
+            }
+        }
+        break;
+    }
+    case NextHop::INVALID: {
+        s << "Invalid ";
+    }
+    }
+
+    if (interface_) {
+        s << "<" << interface_->ToString() << ">";
+    }
     return s.str();
 }
 
@@ -378,8 +447,8 @@ bool NHKSyncEntry::Sync(DBEntry *e) {
             InterfaceKSyncEntry if_ksync(interface_object, 
                                          rcv_nh->GetInterface());
             interface_ = interface_object->GetReference(&if_ksync);
-            memcpy(&dmac_, interface_object->physical_interface_mac(), 
-                   sizeof(dmac_));
+            Agent *agent = ksync_obj_->ksync()->agent();
+            memcpy(&dmac_, &agent->vhost_interface()->mac(), sizeof(dmac_));
         } else if (active_nh->GetType() == NextHop::DISCARD) {
             valid_ = false;
             interface_ = NULL;
@@ -456,6 +525,11 @@ int NHKSyncEntry::Encode(sandesh_op::type op, char *buf, int buf_len) {
 
     encoder.set_h_op(op);
     encoder.set_nhr_id(GetIndex());
+    if (op == sandesh_op::DELETE) {
+        /* For delete only NH-index is required by vrouter */
+        encode_len = encoder.WriteBinary((uint8_t *)buf, buf_len, &error);
+        return encode_len;
+    }
     encoder.set_nhr_rid(0);
     encoder.set_nhr_vrf(vrf_id_);
     encoder.set_nhr_family(AF_INET);
@@ -842,9 +916,12 @@ void NHKSyncEntry::SetEncap(std::vector<int8_t> &encap) {
 #error "Unsupported platform"
 #endif
     } else {
-        smac = (const uint8_t *)
-            ksync_obj_->ksync()->interface_ksync_obj()
-            ->physical_interface_mac();
+        Agent *agent = ksync_obj_->ksync()->agent();
+#if defined(__linux__)
+        smac = agent->vhost_interface()->mac().ether_addr_octet;
+#elif defined(__FreeBSD__)
+        smac = agent->vhost_interface()->mac().octet;
+#endif
     }
     for (int i = 0 ; i < ETHER_ADDR_LEN; i++) {
         encap.push_back(smac[i]);

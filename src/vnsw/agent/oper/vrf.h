@@ -11,7 +11,6 @@
 #include <sandesh/sandesh.h>
 #include <cmn/agent_cmn.h>
 #include <cmn/index_vector.h>
-#include <ksync/ksync_index.h>
 #include <oper/peer.h>
 #include <oper/agent_types.h>
 
@@ -33,15 +32,23 @@ struct VrfKey : public AgentKey {
 };
 
 struct VrfData : public AgentData {
-    VrfData() : AgentData() { };
-    virtual ~VrfData() { }
+    enum VrfEntryFlags {
+        ConfigVrf = 1 << 0,     // vrf is received from config
+        GwVrf     = 1 << 1,     // GW configured for this VRF
+    };
+
+    VrfData(uint32_t flags) : AgentData(), flags_(flags) {}
+    virtual ~VrfData() {}
+
+    uint32_t flags_;
 };
 
 class VrfEntry : AgentRefCount<VrfEntry>, public AgentDBEntry {
 public:
     static const uint32_t kInvalidIndex = 0xFFFFFFFF;
     static const uint32_t kDeleteTimeout = 900 * 1000;
-    VrfEntry(const string &name);
+
+    VrfEntry(const string &name, uint32_t flags);
     virtual ~VrfEntry();
 
     virtual bool IsLess(const DBEntry &rhs) const;
@@ -56,18 +63,15 @@ public:
         return AgentRefCount<VrfEntry>::GetRefCount();
     }
 
+    uint32_t flags() const { return flags_; }
+    void set_flags(uint32_t flags) { flags_ |= flags; }
+    bool are_flags_set(const VrfData::VrfEntryFlags &flags) const {
+        return (flags_ & flags);
+    }
+
     bool DBEntrySandesh(Sandesh *sresp, std::string &name) const;
     Inet4UnicastRouteEntry *GetUcRoute(const Ip4Address &addr) const;
     Inet4UnicastRouteEntry *GetUcRoute(const Inet4UnicastRouteEntry &rt_key) const;
-    static bool DelPeerRoutes(DBTablePartBase *part, DBEntryBase *entry,
-                              Peer *peer);
-
-    static bool VrfNotifyEntryWalk(DBTablePartBase *part, 
-                                   DBEntryBase *entry, 
-                                   Peer *peer);
-    static bool VrfNotifyEntryMulticastWalk(DBTablePartBase *part, 
-                                            DBEntryBase *entry, 
-                                            Peer *peer, bool associate);
 
     LifetimeActor *deleter();
     void SendObjectLog(AgentLogEvent::type event) const;
@@ -75,6 +79,7 @@ public:
     bool DeleteTimeout();
     void CancelDeleteTimer();
     void PostAdd();
+    bool CanDelete(DBRequest *req);
     void AddNH(Ip4Address ip, uint8_t plen, ComponentNHData *nh_data) ;
     void DeleteNH(Ip4Address ip, uint8_t plen, ComponentNHData *nh_data) ;
     uint32_t GetNHCount(Ip4Address ip, uint8_t plen) ;
@@ -91,11 +96,9 @@ public:
 private:
     friend class VrfTable;
     class DeleteActor;
-    static void DelPeerDone(DBTableBase *base, DBState *state, 
-                            uint8_t table_type, const string &name,
-                            Peer *peer);
     string name_;
     uint32_t id_;
+    uint32_t flags_;
     DBTableWalker::WalkId walkid_;
     boost::scoped_ptr<DeleteActor> deleter_;
     AgentRouteTable *rt_table_db_[Agent::ROUTE_TABLE_MAX];
@@ -130,8 +133,10 @@ public:
     virtual void OnZeroRefcount(AgentDBEntry *e);
 
     // Create a VRF entry with given name
-    void CreateVrf(const string &name);
-    void DeleteVrf(const string &name);
+    void CreateVrf(const string &name, uint32_t flags = VrfData::ConfigVrf);
+    void DeleteVrf(const string &name, uint32_t flags = VrfData::ConfigVrf);
+    void CreateVrfReq(const string &name, uint32_t flags = VrfData::ConfigVrf);
+    void DeleteVrfReq(const string &name, uint32_t flags = VrfData::ConfigVrf);
     //Add and delete routine for VRF not deleted on VRF config delete
     void CreateStaticVrf(const string &name);
     void DeleteStaticVrf(const string &name);
@@ -146,9 +151,6 @@ public:
     VrfEntry *FindVrfFromId(size_t index);
     void FreeVrfId(size_t index) {index_table_.Remove(index);};
 
-    void DelPeerRoutes(Peer *peer, Peer::DelPeerDone cb);
-    void VrfTableWalkerNotify(Peer *peer);
-    void VrfTableWalkerMulticastNotify(Peer *peer, bool associate);
     virtual bool CanNotify(IFMapNode *dbe);
     
     AgentRouteTable *GetInet4UnicastRouteTable(const std::string &vrf_name);
@@ -164,9 +166,7 @@ public:
 
 private:
     friend class VrfEntry;
-    void DelPeerDone(DBTableBase *base, Peer *,Peer::DelPeerDone cb);
-    void VrfNotifyDone(DBTableBase *base, Peer *);
-    void VrfNotifyMulticastDone(DBTableBase *base, Peer *);
+
     DB *db_;
     static VrfTable *vrf_table_;
     IndexVector<VrfEntry> index_table_;

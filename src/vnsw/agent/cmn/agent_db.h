@@ -112,6 +112,7 @@ public:
     void ClearRefState() const;
     bool IsActive() const;
 
+    virtual bool CanDelete(DBRequest *req);
     virtual void PostAdd();
     virtual bool DBEntrySandesh(Sandesh *resp, std::string &name) const = 0;
 private:
@@ -161,6 +162,7 @@ public:
     virtual bool CanNotify(IFMapNode *dbe) {
         return true;
     }
+    virtual void Process(DBRequest &req);
     void set_agent(Agent *agent) { agent_ = agent; }
     Agent *agent() const { return agent_; }
 

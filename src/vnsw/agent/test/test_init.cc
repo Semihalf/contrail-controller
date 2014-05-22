@@ -48,6 +48,7 @@ TestClient *TestInit(const char *init_file, bool ksync_init, bool pkt_init,
                      bool asio, bool ksync_sync_mode) {
     TestClient *client = new TestClient();
     agent_init = new AgentTestInit(client);
+    client->set_init(agent_init);
 
     // Read agent parameters from config file and arguments
     Agent *agent = agent_init->agent();
@@ -80,12 +81,10 @@ TestClient *TestInit(const char *init_file, bool ksync_init, bool pkt_init,
     agent->set_ksync_sync_mode(ksync_sync_mode);
 
     // Initialize agent and kick start initialization
-    agent->Init(param, init);
+    agent->CopyConfig(param, init);
+    init->Start();
 
-    while (init->state() != AgentInit::INIT_DONE) {
-        usleep(1000);
-    }
-
+    WAIT_FOR(1000, 10000, init->init_done());
     client->Init();
     client->WaitForIdle();
     client->SetFlowFlushExclusionPolicy();
@@ -117,13 +116,14 @@ TestClient *TestInit(const char *init_file, bool ksync_init, bool pkt_init,
 TestClient *StatsTestInit() {
     TestClient *client = new TestClient();
     agent_init = new AgentTestInit(client);
+    client->set_init(agent_init);
     Agent *agent = agent_init->agent();
     AgentParam *param = agent_init->param();
     AgentInit *init = agent_init->init();
 
     // Read agent parameters from config file and arguments
     opt::variables_map var_map;
-    param->Init("controller/src/vnsw/agent/test/vnswa_cfg.xml", "test", var_map);
+    param->Init("controller/src/vnsw/agent/test/vnswa_cfg.ini", "test", var_map);
 
     // Initialize the agent-init control class
     int sandesh_port = 0;
@@ -143,7 +143,8 @@ TestClient *StatsTestInit() {
     param->set_test_mode(true);
 
     // Initialize agent and kick start initialization
-    agent->Init(param, init);
+    agent->CopyConfig(param, init);
+    init->Start();
 
     AsioRun();
 
@@ -166,6 +167,7 @@ TestClient *StatsTestInit() {
 TestClient *VGwInit(const string &init_file, bool ksync_init) {
     TestClient *client = new TestClient();
     agent_init = new AgentTestInit(client);
+    client->set_init(agent_init);
     Agent *agent = agent_init->agent();
     AgentParam *param = agent_init->param();
     AgentInit *init = agent_init->init();
@@ -193,12 +195,10 @@ TestClient *VGwInit(const string &init_file, bool ksync_init) {
     }
 
     // Initialize agent and kick start initialization
-    agent->Init(param, init);
+    agent->CopyConfig(param, init);
+    init->Start();
 
-    while (init->state() != AgentInit::INIT_DONE) {
-        usleep(1000);
-    }
-
+    WAIT_FOR(1000, 10000, init->init_done());
     client->Init();
     client->WaitForIdle();
 
@@ -264,7 +264,7 @@ void TestClient::Shutdown() {
 void TestShutdown() {
     client->WaitForIdle();
 
-    VNController::DisConnect();
+    Agent::GetInstance()->controller()->DisConnect();
     client->WaitForIdle();
 
     if (Agent::GetInstance()->vgw()) {

@@ -64,7 +64,7 @@ public:
     virtual void Delete() { }
     virtual void Add() { }
     virtual void SendTrace(Trace event) const;
-    virtual void GetOsParams();
+    virtual void GetOsParams(Agent *agent);
 
     // DBEntry comparator virtual function
     bool IsLess(const DBEntry &rhs) const {
@@ -100,9 +100,10 @@ public:
     bool IsL2LabelValid(uint32_t label) const { return (label_ == label);}
     uint32_t os_index() const {return os_index_;}
     const ether_addr &mac() const {return mac_;}
+    bool os_oper_state() const { return os_oper_state_; }
+    // Used only for test code
+    void set_test_oper_state(bool val) { test_oper_state_ = val; }
 
-    static bool test_mode() {return test_mode_;}
-    static void set_test_mode(bool mode) {test_mode_ = mode;}
 protected:
     void SetItfSandeshData(ItfSandeshData &data) const;
 
@@ -119,7 +120,9 @@ protected:
     bool dns_enabled_;
     struct ether_addr mac_;
     size_t os_index_;
-    static bool test_mode_;
+    bool os_oper_state_;
+    // Used only for test code
+    bool test_oper_state_;
 
 private:
     friend class InterfaceTable;
@@ -190,9 +193,17 @@ struct InterfaceData : public AgentData {
 /////////////////////////////////////////////////////////////////////////////
 class InterfaceTable : public AgentDBTable {
 public:
-    typedef std::map<const std::string, Ip4Address> DhcpSnoopMap;
-    typedef std::map<const std::string, Ip4Address>::iterator DhcpSnoopIterator;
-    typedef std::pair<const std::string, Ip4Address> DhcpSnoopPair;
+    struct DhcpSnoopEntry {
+        DhcpSnoopEntry() : addr_(0), config_entry_(false) { }
+        DhcpSnoopEntry(const Ip4Address &addr, bool config_entry) :
+            addr_(addr), config_entry_(config_entry) { }
+        ~DhcpSnoopEntry() { }
+        Ip4Address addr_;
+        bool config_entry_;
+    };
+
+    typedef std::map<const std::string, DhcpSnoopEntry> DhcpSnoopMap;
+    typedef std::map<const std::string, DhcpSnoopEntry>::iterator DhcpSnoopIterator;
 
     InterfaceTable(DB *db, const std::string &name) :
         AgentDBTable(db, name), operdb_(NULL), agent_(NULL),
@@ -242,6 +253,8 @@ public:
     const Ip4Address GetDhcpSnoopEntry(const std::string &ifname);
     void DeleteDhcpSnoopEntry(const std::string &ifname);
     void AddDhcpSnoopEntry(const std::string &ifname, const Ip4Address &addr);
+    void AuditDhcpSnoopTable();
+    void DhcpSnoopSetConfigSeen(const std::string &ifname);
 
     // TODO : to remove this
     static InterfaceTable *GetInstance() { return interface_table_; }
@@ -257,6 +270,9 @@ private:
     Agent *agent_;          // Cached entry
     DBTableWalker::WalkId walkid_;
     IndexVector<Interface> index_table_;
+    // On restart, DHCP Snoop entries are read from kernel and updated in the
+    // ASIO context. Lock used to synchronize
+    tbb::mutex dhcp_snoop_mutex_;
     DhcpSnoopMap dhcp_snoop_map_;
     DISALLOW_COPY_AND_ASSIGN(InterfaceTable);
 };

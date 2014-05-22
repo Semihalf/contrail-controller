@@ -8,9 +8,16 @@
 #include <boost/asio/ip/tcp.hpp>
 #include <boost/ptr_container/ptr_map.hpp>
 #include <boost/uuid/uuid.hpp>
-#include <boost/uuid/uuid_generators.hpp>
-#include <boost/uuid/uuid_io.hpp>
 #include <boost/tuple/tuple_comparison.hpp>
+
+#if __GNUC_PREREQ(4, 6)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-result"
+#endif
+#include <boost/uuid/uuid_generators.hpp>
+#if __GNUC_PREREQ(4, 6)
+#pragma GCC diagnostic pop
+#endif
 
 #include "base/parse_object.h"
 
@@ -52,8 +59,9 @@ public:
             SandeshSession *session, const Sandesh *sandesh);
 
     void GetGeneratorSummaryInfo(std::vector<GeneratorSummaryInfo> &genlist);
-    void GetSandeshStats(std::vector<SandeshMessageStat> &smslist);
-    void GetGeneratorSandeshStatsInfo(std::vector<ModuleServerState> &genlist);
+    void GetGeneratorStats(std::vector<SandeshMessageStat> &smslist,
+        std::vector<GeneratorDbStats> &gdbslist);
+    void GetGeneratorUVEInfo(std::vector<ModuleServerState> &genlist);
     bool SendRemote(const std::string& destination,
             const std::string &dec_sandesh);
 
@@ -158,12 +166,15 @@ private:
 
 class VizSession : public SandeshSession {
 public:
-    SandeshGenerator *gen_;
     VizSession(TcpServer *client, Socket *socket, int task_instance,
             int writer_task_id, int reader_task_id) :
         SandeshSession(client, socket, task_instance, writer_task_id,
                        reader_task_id),
         gen_(NULL) { }
+    void set_generator(SandeshGenerator *gen) { gen_ = gen; }
+    SandeshGenerator* generator() { return gen_; }
+private:
+    SandeshGenerator *gen_;
 };
 
 #endif /* COLLECTOR_H_ */

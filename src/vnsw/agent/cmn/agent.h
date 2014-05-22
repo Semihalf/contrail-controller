@@ -5,6 +5,14 @@
 #ifndef vnsw_agent_hpp
 #define vnsw_agent_hpp
 
+#if defined(__linux__)
+#include <netinet/ether.h>
+#elif defined(__FreeBSD__)
+#include <net/ethernet.h>
+#else
+#error "Unsupported platform"
+#endif
+
 class AgentParam;
 class AgentInit;
 class AgentConfig;
@@ -99,8 +107,9 @@ class FlowProto;
 class Peer;
 class LifetimeManager;
 class DiagTable;
+class VNController;
 
-extern void RouterIdDepInit();
+extern void RouterIdDepInit(Agent *agent);
 
 #define MULTICAST_LABEL_RANGE_START 1024
 #define MULTICAST_LABEL_BLOCK_SIZE 2048        
@@ -136,8 +145,10 @@ public:
     virtual ~Agent();
     const std::string &GetHostName();
     const std::string &GetProgramName() {return prog_name_;};
+    static const std::string &DefaultConfigFile() {return config_file_;}
+    static const std::string &DefaultLogFile() {return log_file_;}
     static const std::string &NullString() {return null_str_;};
-    static const std::string &VrrpMac() {return vrrp_mac_;};
+    static const uint8_t *vrrp_mac() {return vrrp_mac_;}
     static const std::string &BcastMac() {return bcast_mac_;};
     InterfaceTable *GetInterfaceTable() {return intf_table_;};
     MirrorCfgTable *GetMirrorCfgTable() {return mirror_cfg_table_;};
@@ -260,14 +271,16 @@ public:
     AgentXmppChannel* GetControlNodeMulticastBuilder() {
         return cn_mcast_builder_;
     };
-    void SetControlNodeMulticastBuilder(AgentXmppChannel *peer) { 
-        cn_mcast_builder_ =  peer;
-    };
+    void set_cn_mcast_builder(AgentXmppChannel *peer);
 
     const std::string &GetFabricVnName() {return fabric_vn_name_;};
     const std::string &GetDefaultVrf() {return fabric_vrf_name_;};
     const std::string &GetLinkLocalVnName() {return link_local_vn_name_;}
     const std::string &GetLinkLocalVrfName() {return link_local_vrf_name_;}
+
+    void set_fabric_vrf_name(const std::string &name) {
+        fabric_vrf_name_ = name;
+    }
 
     const std::string &vhost_interface_name() const;
     void set_vhost_interface_name(const std::string &name) {
@@ -283,6 +296,13 @@ public:
     }
 
     const std::string &GetHostInterfaceName();
+
+    const Interface *vhost_interface() const {
+        return vhost_interface_;
+    }
+    void set_vhost_interface(const Interface *interface) {
+        vhost_interface_ = interface;
+    }
 
     AgentXmppChannel *GetAgentXmppChannel(uint8_t idx) { 
         return agent_xmpp_channel_[idx];
@@ -324,10 +344,15 @@ public:
     const Peer *local_vm_peer() const {return local_vm_peer_.get();}
     const Peer *link_local_peer() const {return linklocal_peer_.get();}
     const Peer *ecmp_peer() const {return ecmp_peer_.get();}
+    const Peer *vgw_peer() const {return vgw_peer_.get();}
 
+    bool debug() { return debug_; }
+    void set_debug(bool debug) { debug_ = debug; }
     VxLanNetworkIdentifierMode vxlan_network_identifier_mode() const {
         return vxlan_network_identifier_mode_;
     }
+    bool headless_agent_mode() const {return headless_agent_mode_;}
+
     void SetInterfaceTable(InterfaceTable *table) {
          intf_table_ = table;
     };
@@ -485,6 +510,7 @@ public:
         vxlan_network_identifier_mode_ = mode;
     }
 
+    void set_headless_agent_mode(bool mode) {headless_agent_mode_ = mode;}
     std::string GetUuidStr(boost::uuids::uuid uuid_val) {
         std::ostringstream str;
         str << uuid_val;
@@ -500,6 +526,12 @@ public:
         return ksync_sync_mode_;
     }
 
+    bool test_mode() const { return test_mode_; }
+    void set_test_mode(bool test_mode) { test_mode_ = test_mode; }
+
+    uint32_t flow_table_size() const { return flow_table_size_; }
+    void set_flow_table_size(uint32_t count) { flow_table_size_ = count; }
+
     bool isXenMode();
 
     static Agent *GetInstance() {return singleton_;}
@@ -507,38 +539,61 @@ public:
     void Shutdown() {
     }
 
-    DiagTable *diag_table() const {
-        return diag_table_.get();
-    }
+    DiagTable *diag_table() const { return diag_table_.get(); }
+    void set_diag_table(DiagTable *table) { diag_table_.reset(table); }
+
     void CreateLifetimeManager();
     void ShutdownLifetimeManager();
     void SetAgentTaskPolicy();
 
-    void CreateModules();
+    void InitCollector();
     void CreateDBTables();
     void CreateDBClients();
     void CreateVrf();
     void CreateNextHops();
     void CreateInterfaces();
+    void InitPeers();
     void InitModules();
     void InitDone();
 
     void Init(AgentParam *param, AgentInit *init);
     AgentParam *params() const { return params_; }
     AgentInit *init() const { return init_; }
-    AgentConfig *cfg() const { return cfg_.get(); }
-    CfgListener *cfg_listener() const;
-    AgentStats *stats() const { return stats_.get(); }
-    KSync *ksync() const { return ksync_.get(); }
-    AgentUve *uve() const { return uve_.get(); }
-    PktModule *pkt() const { return pkt_.get(); }
-    ServicesModule *services() const { return services_.get(); }
-    DiscoveryAgentClient *discovery_client() const;
-    VirtualGateway *vgw() const {return vgw_.get(); }
-    OperDB *oper_db() const {return oper_db_.get(); }
 
+    AgentConfig *cfg() const { return cfg_.get(); }
+    void set_cfg(AgentConfig *cfg) { cfg_.reset(cfg); }
+
+    CfgListener *cfg_listener() const;
+
+    AgentStats *stats() const { return stats_.get(); }
+    void set_stats(AgentStats *stats) { stats_.reset(stats); }
+
+    KSync *ksync() const { return ksync_.get(); }
+    void set_ksync(KSync *ksync) { return ksync_.reset(ksync); }
+
+    AgentUve *uve() const { return uve_.get(); }
+    void set_uve(AgentUve *uve) { uve_.reset(uve); }
+
+    PktModule *pkt() const { return pkt_.get(); }
+    void set_pkt(PktModule *pkt) { pkt_.reset(pkt); }
+
+    ServicesModule *services() const { return services_.get(); }
+    void set_services(ServicesModule *services) { services_.reset(services); }
+
+    DiscoveryAgentClient *discovery_client() const;
+    void set_discovery_client(DiscoveryAgentClient *client);
+
+    VirtualGateway *vgw() const { return vgw_.get(); }
+    void set_vgw(VirtualGateway *vgw) { vgw_.reset(vgw); }
+
+    OperDB *oper_db() const { return oper_db_.get(); }
+    void set_oper_db(OperDB *oper_db) { oper_db_.reset(oper_db); }
+
+    VNController *controller() const {return controller_.get();}
+    void set_controller(VNController *val) {controller_.reset(val);}
+
+    void CopyConfig(AgentParam *params, AgentInit *init);
 private:
-    void GetConfig();
 
     AgentParam *params_;
     AgentInit *init_;
@@ -551,6 +606,7 @@ private:
     std::auto_ptr<VirtualGateway> vgw_;
     std::auto_ptr<OperDB> oper_db_;
     std::auto_ptr<DiagTable> diag_table_;
+    std::auto_ptr<VNController> controller_;
 
     EventManager *event_mgr_;
     AgentXmppChannel *agent_xmpp_channel_[MAX_XMPP_SERVERS];
@@ -627,6 +683,7 @@ private:
     std::auto_ptr<Peer> local_vm_peer_;
     std::auto_ptr<Peer> linklocal_peer_;
     std::auto_ptr<Peer> ecmp_peer_;
+    std::auto_ptr<Peer> vgw_peer_;
 
     IFMapAgentParser *ifmap_parser_;
     bool router_id_configured_;
@@ -637,13 +694,23 @@ private:
     std::string mgmt_ip_;
     static Agent *singleton_;
     VxLanNetworkIdentifierMode vxlan_network_identifier_mode_;
+    bool headless_agent_mode_;
+    const Interface *vhost_interface_;
+    bool debug_;
+    bool test_mode_;
 
+    // Flow information
+    uint32_t flow_table_size_;
+
+    // Constants
+    static const std::string config_file_;
+    static const std::string log_file_;
     static const std::string null_str_;
-    static const std::string fabric_vrf_name_;
+    static std::string fabric_vrf_name_;
     static const std::string fabric_vn_name_;
     static const std::string link_local_vrf_name_;
     static const std::string link_local_vn_name_;
-    static const std::string vrrp_mac_;
+    static const uint8_t vrrp_mac_[ETHER_ADDR_LEN];
     static const std::string bcast_mac_;
 };
 

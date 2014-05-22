@@ -213,9 +213,17 @@ class AnalyticsTest(testtools.TestCase, fixtures.TestWithFixtures):
                              start_time))
         assert generator_obj.verify_on_setup()
         generator_obj.generate_flow_samples()
-        assert vizd_obj.verify_flow_samples(generator_obj)
+        generator_obj1 = self.useFixture(
+            GeneratorFixture("VRouterAgent", collectors,
+                             logging, vizd_obj.get_opserver_port(),
+                             start_time, hostname=socket.gethostname() + "dup"))
+        assert generator_obj1.verify_on_setup()
+        generator_obj1.generate_flow_samples()
+        generator_object = [generator_obj, generator_obj1]
+        for obj in generator_object:
+            assert vizd_obj.verify_flow_samples(obj)
         assert vizd_obj.verify_flow_table(generator_obj)
-        assert vizd_obj.verify_flow_series_aggregation_binning(generator_obj)
+        assert vizd_obj.verify_flow_series_aggregation_binning(generator_object)
         return True
     # end test_04_flow_query 
 
@@ -521,6 +529,25 @@ class AnalyticsTest(testtools.TestCase, fixtures.TestWithFixtures):
 	assert vizd_obj.verify_where_query_prefix(generator_obj)
         return True;
     #end test_11_where_clause_query
+
+    #@unittest.skip('verify ObjectTable query')
+    def test_12_verify_object_table_query(self):
+        '''
+        This test verifies the ObjectTable query.
+        '''
+        logging.info('*** test_12_verify_object_table_query ***')
+        
+        if AnalyticsTest._check_skip_test() is True:
+            return True
+
+        vizd_obj = self.useFixture(
+            AnalyticsFixture(logging,
+                             builddir,
+                             self.__class__.cassandra_port))
+        assert vizd_obj.verify_on_setup()
+        assert vizd_obj.verify_collector_obj_count()
+        assert vizd_obj.verify_object_table_query()
+    # end test_12_verify_object_table_query
 
     @staticmethod
     def get_free_port():

@@ -10,8 +10,9 @@
 #include <sandesh/sandesh_trace.h>
 #include <pkt/flow_table.h>
 #include <uve/flow_stats_collector.h>
-#include <ksync/flowtable_ksync.h>
 #include <ksync/ksync_init.h>
+#include <ksync/ksync_entry.h>
+#include <ksync/flowtable_ksync.h>
 
 #include <arpa/inet.h>
 #include <netinet/in.h>
@@ -29,6 +30,7 @@
 #include <netinet/udp.h>
 
 #include "route/route.h"
+#include "init/agent_param.h"
 #include "cmn/agent_cmn.h"
 #include "cmn/agent_stats.h"
 #include "oper/interface_common.h"
@@ -122,6 +124,20 @@ uint32_t FlowEntry::MatchAcl(const PacketHeader &hdr,
                      it->action_info.mirror_l.begin(),
                      it->action_info.mirror_l.end());
             }
+
+            //If vrf translate action, update action info
+            if (it->action_info.action & (1 << TrafficAction::VRF_TRANSLATE)) {
+                std::string vrf =
+                    it->action_info.vrf_translate_action_.vrf_name();
+                data_.match_p.action_info.vrf_translate_action_.set_vrf_name(vrf);
+                //Check if VRF assign acl says, network ACL and SG action
+                //to be ignored
+                bool ignore_acl =
+                    it->action_info.vrf_translate_action_.ignore_acl();
+                data_.match_p.action_info.vrf_translate_action_.
+                    set_ignore_acl(ignore_acl);
+            }
+
             if (it->terminal_rule) {
                 break;
             }
@@ -148,7 +164,14 @@ bool FlowEntry::ActionRecompute() {
 
     action = data_.match_p.policy_action | data_.match_p.out_policy_action |
         data_.match_p.sg_action_summary |
-        data_.match_p.mirror_action | data_.match_p.out_mirror_action;
+        data_.match_p.mirror_action | data_.match_p.out_mirror_action |
+        data_.match_p.vrf_assign_acl_action;
+
+    if (action & (1 << TrafficAction::VRF_TRANSLATE) && 
+        data_.match_p.action_info.vrf_translate_action_.ignore_acl() == true) {
+        action = (1 << TrafficAction::VRF_TRANSLATE) |
+                 (1 << TrafficAction::PASS);
+    }
 
     // Force short flows to DROP
     if (is_flags_set(FlowEntry::ShortFlow)) {
@@ -260,6 +283,15 @@ bool FlowEntry::DoPolicy() {
     FlowEntry *rflow = reverse_flow_entry();
     PacketHeader hdr;
     SetPacketHeader(&hdr);
+
+    //Calculate VRF assign entry, and ignore acl is set
+    //skip network and SG acl action is set
+    data_.match_p.vrf_assign_acl_action =
+        MatchAcl(hdr, data_.match_p.m_vrf_assign_acl_l, false, true);
+    if (data_.match_p.vrf_assign_acl_action & 
+        (1 << TrafficAction::VRF_TRANSLATE) && acl_assigned_vrf_index() == 0) {
+         MakeShortFlow();
+    }
 
     // Mirror is valid even if packet is to be dropped. So, apply it first
     data_.match_p.mirror_action = MatchAcl(hdr, data_.match_p.m_mirror_acl_l,
@@ -589,6 +621,52 @@ void FlowEntry::GetPolicy(const VnEntry *vn) {
     }
 }
 
+void FlowEntry::GetVrfAssignAcl() {
+    if (data_.intf_entry == NULL) {
+        return;
+    }
+
+    if  (data_.intf_entry->type() != Interface::VM_INTERFACE) {
+        return;
+    }
+
+    if (is_flags_set(FlowEntry::LinkLocalFlow) ||
+        is_flags_set(FlowEntry::Multicast)) {
+        return;
+    }
+
+    const VmInterface *intf =
+        static_cast<const VmInterface *>(data_.intf_entry.get());
+    //If interface has a VRF assign rule, choose the acl and match the
+    //packet, else get the acl attached to VN and try matching the packet to
+    //network acl
+    const AclDBEntry* acl = intf->vrf_assign_acl();
+    if (acl == NULL && intf->vn()) {
+        acl = intf->vn()->GetAcl();
+    }
+    if (!acl) {
+        return;
+    }
+
+    MatchAclParams m_acl;
+    m_acl.acl = acl;
+    data_.match_p.m_vrf_assign_acl_l.push_back(m_acl);
+}
+
+const std::string& FlowEntry::acl_assigned_vrf() const {
+    return data_.match_p.action_info.vrf_translate_action_.vrf_name();
+}
+
+uint32_t FlowEntry::acl_assigned_vrf_index() const {
+    VrfKey vrf_key(data_.match_p.action_info.vrf_translate_action_.vrf_name());
+    const VrfEntry *vrf = static_cast<const VrfEntry *>(
+            Agent::GetInstance()->GetVrfTable()->FindActiveEntry(&vrf_key));
+    if (vrf) {
+        return vrf->vrf_id();
+    }
+    return 0;
+}
+
 void FlowEntry::UpdateKSync() {
     FlowInfo flow_info;
     FillFlowInfo(flow_info);
@@ -643,6 +721,9 @@ void FlowEntry::GetPolicyInfo(const VnEntry *vn) {
 
     // Get Sg list
     GetSgList(data_.intf_entry.get());
+
+    //Get VRF translate ACL
+    GetVrfAssignAcl();
 }
 
 void FlowEntry::GetPolicyInfo() {
@@ -1010,7 +1091,8 @@ bool FlowEntry::InitFlowCmn(const PktFlowInfo *info, const PktControlInfo *ctrl,
 
     data_.intf_entry = ctrl->intf_ ? ctrl->intf_ : rev_ctrl->intf_;
     data_.vn_entry = ctrl->vn_ ? ctrl->vn_ : rev_ctrl->vn_;
-    data_.vm_entry = ctrl->vm_ ? ctrl->vm_ : rev_ctrl->vm_;
+    data_.in_vm_entry = ctrl->vm_ ? ctrl->vm_ : NULL;
+    data_.out_vm_entry = rev_ctrl->vm_ ? rev_ctrl->vm_ : NULL;
 
     return true;
 }
@@ -1813,7 +1895,11 @@ void FlowTable::DeleteFlowInfo(FlowEntry *fe)
          ++acl_it) {
         DeleteAclFlowInfo((*acl_it).acl.get(), fe, (*acl_it).ace_id_list);
     }
-
+    for (acl_it = fe->match_p().m_vrf_assign_acl_l.begin();
+         acl_it != fe->match_p().m_vrf_assign_acl_l.end();
+         ++acl_it) {
+        DeleteAclFlowInfo((*acl_it).acl.get(), fe, (*acl_it).ace_id_list);
+    }
 
     // Remove from IntfFlowTree
     DeleteIntfFlowInfo(fe);    
@@ -1882,19 +1968,24 @@ void FlowTable::DeleteIntfFlowInfo(FlowEntry *fe)
     }
 }
 
-void FlowTable::DeleteVmFlowInfo(FlowEntry *fe)
-{
-    VmFlowTree::iterator vm_it;
-    if (fe->vm_entry()) {
-        if (!fe->linklocal_src_port()) {
-            return;
-        }
-        vm_it = vm_flow_tree_.find(fe->vm_entry());
-        if (vm_it != vm_flow_tree_.end()) {
-            VmFlowInfo *vm_flow_info = vm_it->second;
-            vm_flow_info->linklocal_flow_count--;
-            linklocal_flow_count_--;
-            vm_flow_info->fet.erase(fe);
+void FlowTable::DeleteVmFlowInfo(FlowEntry *fe) {
+    if (fe->in_vm_entry()) {
+        DeleteVmFlowInfo(fe, fe->in_vm_entry());
+    }
+    if (fe->out_vm_entry()) {
+        DeleteVmFlowInfo(fe, fe->out_vm_entry());
+    }
+}
+
+void FlowTable::DeleteVmFlowInfo(FlowEntry *fe, const VmEntry *vm) {
+    VmFlowTree::iterator vm_it = vm_flow_tree_.find(vm);
+    if (vm_it != vm_flow_tree_.end()) {
+        VmFlowInfo *vm_flow_info = vm_it->second;
+        if (vm_flow_info->fet.erase(fe)) {
+            if (fe->linklocal_src_port()) {
+                vm_flow_info->linklocal_flow_count--;
+                linklocal_flow_count_--;
+            }
             if (vm_flow_info->fet.empty()) {
                 delete vm_flow_info;
                 vm_flow_tree_.erase(vm_it);
@@ -1993,6 +2084,11 @@ void FlowTable::AddAclFlowInfo (FlowEntry *fe)
          ++it) {
         UpdateAclFlow(it->acl.get(), fe, it->ace_id_list);
     }
+    for (it = fe->match_p().m_vrf_assign_acl_l.begin();
+            it != fe->match_p().m_vrf_assign_acl_l.end();
+            ++it) {
+        UpdateAclFlow(it->acl.get(), fe, it->ace_id_list);
+    }
 }
 
 void FlowTable::UpdateAclFlow(const AclDBEntry *acl, FlowEntry* flow,
@@ -2045,29 +2141,35 @@ void FlowTable::AddIntfFlowInfo(FlowEntry *fe)
     }
 }
 
-void FlowTable::AddVmFlowInfo(FlowEntry *fe)
-{
-    if (!fe->vm_entry()) {
-        return;
+void FlowTable::AddVmFlowInfo(FlowEntry *fe) {
+    if (fe->in_vm_entry()) {
+        AddVmFlowInfo(fe, fe->in_vm_entry());
     }
-    // Currently adding VmFlowInfo for linklocal flows only
-    if (!fe->linklocal_src_port()) {
-        return;
+    if (fe->out_vm_entry()) {
+        AddVmFlowInfo(fe, fe->out_vm_entry());
     }
+}
+
+void FlowTable::AddVmFlowInfo(FlowEntry *fe, const VmEntry *vm) {
+    bool update = false;
     VmFlowTree::iterator it;
-    it = vm_flow_tree_.find(fe->vm_entry());
+    it = vm_flow_tree_.find(vm);
     VmFlowInfo *vm_flow_info;
     if (it == vm_flow_tree_.end()) {
         vm_flow_info = new VmFlowInfo();
-        vm_flow_info->vm_entry = fe->vm_entry();
-        vm_flow_info->linklocal_flow_count = 1;
-        linklocal_flow_count_++;
+        vm_flow_info->vm_entry = vm;
         vm_flow_info->fet.insert(fe);
-        vm_flow_tree_.insert(VmFlowPair(fe->vm_entry(), vm_flow_info));
+        vm_flow_tree_.insert(VmFlowPair(vm, vm_flow_info));
+        update = true;
     } else {
         vm_flow_info = it->second;
         /* fe can already exist. In that case it won't be inserted */
         if (vm_flow_info->fet.insert(fe).second) {
+            update = true;
+        }
+    }
+    if (update) {
+        if (fe->linklocal_src_port()) {
             vm_flow_info->linklocal_flow_count++;
             linklocal_flow_count_++;
         }
@@ -2139,6 +2241,16 @@ void FlowTable::VnFlowCounters(const VnEntry *vn, uint32_t *in_count,
     VnFlowInfo *vn_flow_info = it->second;
     *in_count = vn_flow_info->ingress_flow_count;
     *out_count = vn_flow_info->egress_flow_count;
+}
+
+uint32_t FlowTable::VmFlowCount(const VmEntry *vm) {
+    VmFlowTree::iterator it = vm_flow_tree_.find(vm);
+    if (it != vm_flow_tree_.end()) {
+        VmFlowInfo *vm_flow_info = it->second;
+        return vm_flow_info->fet.size();
+    }
+
+    return 0;
 }
 
 uint32_t FlowTable::VmLinkLocalFlowCount(const VmEntry *vm) {
@@ -2448,6 +2560,17 @@ void FlowTable::SetAclFlowSandeshData(const AclDBEntry *acl, AclFlowResp &data,
     if (!key_set) {
         data.set_iteration_key(GetAclFlowSandeshDataKey(acl, 0));
     }
+}
+
+FlowTable::FlowTable(Agent *agent) : 
+    agent_(agent), flow_entry_map_(), acl_flow_tree_(),
+    linklocal_flow_count_(), acl_listener_id_(),
+    intf_listener_id_(), vn_listener_id_(), vm_listener_id_(),
+    vrf_listener_id_(), nh_listener_(NULL),
+    route_key_(NULL, Ip4Address(), 32, false) {
+    max_vm_flows_ =
+        (agent->ksync()->flowtable_ksync_obj()->flow_table_entries_count() *
+        (uint32_t) agent->params()->max_vm_flows()) / 100;
 }
 
 FlowTable::~FlowTable() {

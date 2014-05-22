@@ -22,7 +22,9 @@
 using namespace std;
 using namespace pugi;
 
-typedef multimap<pair<string, string>, autogen::BgpSessionAttributes> SessionMap;
+typedef multimap<
+    pair<string, string>,
+    pair<autogen::BgpSessionAttributes, string> > SessionMap;
 
 namespace {
 
@@ -120,9 +122,14 @@ static void MapObjectLinkAttr(const string &ltype, const string &lname,
 
 static autogen::BgpSessionAttributes *GetPeeringSessionAttribute(
         const pair<string, string> &key, autogen::BgpPeeringAttributes *peer,
-        int session_id, const string &to) {
-    string uuid = BgpConfigParser::session_uuid(key.first, key.second,
-                                                session_id);
+        int session_id, const string config_uuid) {
+    string uuid;
+    if (!config_uuid.empty()) {
+        uuid = config_uuid;
+    } else {
+        uuid = BgpConfigParser::session_uuid(key.first, key.second, session_id);
+    }
+
     autogen::BgpSession *session = NULL;
     for (vector<autogen::BgpSession>::iterator iter =
             peer->session.begin();
@@ -144,7 +151,6 @@ static autogen::BgpSessionAttributes *GetPeeringSessionAttribute(
 
 static void MaybeMergeBidirectionalSessionParams(
         autogen::BgpPeeringAttributes *peer) {
-    // TODO:
 }
 
 static void BuildPeeringLinks(const string &instance,
@@ -166,12 +172,15 @@ static void BuildPeeringLinks(const string &instance,
         } else {
             key = make_pair(right, left);
         }
+
+        string config_uuid = iter->second.second;
         if ((sprev.first == left) && (sprev.second == right)) {
             session_id++;
         } else {
             session_id = 1;
             sprev = make_pair(left, right);
         }
+
         autogen::BgpPeeringAttributes *peer = NULL;
         PeeringMap::iterator loc = peerings.find(key);
         if (loc == peerings.end()) {
@@ -182,8 +191,8 @@ static void BuildPeeringLinks(const string &instance,
         }
         // add uni-directional attributes for this session.
         autogen::BgpSessionAttributes *attrp =
-                GetPeeringSessionAttribute(key, peer, session_id, right);
-        attrp->Copy(iter->second);
+            GetPeeringSessionAttribute(key, peer, session_id, config_uuid);
+        attrp->Copy(iter->second.first);
         attrp->bgp_router = left;
     }
 
@@ -234,13 +243,57 @@ static bool ParseSession(const string &identifier, const xml_node &node,
                          SessionMap *sessions) {
     autogen::BgpSessionAttributes attr;
     xml_attribute to = node.attribute("to");
-    if (!to) {
-        return false;
+    assert(to);
+    assert(attr.XmlParse(node));
+
+    string to_value = to.value();
+    string to_name, uuid;
+    size_t pos = to_value.find(':');
+    if (pos == string::npos) {
+        to_name = to_value;
+    } else {
+        to_name = to_value.substr(0, pos);
+        uuid = string(to_value, pos + 1);
     }
-    if (!attr.XmlParse(node)) {
-        return false;
+
+    sessions->insert(
+        make_pair(make_pair(identifier, to_name), make_pair(attr, uuid)));
+    return true;
+}
+
+static bool ParseServiceChain(const string &instance, const xml_node &node,
+                              bool add_change, 
+                              BgpConfigParser::RequestList *requests) {
+    auto_ptr<autogen::ServiceChainInfo> property(
+        new autogen::ServiceChainInfo());
+    assert(property->XmlParse(node));
+
+    if (add_change) {
+        MapObjectSetProperty("routing-instance", instance,
+            "service-chain-information", property.release(), requests);
+    } else {
+        MapObjectClearProperty("routing-instance", instance,
+            "service-chain-information", requests);
     }
-    sessions->insert(make_pair(make_pair(identifier, to.value()), attr));
+
+    return true;
+}
+
+static bool ParseStaticRoute(const string &instance, const xml_node &node,
+                              bool add_change, 
+                              BgpConfigParser::RequestList *requests) {
+    auto_ptr<autogen::StaticRouteEntriesType> property(
+        new autogen::StaticRouteEntriesType());
+    assert(property->XmlParse(node));
+
+    if (add_change) {
+        MapObjectSetProperty("routing-instance", instance,
+            "static-route-entries", property.release(), requests);
+    } else {
+        MapObjectClearProperty("routing-instance", instance,
+            "static-route-entries", requests);
+    }
+
     return true;
 }
 
@@ -250,30 +303,15 @@ static bool ParseBgpRouter(const string &instance, const xml_node &node,
                            BgpConfigParser::RequestList *requests) {
     auto_ptr<autogen::BgpRouterParams> property(
         new autogen::BgpRouterParams());
-    string identifier;
     xml_attribute name = node.attribute("name");
-    if (!property->XmlParse(node)) {
-        // TODO: log warning
-        return false;
-    }
+    assert(name);
+    string identifier = name.value();
+    assert(property->XmlParse(node));
+
     if (property->autonomous_system == 0)
         property->autonomous_system = BgpConfigManager::kDefaultAutonomousSystem;
     if (property->identifier.empty())
         property->identifier = property->address;
-
-    if (name) {
-        identifier = name.value();
-    } else if (!property->address.empty()) {
-        identifier.append(property->address);
-        if (property->port != 0) {
-            ostringstream oss;
-            oss << "_" << property->port;
-            identifier = oss.str();
-        }
-    } else {
-        // TODO: log warning
-        return true;
-    }
 
     bool has_sessions = false;
     for (xml_node xsession = node.child("session"); xsession;
@@ -339,18 +377,11 @@ static bool ParseInstanceTarget(const string &instance, const xml_node &node,
     boost::trim(rtarget);
     boost::system::error_code parse_err;
     RouteTarget::FromString(rtarget, &parse_err);
-    if (parse_err) {
-        BGP_LOG_STR(BgpMessage, SandeshLevel::SYS_WARN,
-                BGP_LOG_FLAG_SYSLOG,
-                "Invalid route-target: " << rtarget);
-        return false;
-    }
+    assert(!parse_err);
 
     auto_ptr<autogen::InstanceTargetType> params(
         new autogen::InstanceTargetType());
-    if (!params->XmlParse(node)) {
-        assert(0);
-    }
+    assert(params->XmlParse(node));
 
     if (add_change) {
         MapObjectLinkAttr("routing-instance", instance, "route-target", rtarget,
@@ -389,12 +420,8 @@ BgpConfigParser::BgpConfigParser(DB *db)
 bool BgpConfigParser::ParseRoutingInstance(const xml_node &parent,
                                            bool add_change,
                                            RequestList *requests) const {
-    // instance name
     string instance(parent.attribute("name").value());
-
-    if (instance.empty()) {
-        return false;
-    }
+    assert(!instance.empty());
 
     SessionMap sessions;
     list<string> routers;
@@ -412,6 +439,10 @@ bool BgpConfigParser::ParseRoutingInstance(const xml_node &parent,
             ParseInstanceTarget(instance, node, add_change, requests);
         } else if (strcmp(node.name(), "virtual-network") == 0) {
             ParseInstanceVirtualNetwork(instance, node, add_change, requests);
+        } else if (strcmp(node.name(), "service-chain-info") == 0) {
+            ParseServiceChain(instance, node, add_change, requests);
+        } else if (strcmp(node.name(), "static-route-entries") == 0) {
+            ParseStaticRoute(instance, node, add_change, requests);
         }
     }
 
@@ -432,14 +463,11 @@ bool BgpConfigParser::ParseVirtualNetwork(const xml_node &node,
                                           RequestList *requests) const {
     // vn name
     string vn_name(node.attribute("name").value());
-    if (vn_name.empty())
-        return false;
+    assert(!vn_name.empty());
 
     auto_ptr<autogen::VirtualNetworkType> property(
         new autogen::VirtualNetworkType());
-    if (!property->XmlParse(node)) {
-        assert(false);
-    }
+    assert(property->XmlParse(node));
 
     if (add_change) {
         MapObjectSetProperty("virtual-network", vn_name,
@@ -493,27 +521,14 @@ bool BgpConfigParser::Parse(const std::string &content)  {
     istringstream sstream(content);
     xml_document xdoc;
     xml_parse_result result = xdoc.load(sstream);
-    if (!result) {
-        BGP_LOG_STR(BgpMessage, SandeshLevel::SYS_WARN, BGP_LOG_FLAG_SYSLOG,
-                    "Unable to load XML document. (status="
-                     << result.status << ", offset=" << result.offset << ")");
-        return false;
-    }
+    assert(result);
 
     RequestList requests;
     for (xml_node node = xdoc.first_child(); node; node = node.next_sibling()) {
-        bool add_change;
-        if (strcmp(node.name(), "config") == 0) {
-            add_change = true;
-        } else if (strcmp(node.name(), "delete") == 0) {
-            add_change = false;
-        } else {
-            continue;
-        }
-        if (!ParseConfig(node, add_change, &requests)) {
-            STLDeleteValues(&requests);
-            return false;
-        }
+        const char *oper = node.name();
+        assert((strcmp(oper, "config") == 0) || (strcmp(oper, "delete") == 0));
+        bool add_change = (strcmp(oper, "config") == 0);
+        assert(ParseConfig(node, add_change, &requests));
     }
 
     while (!requests.empty()) {
@@ -524,9 +539,7 @@ bool BgpConfigParser::Parse(const std::string &content)  {
                 static_cast<IFMapTable::RequestKey *>(req->key.get());
 
         IFMapTable *table = IFMapTable::FindTable(db_, key->id_type);
-        if (table == NULL) {
-            continue;
-        }
+        assert(table);
         table->Enqueue(req.get());
     }
 

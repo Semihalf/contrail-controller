@@ -8,7 +8,7 @@
 #include "testing/gunit.h"
 #include "test/test_cmn_util.h"
 
-void RouterIdDepInit() {
+void RouterIdDepInit(Agent *agent) {
 }
 
 class VmwareTest : public ::testing::Test {
@@ -89,7 +89,7 @@ TEST_F(VmwareTest, VmwareVmPort_1) {
 
 int main(int argc, char **argv) {
     GETUSERARGS();
-    strcpy(init_file, "controller/src/vnsw/agent/init/test/cfg-vmware.xml");
+    strcpy(init_file, "controller/src/vnsw/agent/init/test/cfg-vmware.ini");
 
     client = TestInit(init_file, ksync_init);
     int ret = RUN_ALL_TESTS();

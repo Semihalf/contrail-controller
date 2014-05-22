@@ -68,7 +68,7 @@
 using namespace std;
 
 #define TUN_INTF_CLONE_DEV "/dev/net/tun"
-#define DEFAULT_VNSW_CONFIG_FILE "controller/src/vnsw/agent/test/vnswa_cfg.xml"
+#define DEFAULT_VNSW_CONFIG_FILE "controller/src/vnsw/agent/test/vnswa_cfg.ini"
 
 #define GETUSERARGS()                           \
     bool ksync_init = false;                    \
@@ -81,7 +81,8 @@ using namespace std;
     desc.add_options()                          \
         ("help", "Print help message")          \
         ("config", opt::value<string>(), "Specify Init config file")  \
-        ("kernel", "Run with vrouter");         \
+        ("kernel", "Run with vrouter")          \
+        ("headless", "Run headless vrouter");   \
     opt::store(opt::parse_command_line(argc, argv, desc), vm); \
     opt::notify(vm);                            \
     if (vm.count("help")) {                     \
@@ -96,6 +97,8 @@ using namespace std;
     } else {                                    \
         strcpy(init_file, DEFAULT_VNSW_CONFIG_FILE); \
     }                                           \
+
+#define HEADLESS_MODE vm.count("headless")
 
 struct PortInfo {
     char name[32];
@@ -143,6 +146,7 @@ struct TestIp4Prefix {
     int plen_;
 };
 
+class AgentTestInit;
 class TestClient {
 public:
     TestClient() { 
@@ -548,6 +552,8 @@ public:
         Agent::GetInstance()->GetMplsTable()->Register(boost::bind(&TestClient::MplsNotify, 
                                                    this, _1, _2));
     };
+    void set_init(AgentTestInit *init) { init_ = init; }
+    AgentTestInit *init() const { return init_; }
 
     void Shutdown();
 
@@ -567,24 +573,12 @@ public:
     int nh_notify_;
     int mpls_notify_;
     std::vector<const NextHop *> comp_nh_list_;
+    AgentTestInit *init_;
 };
 
 class AgentTestInit {
 public:
-#if 0
-    enum State {
-        MOD_INIT,
-        STATIC_OBJ_OPERDB,
-        STATIC_OBJ_PKT,
-        CONFIG_INIT,
-        CONFIG_RUN,
-        INIT_DONE,
-        SHUTDOWN,
-        SHUTDOWN_DONE,
-    };
-#endif
-
-    AgentTestInit(TestClient *client) : client_(client) { }
+    AgentTestInit(TestClient *client) : param_(Agent::GetInstance()), client_(client) { }
     ~AgentTestInit() {
         for (std::vector<TaskTrigger *>::iterator it = list_.begin();
              it != list_.end(); ++it) {
@@ -613,7 +607,6 @@ public:
         return true;
     }
 
-    //State GetState() {return state_;};
     Agent *agent() {return &agent_;}
     AgentParam *param() {return &param_;}
     AgentInit *init() {return &init_;}

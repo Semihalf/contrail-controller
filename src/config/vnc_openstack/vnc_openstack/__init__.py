@@ -9,6 +9,7 @@ import gevent
 import requests
 import cgitb
 import copy
+import bottle
 import logging
 import logging.handlers
 from keystoneclient.v2_0 import client as keystone
@@ -20,7 +21,6 @@ except ImportError:
 from vnc_api import vnc_api
 from vnc_api.gen.resource_xsd import *
 
-from provision_defaults import Provision
 from vnc_api.gen.resource_xsd import *
 from vnc_api.gen.resource_common import *
 
@@ -112,6 +112,7 @@ class OpenstackDriver(vnc_plugin_base.Resync):
                             for proj in self._kc.tenants.list()])
                 except Exception as e:
                     self._kc = None
+                    continue
 
                 if old_project_ids == new_project_ids:
                     # no change, go back to poll
@@ -251,3 +252,4 @@ class ResourceApiDriver(vnc_plugin_base.ResourceApi):
             if group['to'][2] == 'default':
                 self._vnc_lib.security_group_delete(id=group['uuid'])
     # end pre_project_delete
+

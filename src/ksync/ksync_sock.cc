@@ -121,7 +121,7 @@ void KSyncSockNetlink::Decoder(char *data, SandeshContext *ctxt) {
             assert(0);
         }
     } else if (nlh->nlmsg_type != NLMSG_DONE) {
-        LOG(ERROR, "Netlink unkown message type : " << nlh->nlmsg_type);
+        LOG(ERROR, "Netlink unknown message type : " << nlh->nlmsg_type);
         assert(0);
     }
 }
@@ -547,13 +547,6 @@ void KSyncIoContext::Handler() {
 }
 
 void KSyncIoContext::ErrorHandler(int err) {
-    KSYNC_ERROR(VRouterError, "VRouter operation failed. Error <", err, 
-                ":", strerror(err), ">. Object <", entry_->ToString(), 
-                ">. State <", entry_->StateString(), ">. Message number :", 
-                GetSeqno());
-    LOG(ERROR, "VRouter operation failed. Error <" << err << ":" <<
-                strerror(err) << ">. Object <" << entry_->ToString() <<
-                ">. State <" << entry_->StateString() << ">. Message number :"
-                << GetSeqno());
+    entry_->ErrorHandler(err, GetSeqno());
 }
 

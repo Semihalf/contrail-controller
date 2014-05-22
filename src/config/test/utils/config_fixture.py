@@ -2,6 +2,7 @@
 # Copyright (c) 2013 Juniper Networks, Inc. All rights reserved.
 #
 
+import gevent
 import socket
 import fixtures
 import subprocess
@@ -16,7 +17,19 @@ import copy
 import os
 import json
 from operator import itemgetter
-from utils.vnc_introspect_utils import VNCApiInspect
+import sys, os
+pyver = "%s.%s" % (sys.version_info[0], sys.version_info[1])
+sys.path.insert(
+    0, os.path.realpath('build/debug/config_test/lib/python%s/site-packages/vnc_cfg_api_server'
+                        % (pyver)))
+import vnc_cfg_api_server
+sys.path.insert(1, os.path.realpath(
+    'build/debug/config_test/lib/python%s/site-packages/svc_monitor' % (pyver)))
+import svc_monitor
+from schema_transformer import to_bgp
+from cfgm_common.test_utils import *
+from flexmock import flexmock, Mock
+from vnc_api import vnc_api
 
 class SvcMonitor(object):
     def __init__(self, config_fixture, logger):
@@ -28,9 +41,7 @@ class SvcMonitor(object):
     def start(self):
         assert(self._instance == None)
         self._log_file = '/tmp/svcmonitor.messages.' + str(self._http_port)
-        args = ['python', self._config_fixture.builddir + \
-                '/config_test/lib/python2.7/site-packages/svc_monitor/svc_monitor.py',
-                '--http_server_port', str(self._http_port),
+        args = ('--http_server_port', str(self._http_port),
                 '--ifmap_username', 'svc-monitor',
                 '--ifmap_password', 'svc-monitor',
                 '--api_server_port', str(self._config_fixture.apiserver.port),
@@ -41,11 +52,9 @@ class SvcMonitor(object):
                 '--zk_server_ip', '127.0.0.1:' +
                 str(self._config_fixture.zoo.port),
                 '--cassandra_server_list', '127.0.0.1:' +
-                str(self._config_fixture.cassandra_port)]
+                str(self._config_fixture.cassandra_port))
 
-        self._instance = subprocess.Popen(args, 
-                                          stdout=subprocess.PIPE,
-                                          stderr=subprocess.PIPE)
+        gevent.spawn(svc_monitor.main, ' '.join(args))
         self._logger.info('Setting up SvcMonitor: %s' % ' '.join(args))
     # end start
 
@@ -74,25 +83,20 @@ class Schema(object):
     def start(self):
         assert(self._instance == None)
         self._log_file = '/tmp/schema.messages.' + str(self._http_port)
-        args = ['python', self._config_fixture.builddir + \
-                '/config_test/lib/python2.7/site-packages/schema_transformer/to_bgp.py',
-                '--http_server_port', str(self._http_port),
-                '--ifmap_username', 'schema-transformer',
-                '--ifmap_password', 'schema-transformer',
-                '--api_server_port', str(self._config_fixture.apiserver.port),
-                '--log_file', self._log_file,
-                '--log_level', "SYS_DEBUG",
-                "--ifmap_server_port", str(self._config_fixture.ifmap.port),
-                "--ifmap_server_ip", "127.0.0.1",
-                '--zk_server_ip', '127.0.0.1:' +
-                str(self._config_fixture.zoo.port),
-                '--cassandra_server_list', '127.0.0.1:' +
-                str(self._config_fixture.cassandra_port)]
+        args = ('--http_server_port' + str(self._http_port) +
+                '--ifmap_username schema-transformer' +
+                '--ifmap_password schema-transformer' +
+                '--api_server_port ' + str(self._config_fixture.apiserver.port) +
+                '--log_file ' + self._log_file +
+                '--log_level SYS_DEBUG' +
+                "--ifmap_server_port " + str(self._config_fixture.ifmap.port) +
+                "--ifmap_server_ip 127.0.0.1" +
+                '--zk_server_ip 127.0.0.1:' + str(self._config_fixture.zoo.port) +
+                '--cassandra_server_list 127.0.0.1:' +
+                str(self._config_fixture.cassandra_port))
 
-        self._instance = subprocess.Popen(args, 
-                                          stdout=subprocess.PIPE,
-                                          stderr=subprocess.PIPE)
-        self._logger.info('Setting up Schema: %s' % ' '.join(args))
+        gevent.spawn(to_bgp.main, args)
+        self._logger.info('Setting up Schema: %s' % args)
     # end start
 
     def stop(self):
@@ -122,32 +126,20 @@ class ApiServer(object):
         assert(self._instance == None)
         self._log_file = '/tmp/api.messages.' + str(self.port)
         bdir = self._config_fixture.builddir
-        args = ['coverage', 'run', '-a', '-p',
-                '--source=%s,%s' % \
-                (bdir + '/config/api-server/vnc_cfg_api_server/',
-                 bdir + '/config_test/lib/python2.7/site-packages/cfgm_common/'),
-                '--omit=%s,%s,%s' % \
-                (bdir + '/config/api-server/vnc_cfg_api_server/gen/*',
-                 bdir + '/config_test/lib/python2.7/site-packages/cfgm_common/uve/*',
-                 bdir + '/config/api-server/vnc_cfg_api_server/bottle*'),
-                bdir + '/config/api-server/vnc_cfg_api_server/vnc_cfg_api_server.py',
-                '--redis_server_port', str(self._config_fixture.redis_cfg.port),
-                '--http_server_port', str(self._http_port),
-                '--ifmap_username', 'api-server',
-                '--ifmap_password', 'api-server',
-                '--log_file', self._log_file,
-                '--log_level', "SYS_DEBUG",
-                '--rabbit_vhost', "__NONE__",
-                '--listen_port', str(self.port),
-                "--ifmap_server_port", str(self._config_fixture.ifmap.port),
-                "--ifmap_server_ip", "127.0.0.1",
-                '--zk_server_ip', '127.0.0.1:' +
-                str(self._config_fixture.zoo.port),
-                '--cassandra_server_list', '127.0.0.1:' +
-                str(self._config_fixture.cassandra_port)]
-        ShEnv = { 'COVERAGE_FILE' : '%s/config/.coverage' % bdir , 'PATH': os.environ['PATH']}
-        self._instance = subprocess.Popen(args,env=ShEnv)
-        self._logger.info('Setting up ApiServer: %s' % ' '.join(args))
+        args = (' --redis_server_port ' + str(self._config_fixture.redis_cfg.port) +
+                ' --http_server_port ' + str(self._http_port) +
+                ' --ifmap_username ' + 'api-server' +
+                ' --ifmap_password ' + 'api-server' +
+                ' --log_file ' + self._log_file +
+                ' --log_level ' + "SYS_DEBUG" +
+                ' --rabbit_vhost ' + "__NONE__" +
+                ' --listen_port ' + str(self.port) +
+                ' --ifmap_server_port ' + str(self._config_fixture.ifmap.port) +
+                ' --ifmap_server_ip 127.0.0.1' +
+                ' --zk_server_ip 127.0.0.1:' + str(self._config_fixture.zoo.port) +
+                ' --cassandra_server_list 127.0.0.1:' + str(self._config_fixture.cassandra_port))
+        gevent.spawn(vnc_cfg_api_server.main, args)
+        self._logger.info('Setting up ApiServer: %s' % args)
     # end start
 
     def stop(self):
@@ -228,6 +220,11 @@ class ConfigFixture(fixtures.Fixture):
         self.cassandra_port = cassandra_port
         self.logger = logger
 
+    def setup_flexmock():
+        FakeNovaClient.vnc_lib = vnc_lib
+        flexmock(novaclient.client, Client=FakeNovaClient.initialize)
+    # end setup_flexmock
+
     def setUp(self):
         super(ConfigFixture, self).setUp()
 
@@ -242,19 +239,20 @@ class ConfigFixture(fixtures.Fixture):
         self.apiserver.start()
         self.schema = Schema(self,self.logger)
         self.schema.start()
+        block_till_port_listened('127.0.0.1', self.apiserver.port)
 
     @retry(delay=4, tries=5)  
     def verify_default_project(self):
         result = True
+        vnc_lib = vnc_api.VncApi(api_server_port=str(self.apiserver.port))
         try:
-            vai = VNCApiInspect('127.0.0.1',self.apiserver.port)
-            prj = vai.get_cs_project('default-domain','default-project')
-            if len(prj['project']['virtual_networks']) != 3:
-                result &= False
-            self.logger.info("Verifying default-project: %s" % prj['project']['virtual_networks'])
+            project = vnc_lib.project_read(fq_name=['default-domain', 'default-project'])
+            if len(project.get_virtual_networks()) != 3:
+                result = False
+            self.logger.info("Verifying default-project: %s" % project.virtual_networks)
         except:
             self.logger.error("Exception Verifying default-project")
-            result &= False
+            result = False
 
         return result
 

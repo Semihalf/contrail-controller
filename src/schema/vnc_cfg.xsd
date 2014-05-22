@@ -363,6 +363,7 @@ targetNamespace="http://www.contrailsystems.com/2012/VNC-CONFIG/0">
     <xsd:all>
         <xsd:element name="subnet" type="SubnetType"/>
         <xsd:element name="default-gateway" type="IpAddressType"/>
+        <xsd:element name="subnet-uuid" type="xsd:string"/>
     </xsd:all>
 </xsd:complexType>
 
@@ -578,6 +579,16 @@ targetNamespace="http://www.contrailsystems.com/2012/VNC-CONFIG/0">
 <!--#IFMAP-SEMANTICS-IDL
      Property('route-target-list', 'virtual-network') -->
 
+<xsd:element name="router-external" type="xsd:boolean"/>
+<!--#IFMAP-SEMANTICS-IDL 
+     Exclude('router-external', ['backend']);
+     Property('router-external', 'virtual-network') -->
+
+<xsd:element name="is-shared" type="xsd:boolean"/>
+<!--#IFMAP-SEMANTICS-IDL 
+     Exclude('is-shared', ['backend']);
+     Property('is-shared', 'virtual-network') -->
+
 <xsd:element name="network-ipam" type="ifmap:IdentityType"/>
 <xsd:element name="network-ipam-mgmt" type="IpamType"/>
 <!--#IFMAP-SEMANTICS-IDL
@@ -697,13 +708,22 @@ targetNamespace="http://www.contrailsystems.com/2012/VNC-CONFIG/0">
      Property('virtual-machine-interface-properties',
              'virtual-machine-interface') -->
 
-
 <xsd:element name="virtual-machine-virtual-machine-interface"/>
+<xsd:element name="project-virtual-machine-interface"/>
 <!--#IFMAP-SEMANTICS-IDL 
      Link('virtual-machine-virtual-machine-interface',
-          'virtual-machine', 'virtual-machine-interface', ['has']) -->
+          'virtual-machine', 'virtual-machine-interface', ['has']);
+     Link('project-virtual-machine-interface',
+          'project', 'virtual-machine-interface', ['has'])
+ -->
+
+<xsd:element name="virtual-machine-interface-virtual-machine"/>
+<!--#IFMAP-SEMANTICS-IDL
+     Link('virtual-machine-interface-virtual-machine',
+          'virtual-machine-interface', 'virtual-machine', ['ref']) -->
+
 <xsd:element name="virtual-machine-interface-virtual-network"/>
-<!--#IFMAP-SEMANTICS-IDL 
+<!--#IFMAP-SEMANTICS-IDL
      Link('virtual-machine-interface-virtual-network',
           'virtual-machine-interface', 'virtual-network', ['ref']) -->
 
