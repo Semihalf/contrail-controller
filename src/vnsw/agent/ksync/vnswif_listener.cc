@@ -1028,17 +1028,19 @@ void VnswInterfaceListener::UpdateLinkLocalRoute(const Ip4Address &addr,
     struct rt_msghdr *rtm = (struct rt_msghdr *)tx_buf_;
     struct sockaddr_in *si = (struct sockaddr_in *)(rtm + 1);
     struct sockaddr *gw = NULL;
-    struct ifaddrs *ifap;
+    struct ifaddrs *ifap, *oifap;
     const char *vhost_name = agent_->vhost_interface_name().c_str();
 
     /* Need to get the gateway IP, the interface is not enough */
     if (getifaddrs(&ifap) == -1) {
         /* We will not be able to set route if we are not able to
            set gateway. That's some major failure */
-        LOG(ERROR, "VnswInterfaceListener::UpdateLinkLocalRoute " <<
-            "failed to get list of interfaces");
+        LOG(ERROR, __PRETTY_FUNCTION__ 
+            << ": failed to get list of interfaces");
             assert(0);
     }
+
+    oifap = ifap;
 
     while (ifap != NULL) {
         if (ifap->ifa_name != NULL &&
@@ -1055,18 +1057,18 @@ void VnswInterfaceListener::UpdateLinkLocalRoute(const Ip4Address &addr,
     if (gw == NULL) {
         /* We will not be able to set route if we are not able to
            set gateway. That's some major failure */
-        LOG(ERROR, "VnswInterfaceListener::UpdateLinkLocalRoute " <<
-            "failed to get IP for " << string(vhost_name));
-            assert(0);
+        LOG(ERROR, __PRETTY_FUNCTION__ << ": failed to get IP for "
+            << string(vhost_name));
+            assert(gw != NULL);
     }
 
 
     /* Destination, Gateway and header */
     size = 2 * sizeof(struct sockaddr_in) + sizeof(struct rt_msghdr);
 
-    if (size < kMaxBufferSize) {
-        LOG(ERROR, "VnswInterfaceListener::UpdateLinkLocalRoute " <<
-            "tx_buf_ to short, expected size " << size);
+    if (size > kMaxBufferSize) {
+        LOG(ERROR, __PRETTY_FUNCTION__
+             << ": tx_buf_ to short, expected size " << size);
         assert(size < kMaxBufferSize);
     }
 
@@ -1083,9 +1085,8 @@ void VnswInterfaceListener::UpdateLinkLocalRoute(const Ip4Address &addr,
     rtm->rtm_index = if_nametoindex(vhost_name);
 
     if (rtm->rtm_index == 0) {
-        LOG(ERROR, "VnswInterfaceListener::UpdateLinkLocalRoute " <<
-            "Failed to obtain index for interface " <<
-            agent_->vhost_interface_name());
+        LOG(ERROR, __PRETTY_FUNCTION__ << ": Failed to obtain index "
+            << "for interface " << vhost_name);
         assert(0);
     }
 
@@ -1103,18 +1104,23 @@ void VnswInterfaceListener::UpdateLinkLocalRoute(const Ip4Address &addr,
     si = (struct sockaddr_in *)((char *)si + sizeof(struct sockaddr_in));
     /* Very unlikely... but hard to detect if happens */
     if (sizeof(struct sockaddr_in) < SA_SIZE(gw)) {
-        LOG(ERROR, "VnswInterfaceListener::UpdateLinkLocalRoute " <<
-            "Size of gateway address retunred by kernel is " <<
-            SA_SIZE(gw) << "which far too big for socaddr_in struct");
-        assert(0);
+        LOG(ERROR, __PRETTY_FUNCTION__
+            << ": Size of gateway address returned by kernel is "
+            << SA_SIZE(gw) << "which far too big for socaddr_in struct");
+        assert(sizeof(struct sockaddr_in) >= SA_SIZE(gw));
     }
     memcpy(si, gw, SA_SIZE(gw));
 
-    freeifaddrs(ifap);
+    freeifaddrs(oifap);
 
     boost::system::error_code ec;
     sock_.send(boost::asio::buffer(tx_buf_, size), 0, ec);
-    assert(ec.value() == 0);
+    if (ec.value() != 0) {
+        LOG(ERROR, __PRETTY_FUNCTION__
+            << ": PF_ROUTE message " << RTMTypeToString(rtm->rtm_type)
+            << " send failed");
+        assert(ec.value() == 0);
+    }
 #endif
 }
  
@@ -1165,7 +1171,6 @@ void VnswInterfaceListener::DelLinkLocalRoutes() {
 /****************************************************************************
  * Event handler 
  ****************************************************************************/
-#if defined(__linux__)
 static string EventTypeToString(uint32_t type) {
     const char *name[] = {
         "INVALID",
@@ -1185,10 +1190,8 @@ static string EventTypeToString(uint32_t type) {
 
     return "UNKNOWN";
 }
-#endif
 
 bool VnswInterfaceListener::ProcessEvent(Event *event) {
-#if defined(__linux__)
     LOG(DEBUG, "VnswInterfaceListener Event " << EventTypeToString(event->event_) 
         << " Interface " << event->interface_ << " Addr "
         << event->addr_.to_string() << " prefixlen " << (uint32_t)event->plen_
@@ -1221,7 +1224,6 @@ bool VnswInterfaceListener::ProcessEvent(Event *event) {
     }
 
     delete event;
-#endif
     return true;
 }
 
@@ -1229,6 +1231,7 @@ bool VnswInterfaceListener::ProcessEvent(Event *event) {
  * Netlink message handlers
  * Decodes netlink messages and enqueues events to revent_queue_
  ****************************************************************************/
+#if defined(__linux__)
 static string NetlinkTypeToString(uint32_t type) {
     switch (type) {
     case NLMSG_DONE:
@@ -1252,9 +1255,7 @@ static string NetlinkTypeToString(uint32_t type) {
     str << "UNHANDLED <" << type << ">";
     return str.str();
 }
-#endif
 
-#if defined(__linux__)
 static VnswInterfaceListener::Event *HandleNetlinkRouteMsg(struct nlmsghdr *nlh)
 {
     struct rtmsg *rtm = (struct rtmsg *) NLMSG_DATA (nlh);
