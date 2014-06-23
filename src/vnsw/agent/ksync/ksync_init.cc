@@ -175,7 +175,8 @@ void KSync::CreateVhostIntf() {
     assert(resp->nl_type == NL_MSG_TYPE_ERROR);
     nl_free_client(cl);
 #elif defined(__FreeBSD__)
-    struct ifreq ifr = { 0 };
+    struct ifreq ifr;
+    memset(&ifr, 0, sizeof(ifr));
     ifr.ifr_flags = IFF_UP;
 
     int s = socket(PF_LOCAL, SOCK_DGRAM, 0);
@@ -217,7 +218,8 @@ void KSync::UpdateVhostMac() {
     assert(resp->nl_type == NL_MSG_TYPE_ERROR);
     nl_free_client(cl);
 #elif defined(__FreeBSD__)
-    struct ifreq ifr = { 0 };
+    struct ifreq ifr;
+    memset(&ifr, 0, sizeof(ifr));
 
     int s = socket(PF_LOCAL, SOCK_DGRAM, 0);
     assert(s >= 0);

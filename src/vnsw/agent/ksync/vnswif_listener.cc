@@ -53,7 +53,6 @@ VnswInterfaceListener::~VnswInterfaceListener() {
  *   4. Registers for netlink messages with ASIO
  ****************************************************************************/
 void VnswInterfaceListener::Init() {
-#if defined(__linux__)
     intf_listener_id_ = agent_->GetInterfaceTable()->Register
         (boost::bind(&VnswInterfaceListener::InterfaceNotify, this, _1, _2));
 
@@ -66,6 +65,7 @@ void VnswInterfaceListener::Init() {
     if (agent_->test_mode())
         return;
 
+#if defined(__linux__)
     /* Create socket and listen and handle ip address updates */
     CreateSocket();
 
@@ -85,13 +85,11 @@ void VnswInterfaceListener::Init() {
 }
 
 void VnswInterfaceListener::Shutdown() { 
-#if defined(__linux__)
     if (agent_->test_mode())
         return;
 
     boost::system::error_code ec;
     sock_.close(ec);
-#endif
 }
 
 // Create netlink socket
@@ -122,8 +120,8 @@ void VnswInterfaceListener::CreateSocket() {
 }
 
 // Initiate netlink scan based on type and flags
-void VnswInterfaceListener::InitNetlinkScan(uint32_t type, uint32_t seqno) {
 #if defined(__linux__)
+void VnswInterfaceListener::InitNetlinkScan(uint32_t type, uint32_t seqno) {
     struct nlmsghdr *nlh;
     const uint32_t buf_size = VnswInterfaceListener::kMaxBufferSize;
 
@@ -159,8 +157,8 @@ void VnswInterfaceListener::InitNetlinkScan(uint32_t type, uint32_t seqno) {
         struct nlmsghdr *nl = (struct nlmsghdr *)read_buf;
         end = NlMsgDecode(nl, len, seqno);
     }
-#endif
 }
+#endif
 
 void VnswInterfaceListener::RegisterAsyncHandler() {
 #if defined(__linux__)
@@ -264,8 +262,8 @@ bool VnswInterfaceListener::IsInterfaceActive(const HostInterfaceEntry *entry) {
     return entry->oper_seen_ && entry->host_seen_ && entry->link_up_;
 }
 
-static void InterfaceResync(Agent *agent, uint32_t id, bool active) {
 #if defined(__linux__)
+static void InterfaceResync(Agent *agent, uint32_t id, bool active) {
     InterfaceTable *table = agent->GetInterfaceTable();
     Interface *interface = table->FindInterface(id);
     if (interface == NULL)
@@ -278,8 +276,8 @@ static void InterfaceResync(Agent *agent, uint32_t id, bool active) {
                                      interface->name()));
     req.data.reset(new VmInterfaceOsOperStateData());
     table->Enqueue(&req);
-#endif
 }
+#endif
 
 VnswInterfaceListener::HostInterfaceEntry *
 VnswInterfaceListener::GetHostInterfaceEntry(const std::string &name) {
@@ -473,8 +471,8 @@ void VnswInterfaceListener::HandleAddressEvent(const Event *event) {
 /****************************************************************************
  * Link Local route event handler
  ****************************************************************************/
-static int AddAttr(uint8_t *buff, int type, void *data, int alen) {
 #if defined(__linux__)
+static int AddAttr(uint8_t *buff, int type, void *data, int alen) {
     struct nlmsghdr *n = (struct nlmsghdr *)buff;
     int len = RTA_LENGTH(alen);
 
@@ -486,9 +484,9 @@ static int AddAttr(uint8_t *buff, int type, void *data, int alen) {
     rta->rta_len = len;
     memcpy(RTA_DATA(rta), data, alen);
     n->nlmsg_len = NLMSG_ALIGN(n->nlmsg_len) + len;
-#endif
     return 0;
 }
+#endif
 
 void VnswInterfaceListener::UpdateLinkLocalRoute(const Ip4Address &addr,
                                                  bool del_rt) {
@@ -592,6 +590,7 @@ void VnswInterfaceListener::DelLinkLocalRoutes() {
 /****************************************************************************
  * Event handler 
  ****************************************************************************/
+#if defined(__linux__)
 static string EventTypeToString(uint32_t type) {
     const char *name[] = {
         "INVALID",
@@ -611,6 +610,7 @@ static string EventTypeToString(uint32_t type) {
 
     return "UNKNOWN";
 }
+#endif
 
 bool VnswInterfaceListener::ProcessEvent(Event *event) {
 #if defined(__linux__)
@@ -656,8 +656,8 @@ bool VnswInterfaceListener::ProcessEvent(Event *event) {
  * Netlink message handlers
  * Decodes netlink messages and enqueues events to revent_queue_
  ****************************************************************************/
-static string NetlinkTypeToString(uint32_t type) {
 #if defined(__linux__)
+static string NetlinkTypeToString(uint32_t type) {
     switch (type) {
     case NLMSG_DONE:
         return "NLMSG_DONE";
@@ -676,15 +676,15 @@ static string NetlinkTypeToString(uint32_t type) {
     default:
         break;
     }
-#endif
     std::stringstream str;
     str << "UNHANDLED <" << type << ">";
     return str.str();
 }
+#endif
 
+#if defined(__linux__)
 static VnswInterfaceListener::Event *HandleNetlinkRouteMsg(struct nlmsghdr *nlh)
 {
-#if defined(__linux__)
     struct rtmsg *rtm = (struct rtmsg *) NLMSG_DATA (nlh);
 
     if (rtm->rtm_family != AF_INET || rtm->rtm_table != RT_TABLE_MAIN 
@@ -742,13 +742,10 @@ static VnswInterfaceListener::Event *HandleNetlinkRouteMsg(struct nlmsghdr *nlh)
     return new VnswInterfaceListener::Event(type, dst_addr, rtm->rtm_dst_len,
                                             name, gw_addr, rtm->rtm_protocol,
                                             rtm->rtm_flags);
-#elif defined(__FreeBSD__)
     return NULL;
-#endif
 }
 
 static VnswInterfaceListener::Event *HandleNetlinkIntfMsg(struct nlmsghdr *nlh){
-#if defined (__linux__)
     /* Get the atttibutes len */
     int rtl = RTM_PAYLOAD(nlh);
 
@@ -775,13 +772,9 @@ static VnswInterfaceListener::Event *HandleNetlinkIntfMsg(struct nlmsghdr *nlh){
         type = VnswInterfaceListener::Event::ADD_INTERFACE;
     }
     return new VnswInterfaceListener::Event(type, port_name, ifi->ifi_flags);
-#elif defined(__FreeBSD__)
-    return NULL;
-#endif
 }
 
 static VnswInterfaceListener::Event *HandleNetlinkAddrMsg(struct nlmsghdr *nlh){
-#if defined(__linux__)
     struct ifaddrmsg *ifa = (struct ifaddrmsg *) NLMSG_DATA (nlh); 
  
     // Get interface name from os-index
@@ -814,10 +807,8 @@ static VnswInterfaceListener::Event *HandleNetlinkAddrMsg(struct nlmsghdr *nlh){
     }
     return new VnswInterfaceListener::Event(type, name, Ip4Address(ipaddr),
                                             ifa->ifa_prefixlen, ifa->ifa_flags);
-#elif defined(__FreeBSD__)
-    return NULL;
-#endif
 }
+#endif
 
 int VnswInterfaceListener::NlMsgDecode(struct nlmsghdr *nl, std::size_t len, 
                                        uint32_t seq_no) {
