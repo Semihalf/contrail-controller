@@ -5,9 +5,6 @@
 #include "kstate.h"
 #include "nh_kstate.h"
 #include "vr_nexthop.h"
-#if defined(__linux__)
-#include <linux/if_ether.h>
-#endif
 #include <net/ethernet.h>
 #include <iomanip>
 #include <sstream>

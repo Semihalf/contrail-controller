@@ -247,10 +247,10 @@ void TapInterface::SetupTap() {
             assert(0);
         }
 
-	flags = (ifr.ifr_flags & 0xffff) | (ifr.ifr_flagshigh << 16);
+        flags = (ifr.ifr_flags & 0xffff) | (ifr.ifr_flagshigh << 16);
         flags |= (IFF_UP|IFF_PPROMISC);
-	ifr.ifr_flags = flags & 0xffff;
-	ifr.ifr_flagshigh = flags >> 16;
+        ifr.ifr_flags = flags & 0xffff;
+        ifr.ifr_flagshigh = flags >> 16;
 
         if (ioctl(socket_fd, SIOCSIFFLAGS, &ifr) < 0) {
             LOG(ERROR, "Can not set socket flags, errno: " << errno << ": " <<

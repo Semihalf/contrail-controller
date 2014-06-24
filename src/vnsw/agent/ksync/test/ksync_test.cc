@@ -7,6 +7,14 @@
 
 #include <net/if.h>
 
+#if defined(__linux__)
+#include <linux/netlink.h>
+#include <linux/rtnetlink.h>
+#include <linux/genetlink.h>
+#include <linux/if_ether.h>
+#include <netinet/ether.h>
+#endif
+
 #include <io/event_manager.h>
 #include <db/db_entry.h>
 #include <db/db_table.h>

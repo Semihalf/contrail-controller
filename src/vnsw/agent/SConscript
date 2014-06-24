@@ -167,7 +167,7 @@ buildinfo_dep_libs = [
 
 if sys.platform.startswith('freebsd'):
     buildinfo_dep_libs.append('#build/lib/libtbb_debug.so')
-elif sys.platorm.startsiwth('linux'):
+elif sys.platform.startswith('linux'):
     buildinfo_dep_libs.append('#build/lib/libtbb_debug.so.2')
 
 def MapBuildFile(list):

@@ -461,12 +461,10 @@ void KSyncSock::WriteHandler(const boost::system::error_code& error,
     }
 }
 
-#if 0
 KSyncSock *KSyncSock::Get(DBTablePartBase *partition) {
     int idx = partition->index();
     return sock_table_[idx];
 }
-#endif 
 
 KSyncSock *KSyncSock::Get(int idx) {
     return sock_table_[idx];
