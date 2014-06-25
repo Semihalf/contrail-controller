@@ -20,6 +20,7 @@
 #elif __FreeBSD__
 #include <sys/cdefs.h>
 #define __GNUC_PREREQ    __GNUC_PREREQ__
+#define __GCC_HAS_PRAGMA __GNUC_PREREQ__(4, 4)
 #endif  // OS
 
 #endif  // __GNUC__
