@@ -155,9 +155,7 @@ public:
     static void Shutdown();
 
     // Partition to KSyncSock mapping
-#if 0
     static KSyncSock *Get(DBTablePartBase *partition);
-#endif
     static KSyncSock *Get(int partition_id);
     // Write a KSyncEntry to kernel
     void SendAsync(KSyncEntry *entry, int msg_len, char *msg, KSyncEntry::KSyncEvent event);

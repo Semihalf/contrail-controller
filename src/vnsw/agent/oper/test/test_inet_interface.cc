@@ -7,8 +7,6 @@
 #include <net/if.h>
 #include <linux/if_tun.h>
 #include <linux/if_packet.h>
-#elif defined(__FreeBSD__)
-#include <net/if_arp.h>
 
 #include "testing/gunit.h"
 

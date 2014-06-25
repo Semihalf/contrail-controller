@@ -175,6 +175,8 @@ static bool InterfaceExists(std::string if_name) {
 }
 
 void TapInterface::SetupTap() {
+    unsigned int flags;
+
     if (name_ == agent_->pkt_interface_name()) {
         // Create a socket for the TAP device
         int socket_fd = socket(AF_LOCAL, SOCK_DGRAM, 0);
@@ -244,7 +246,12 @@ void TapInterface::SetupTap() {
                 strerror(errno));
             assert(0);
         }
-        ifr.ifr_flags |= IFF_UP;
+
+        flags = (ifr.ifr_flags & 0xffff) | (ifr.ifr_flagshigh << 16);
+        flags |= (IFF_UP|IFF_PPROMISC);
+        ifr.ifr_flags = flags & 0xffff;
+        ifr.ifr_flagshigh = flags >> 16;
+
         if (ioctl(socket_fd, SIOCSIFFLAGS, &ifr) < 0) {
             LOG(ERROR, "Can not set socket flags, errno: " << errno << ": " <<
                 strerror(errno));
