@@ -173,6 +173,9 @@ private:
     DBTableBase::ListenerId intf_listener_id_;
     int seqno_;
     bool vhost_intf_up_;
+#if defined(__FreeBSD__)
+    int pid_;
+#endif
 
     LinkLocalAddressTable ll_addr_table_;
     HostInterfaceTable host_interface_table_;
