@@ -145,6 +145,8 @@ libpath = MapBuildDir([
     'third_party/bind-9.9.2-P1/lib/isc',
 ])
 env.Append(LIBPATH=libpath)
+# Prefer linking against the self-built libraries over the system ones
+env.AppendENVPath('LD_RUN_PATH', '#/build/lib')
 
 # Dependencies for generating buildinfo.cc
 #
