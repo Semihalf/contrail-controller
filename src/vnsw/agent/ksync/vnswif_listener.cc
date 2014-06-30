@@ -9,6 +9,7 @@
 #include <linux/netlink.h>
 #include <linux/rtnetlink.h>
 #elif defined(__FreeBSD__)
+#include <ifaddrs.h>
 #include <sys/types.h>
 #include <sys/sysctl.h>
 #include <sys/time.h>
@@ -157,6 +158,10 @@ VnswInterfaceListener::RTMProcess(const struct rt_msghdr *rtm, size_t size)
         LOG(ERROR, __PRETTY_FUNCTION__ << ": message too short");
         return NULL;
     }
+
+    /* Not interested in self generated messages */
+    if (rtm->rtm_pid == pid_)
+        return NULL;
 
     /* Special case: RTM_DELETE may come without gateway and interface
        index. Do not serve that, event requires if name na gateway
@@ -558,6 +563,8 @@ void VnswInterfaceListener::Init() {
             << "Expected >= 0, obtained " << fib);
         assert(fib >=0);
     }
+
+    pid_ = getpid();
 
     sock_fd_ = RTCreateSocket(fib);
 
@@ -974,6 +981,7 @@ void VnswInterfaceListener::UpdateLinkLocalRoute(const Ip4Address &addr,
     struct nlmsghdr *nlh;
     struct rtmsg *rtm;
     uint32_t ipaddr;
+#endif
 
     if (del_rt)
         netlink_ll_del_count_++;
@@ -983,6 +991,7 @@ void VnswInterfaceListener::UpdateLinkLocalRoute(const Ip4Address &addr,
         return;
 
     memset(tx_buf_, 0, kMaxBufferSize);
+#if defined(__linux__)
 
     nlh = (struct nlmsghdr *) tx_buf_;
     rtm = (struct rtmsg *) NLMSG_DATA (nlh);
@@ -1014,9 +1023,107 @@ void VnswInterfaceListener::UpdateLinkLocalRoute(const Ip4Address &addr,
     boost::system::error_code ec;
     sock_.send(boost::asio::buffer(nlh,nlh->nlmsg_len), 0, ec);
     assert(ec.value() == 0);
+#elif defined(__FreeBSD__)
+    size_t size;
+    struct rt_msghdr *rtm = (struct rt_msghdr *)tx_buf_;
+    struct sockaddr_in *si = (struct sockaddr_in *)(rtm + 1);
+    struct sockaddr *gw = NULL;
+    struct ifaddrs *ifap, *oifap;
+    const char *vhost_name = agent_->vhost_interface_name().c_str();
+
+    /* Need to get the gateway IP, the interface is not enough */
+    if (getifaddrs(&ifap) == -1) {
+        /* We will not be able to set route if we are not able to
+           set gateway. That's some major failure */
+        LOG(ERROR, __PRETTY_FUNCTION__ 
+            << ": failed to get list of interfaces");
+            assert(0);
+    }
+
+    oifap = ifap;
+
+    while (ifap != NULL) {
+        if (ifap->ifa_name != NULL &&
+            !strncmp(ifap->ifa_name, vhost_name, IFNAMSIZ) &&
+            SA_SIZE(ifap->ifa_addr) >= SA_SIZE(NULL) &&
+            ifap->ifa_addr->sa_family == AF_INET)
+        {
+            gw = ifap->ifa_addr;
+        }
+
+        ifap = ifap->ifa_next;
+    }
+
+    if (gw == NULL) {
+        /* We will not be able to set route if we are not able to
+           set gateway. That's some major failure */
+        LOG(ERROR, __PRETTY_FUNCTION__ << ": failed to get IP for "
+            << string(vhost_name));
+            assert(gw != NULL);
+    }
+
+
+    /* Destination, Gateway and header */
+    size = 2 * sizeof(struct sockaddr_in) + sizeof(struct rt_msghdr);
+
+    if (size > kMaxBufferSize) {
+        LOG(ERROR, __PRETTY_FUNCTION__
+             << ": tx_buf_ to short, expected size " << size);
+        assert(size < kMaxBufferSize);
+    }
+
+    rtm->rtm_msglen = size;
+    rtm->rtm_version = RTM_VERSION;
+
+    if (!del_rt)
+        rtm->rtm_type = RTM_ADD;
+    else
+        rtm->rtm_type = RTM_DELETE;
+
+    rtm->rtm_flags = RTF_UP|RTF_GATEWAY|RTF_STATIC|RTF_HOST;
+
+    rtm->rtm_index = if_nametoindex(vhost_name);
+
+    if (rtm->rtm_index == 0) {
+        LOG(ERROR, __PRETTY_FUNCTION__ << ": Failed to obtain index "
+            << "for interface " << vhost_name);
+        assert(0);
+    }
+
+    rtm->rtm_addrs = RTA_DST|RTA_GATEWAY;
+    rtm->rtm_pid = pid_;
+    rtm->rtm_seq = seqno_++;
+
+    /* Destination */
+    si->sin_len = sizeof(struct sockaddr_in);
+    si->sin_family = AF_INET;
+    si->sin_port = 0;
+    si->sin_addr.s_addr = htonl(addr.to_ulong());
+
+    /* Gateway */
+    si = (struct sockaddr_in *)((char *)si + sizeof(struct sockaddr_in));
+    /* Very unlikely... but hard to detect if happens */
+    if (sizeof(struct sockaddr_in) < SA_SIZE(gw)) {
+        LOG(ERROR, __PRETTY_FUNCTION__
+            << ": Size of gateway address returned by kernel is "
+            << SA_SIZE(gw) << "which far too big for socaddr_in struct");
+        assert(sizeof(struct sockaddr_in) >= SA_SIZE(gw));
+    }
+    memcpy(si, gw, SA_SIZE(gw));
+
+    freeifaddrs(oifap);
+
+    boost::system::error_code ec;
+    sock_.send(boost::asio::buffer(tx_buf_, size), 0, ec);
+    if (ec.value() != 0) {
+        LOG(ERROR, __PRETTY_FUNCTION__
+            << ": PF_ROUTE message " << RTMTypeToString(rtm->rtm_type)
+            << " send failed");
+        assert(ec.value() == 0);
+    }
 #endif
 }
-
+ 
 // Handle link-local route changes resulting from ADD_LL_ROUTE or DEL_LL_ROUTE
 void VnswInterfaceListener::LinkLocalRouteFromLinkLocalEvent(Event *event) {
     if (event->event_ == Event::DEL_LL_ROUTE) {
@@ -1064,7 +1171,6 @@ void VnswInterfaceListener::DelLinkLocalRoutes() {
 /****************************************************************************
  * Event handler 
  ****************************************************************************/
-#if defined(__linux__)
 static string EventTypeToString(uint32_t type) {
     const char *name[] = {
         "INVALID",
@@ -1084,10 +1190,8 @@ static string EventTypeToString(uint32_t type) {
 
     return "UNKNOWN";
 }
-#endif
 
 bool VnswInterfaceListener::ProcessEvent(Event *event) {
-#if defined(__linux__)
     LOG(DEBUG, "VnswInterfaceListener Event " << EventTypeToString(event->event_) 
         << " Interface " << event->interface_ << " Addr "
         << event->addr_.to_string() << " prefixlen " << (uint32_t)event->plen_
@@ -1120,7 +1224,6 @@ bool VnswInterfaceListener::ProcessEvent(Event *event) {
     }
 
     delete event;
-#endif
     return true;
 }
 
@@ -1152,9 +1255,7 @@ static string NetlinkTypeToString(uint32_t type) {
     str << "UNHANDLED <" << type << ">";
     return str.str();
 }
-#endif
 
-#if defined(__linux__)
 static VnswInterfaceListener::Event *HandleNetlinkRouteMsg(struct nlmsghdr *nlh)
 {
     struct rtmsg *rtm = (struct rtmsg *) NLMSG_DATA (nlh);
