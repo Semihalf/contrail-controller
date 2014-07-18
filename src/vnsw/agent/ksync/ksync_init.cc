@@ -227,9 +227,9 @@ void KSync::UpdateVhostMac() {
     strncpy(ifr.ifr_name, agent_->vhost_interface_name().c_str(),
             sizeof(ifr.ifr_name));
 
-    PhysicalInterfaceKey key(agent_->GetIpFabricItfName());
+    PhysicalInterfaceKey key(agent_->fabric_interface_name());
     Interface *eth = static_cast<Interface *>
-        (agent_->GetInterfaceTable()->FindActiveEntry(&key));
+        (agent_->interface_table()->FindActiveEntry(&key));
     memcpy(ifr.ifr_addr.sa_data, eth->mac().octet, ETHER_ADDR_LEN);
 
     ifr.ifr_addr.sa_len = ETHER_ADDR_LEN;

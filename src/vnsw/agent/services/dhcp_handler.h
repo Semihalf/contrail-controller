@@ -152,17 +152,17 @@ public:
 
     struct DhcpRequestData {
         DhcpRequestData() : xid(-1), flags(0), ip_addr(0) {
-            memset(mac_addr, 0, ETH_ALEN);
+            memset(mac_addr, 0, ETHER_ADDR_LEN);
         }
         void UpdateData(uint32_t id, uint16_t fl, uint8_t *mac) {
             xid = id;
             flags = fl;
-            memcpy(mac_addr, mac, ETH_ALEN);
+            memcpy(mac_addr, mac, ETHER_ADDR_LEN);
         }
 
         uint32_t  xid;
         uint16_t  flags;
-        uint8_t   mac_addr[ETH_ALEN];
+        uint8_t   mac_addr[ETHER_ADDR_LEN];
         in_addr_t ip_addr;
     };
 
