@@ -37,7 +37,8 @@ AgentSandeshGenFiles  = env.SandeshGenCpp('ifmap_agent.sandesh')
 AgentSandeshGenSrcs = env.ExtractCpp(AgentSandeshGenFiles)
 
 libifmap_common = env.Library('ifmap_common',
-                              ['ifmap_table.cc',
+                              ['ifmap_dependency_tracker.cc',
+                               'ifmap_table.cc',
                                'ifmap_link.cc',
                                'ifmap_link_table.cc',
                                'ifmap_node.cc',

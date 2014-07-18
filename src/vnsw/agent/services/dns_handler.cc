@@ -52,7 +52,7 @@ bool DnsHandler::HandleRequest() {
 
     uint16_t ret = DNS_ERR_NO_ERROR;
     const Interface *itf =
-        agent()->GetInterfaceTable()->FindInterface(GetInterfaceIndex());
+        agent()->interface_table()->FindInterface(GetInterfaceIndex());
     if (!itf || (itf->type() != Interface::VM_INTERFACE) || 
         dns_->flags.req) {
         dns_proto->IncrStatsDrop();
@@ -104,7 +104,7 @@ bool DnsHandler::HandleRequest() {
         }
         return HandleDefaultDnsRequest(vmitf);
     } else if (ipam_type_.ipam_dns_method == "virtual-dns-server") {
-        if (!agent()->GetDomainConfigTable()->GetVDns(ipam_type_.ipam_dns_server.
+        if (!agent()->domain_config_table()->GetVDns(ipam_type_.ipam_dns_server.
             virtual_dns_server_name, &vdns_type_)) {
             DNS_BIND_TRACE(DnsBindError, "Unable to find domain; interface = "
                            << vmitf->vm_name());
@@ -357,7 +357,7 @@ bool DnsHandler::SendDnsQuery() {
     pkt = new uint8_t[BindResolver::max_pkt_size];
     len = BindUtil::BuildDnsQuery(pkt, xid_, 
           ipam_type_.ipam_dns_server.virtual_dns_server_name, items_);
-    if (BindResolver::Resolver()->DnsSend(pkt, agent()->GetXmppDnsCfgServerIdx(),
+    if (BindResolver::Resolver()->DnsSend(pkt, agent()->dns_xmpp_server_index(),
                                           len)) {
         DNS_BIND_TRACE(DnsBindTrace, "DNS query sent to server; xid = " << 
                        xid_ << "; " << DnsItemsToString(items_) << ";");
@@ -504,7 +504,7 @@ bool DnsHandler::HandleModifyVdns() {
             (*item).ttl = 0;
         }
         for (int i = 0; i < MAX_XMPP_SERVERS; i++) {
-            AgentDnsXmppChannel *channel = agent()->GetAgentDnsXmppChannel(i);
+            AgentDnsXmppChannel *channel = agent()->dns_xmpp_channel(i);
             SendXmppUpdate(channel, (*it)->xmpp_data);
         }
     }
@@ -675,11 +675,11 @@ void DnsHandler::SendDnsResponse() {
 
     PacketInterfaceKey key(nil_uuid(), agent()->pkt_interface_name());
     Interface *pkt_itf = static_cast<Interface *>
-                         (agent()->GetInterfaceTable()->FindActiveEntry(&key));
+                         (agent()->interface_table()->FindActiveEntry(&key));
     if (pkt_itf) {
         UpdateStats();
-        Send(dns_resp_size_, pkt_itf->id(), pkt_info_->vrf,
-             AGENT_CMD_ROUTE, PktHandler::DNS);
+        Send(dns_resp_size_, pkt_info_->GetAgentHdr().ifindex, pkt_info_->vrf,
+             AGENT_CMD_SWITCH, PktHandler::DNS);
     } else {
         agent()->GetDnsProto()->IncrStatsDrop();
     }
@@ -725,8 +725,8 @@ void DnsHandler::UpdateOffsets(DnsItem &item, bool name_update_required) {
 void DnsHandler::UpdateGWAddress(DnsItem &item) {
     boost::system::error_code ec;
     if (item.type == DNS_A_RECORD && 
-        (item.data == agent()->GetDnsXmppServer(0) ||
-         item.data == agent()->GetDnsXmppServer(1))) {
+        (item.data == agent()->dns_server(0) ||
+         item.data == agent()->dns_server(1))) {
         boost::asio::ip::address_v4 addr(pkt_info_->ip_daddr);
         item.data = addr.to_string(ec);
     }
@@ -765,7 +765,7 @@ void DnsHandler::Update(InterTaskMsg *msg) {
     }
 
     for (int i = 0; i < MAX_XMPP_SERVERS; i++) {
-        AgentDnsXmppChannel *channel = agent()->GetAgentDnsXmppChannel(i);
+        AgentDnsXmppChannel *channel = agent()->dns_xmpp_channel(i);
         SendXmppUpdate(channel, update->xmpp_data);
     }
 
@@ -787,7 +787,7 @@ void DnsHandler::DelUpdate(InterTaskMsg *msg) {
         }
         for (int i = 0; i < MAX_XMPP_SERVERS; i++) {
             AgentDnsXmppChannel *channel = 
-                        agent()->GetAgentDnsXmppChannel(i);
+                        agent()->dns_xmpp_channel(i);
             SendXmppUpdate(channel, update_req->xmpp_data);
         }
         dns_proto->DelUpdateRequest(update_req);

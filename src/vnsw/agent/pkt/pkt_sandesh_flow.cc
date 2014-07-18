@@ -11,7 +11,7 @@
 using boost::system::error_code;
 
 #define SET_SANDESH_FLOW_DATA(data, fe)                                     \
-    data.set_vrf(fe->key().vrf);                                            \
+    data.set_vrf(fe->data().vrf);                                           \
     Ip4Address sip(fe->key().src.ipv4);                                     \
     data.set_sip(sip.to_string());                                          \
     Ip4Address dip(fe->key().dst.ipv4);                                     \
@@ -67,7 +67,16 @@ using boost::system::error_code;
         data.set_ecmp_index(fe->data().component_nh_idx);                     \
     }                                                                       \
     data.set_reverse_flow(fe->is_flags_set(FlowEntry::ReverseFlow) ? "yes" : "no"); \
+    Ip4Address fip(fe->stats().fip);                                        \
+    data.set_fip(fip.to_string());                                          \
+    data.set_fip_vm_interface_idx(fe->stats().fip_vm_port_id);              \
     SetAclInfo(data, fe);                                                   \
+    data.set_nh(fe->key().nh);                                              \
+    if (fe->data().nh_state_.get() != NULL &&                               \
+                             (fe->data().nh_state_.get())->nh() != NULL) {  \
+        data.set_rpf_nh((fe->data().nh_state_.get())->nh()->id());          \
+    }                                                                       \
+
 
 const std::string PktSandeshFlow::start_key = "0:0:0:0:0.0.0.0:0.0.0.0";
 
@@ -86,11 +95,12 @@ static void SetOneAclInfo(FlowAclInfo *policy, uint32_t action,
     policy->set_acl(acl);
     policy->set_action(action);
 
-    FlowAction action_info;
-    action_info.action = action;
-
     std::vector<ActionStr> action_str_l;
-    SetActionStr(action_info, action_str_l);
+    for (it = acl_list.begin(); it != acl_list.end(); it++) {
+    FlowAction action_info = it->action_info;
+        action_info.action = action;
+        SetActionStr(action_info, action_str_l);
+    }
     policy->set_action_str(action_str_l);
 }
 
@@ -119,6 +129,10 @@ static void SetAclInfo(SandeshFlowData &data, FlowEntry *fe) {
                   fe->match_p().m_reverse_out_sg_acl_l);
     data.set_reverse_out_sg(policy);
 
+    SetOneAclInfo(&policy, fe->match_p().vrf_assign_acl_action,
+                  fe->match_p().m_vrf_assign_acl_l);
+    data.set_vrf_assign_acl(policy);
+
     FlowAction action_info;
     action_info.action = fe->match_p().sg_action_summary;
     std::vector<ActionStr> action_str_l;
@@ -132,6 +146,9 @@ static void SetAclInfo(SandeshFlowData &data, FlowEntry *fe) {
     SetOneAclInfo(&policy, fe->match_p().out_mirror_action,
                   fe->match_p().m_out_mirror_acl_l);
     data.set_out_mirror(policy);
+
+    data.set_sg_rule_uuid(fe->sg_rule_uuid());
+    data.set_nw_ace_uuid(fe->nw_ace_uuid());
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -166,7 +183,7 @@ void PktSandeshFlow::SendResponse(SandeshResponse *resp) {
 
 string PktSandeshFlow::GetFlowKey(const FlowKey &key) {
     stringstream ss;
-    ss << key.vrf << ":";
+    ss << key.nh << ":";
     ss << key.src_port << ":";
     ss << key.dst_port << ":";
     ss << (uint16_t)key.protocol << ":";
@@ -184,7 +201,7 @@ bool PktSandeshFlow::SetFlowKey(string key) {
     string item, sip, dip;
     uint32_t proto;
     if (getline(ss, item, ':')) {
-        istringstream(item) >> flow_iteration_key_.vrf;
+        istringstream(item) >> flow_iteration_key_.nh;
     }
     if (getline(ss, item, ':')) {
         istringstream(item) >> flow_iteration_key_.src_port;
@@ -280,7 +297,7 @@ void DeleteAllFlowRecords::HandleRequest() const {
 
 void FetchFlowRecord::HandleRequest() const {
     FlowKey key;
-    key.vrf = get_vrf();
+    key.nh = get_nh();
     error_code ec;
     key.src.ipv4 = Ip4Address::from_string(get_sip(), ec).to_ulong();
     key.dst.ipv4 = Ip4Address::from_string(get_dip(), ec).to_ulong();

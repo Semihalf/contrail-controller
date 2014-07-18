@@ -14,7 +14,6 @@
 #endif
 
 class AgentParam;
-class AgentInit;
 class AgentConfig;
 class AgentStats;
 class KSync;
@@ -77,7 +76,6 @@ class AgentRouteTable;
 class Inet4UnicastAgentRouteTable;
 class Inet4MulticastAgentRouteTable;
 class Layer2AgentRouteTable;
-class AddrTable;
 class CfgIntTable;
 class AclTable;
 class MirrorTable;
@@ -108,6 +106,8 @@ class Peer;
 class LifetimeManager;
 class DiagTable;
 class VNController;
+class ConnectionState;
+class AgentSignal;
 
 extern void RouterIdDepInit(Agent *agent);
 
@@ -143,119 +143,280 @@ public:
 
     Agent();
     virtual ~Agent();
-    const std::string &GetHostName();
-    const std::string &GetProgramName() {return prog_name_;};
-    static const std::string &DefaultConfigFile() {return config_file_;}
-    static const std::string &DefaultLogFile() {return log_file_;}
-    static const std::string &NullString() {return null_str_;};
+    void Shutdown() { }
+
+    static Agent *GetInstance() {return singleton_;}
+    static const std::string &NullString() {return null_string_;};
     static const uint8_t *vrrp_mac() {return vrrp_mac_;}
     static const std::string &BcastMac() {return bcast_mac_;};
-    InterfaceTable *GetInterfaceTable() {return intf_table_;};
-    MirrorCfgTable *GetMirrorCfgTable() {return mirror_cfg_table_;};
-    IntfMirrorCfgTable *GetIntfMirrorCfgTable() {return intf_mirror_cfg_table_;};
-    NextHopTable *GetNextHopTable() {return nh_table_;};
-    NextHopTable *nexthop_table() {return nh_table_;};
-    Inet4UnicastAgentRouteTable *GetDefaultInet4UnicastRouteTable() {
-        return uc_rt_table_;
-    };
-    Inet4MulticastAgentRouteTable *GetDefaultInet4MulticastRouteTable() {
-        return mc_rt_table_;
-    };
-    Layer2AgentRouteTable *GetLayer2AgentRouteTable() {return l2_rt_table_;};
+    static const std::string &xmpp_dns_server_prefix() {
+        return xmpp_dns_server_connection_name_prefix_;
+    }
+    static const std::string &xmpp_control_node_prefix() {
+        return xmpp_control_node_connection_name_prefix_;
+    }
+
+    const std::string &host_name() const {return host_name_; }
+    const std::string &program_name() const {return prog_name_;}
+    const std::string &config_file() const {return config_file_;}
+    const std::string &log_file() const {return log_file_;}
+
+    // DB Table accessor methods
+    InterfaceTable *interface_table() const {return intf_table_;}
+    void set_interface_table(InterfaceTable *table) {
+         intf_table_ = table;
+    }
+
+    MirrorCfgTable *mirror_cfg_table() const {return mirror_cfg_table_;}
+    void set_mirror_cfg_table(MirrorCfgTable *table) {
+        mirror_cfg_table_ = table;
+    }
+
+    NextHopTable *nexthop_table() const {return nh_table_;}
+    void set_nexthop_table(NextHopTable *table) {
+        nh_table_ = table;
+    }
+
     VrfTable *vrf_table() const { return vrf_table_;}
-    VrfTable *GetVrfTable() { return vrf_table_;};
-    VmTable *GetVmTable() { return vm_table_;};
-    VnTable *GetVnTable() { return vn_table_;};
-    SgTable *GetSgTable() { return sg_table_;};
-    AddrTable *GetAddressTable() { return addr_table_;};
-    MplsTable *GetMplsTable() { return mpls_table_;};
-    AclTable *GetAclTable() { return acl_table_;};
-    MirrorTable *GetMirrorTable() { return mirror_table_;};
-    CfgIntTable *GetIntfCfgTable() {return intf_cfg_table_;};
-    DomainConfig *GetDomainConfigTable() {return domain_config_table_;};
-    VrfAssignTable *GetVrfAssignTable() {return vrf_assign_table_;};
-    VxLanTable *GetVxLanTable() { return vxlan_table_;};
-    int GetSandeshPort() { return sandesh_port_;};
+    void set_vrf_table(VrfTable *table) {
+        vrf_table_ = table;
+    }
 
-    EventManager *GetEventManager() {return event_mgr_;};
-    DB *GetDB() {return db_;};
+    VmTable *vm_table() const { return vm_table_;}
+    void set_vm_table(VmTable *table) {
+        vm_table_ = table;
+    }
 
-    uint16_t GetMirrorPort() {return mirror_src_udp_port_;};
-    Ip4Address GetRouterId() {return router_id_; };
-    void SetRouterId(const Ip4Address &addr) {
+    VnTable *vn_table() const { return vn_table_;}
+    void set_vn_table(VnTable *table) {
+        vn_table_ = table;
+    }
+
+    SgTable *sg_table() const { return sg_table_;}
+    void set_sg_table(SgTable *table) {
+        sg_table_ = table;
+    }
+
+    MplsTable *mpls_table() const { return mpls_table_;}
+    void set_mpls_table(MplsTable *table) { 
+        mpls_table_ = table;
+    }
+    
+    AclTable *acl_table() const { return acl_table_;}
+    void set_acl_table(AclTable *table) { 
+        acl_table_ = table;
+    }
+    
+    MirrorTable *mirror_table() const { return mirror_table_;}
+    void set_mirror_table(MirrorTable *table) {
+        mirror_table_ = table;
+    }
+
+    VrfAssignTable *vrf_assign_table() const {return vrf_assign_table_;}
+    void set_vrf_assign_table(VrfAssignTable *table) {
+        vrf_assign_table_ = table;
+    }
+
+    VxLanTable *vxlan_table() const { return vxlan_table_;}
+    void set_vxlan_table(VxLanTable *table) { 
+        vxlan_table_ = table;
+    }
+    
+    CfgIntTable *interface_config_table() const {return intf_cfg_table_;}
+    void set_interface_config_table(CfgIntTable *table) {
+        intf_cfg_table_ = table;
+    }
+
+    DomainConfig *domain_config_table() const {return domain_config_table_;}
+    void set_domain_config_table(DomainConfig *table) {
+        domain_config_table_ = table;
+    }
+
+    IntfMirrorCfgTable *interface_mirror_cfg_table() const {
+        return intf_mirror_cfg_table_;
+    }
+    void set_interface_mirror_cfg_table(IntfMirrorCfgTable *table) {
+        intf_mirror_cfg_table_ = table;
+    }
+
+    Inet4UnicastAgentRouteTable *fabric_inet4_unicast_table() const {
+        return uc_rt_table_;
+    }
+    void set_fabric_inet4_unicast_table(Inet4UnicastAgentRouteTable *
+                                                 table) {
+        uc_rt_table_ = table;
+    }
+    void set_fabric_inet4_unicast_table(RouteTable * table) {
+        uc_rt_table_ = (Inet4UnicastAgentRouteTable *)table;
+    }
+
+    Inet4MulticastAgentRouteTable *fabric_inet4_multicast_table() const {
+        return mc_rt_table_;
+    }
+    void set_fabric_inet4_multicast_table
+        (Inet4MulticastAgentRouteTable *table) {
+        mc_rt_table_ = table;
+    }
+    void set_fabric_inet4_multicast_table(RouteTable *table) {
+        mc_rt_table_ = (Inet4MulticastAgentRouteTable *)table;
+    }
+
+    Layer2AgentRouteTable *fabric_l2_unicast_table() const {
+        return l2_rt_table_;
+    }
+    void set_fabric_l2_unicast_table(Layer2AgentRouteTable *table) {
+        l2_rt_table_ = table;
+    }
+    void set_fabric_l2_unicast_table(RouteTable *table) {
+        l2_rt_table_ = (Layer2AgentRouteTable *)table;
+    }
+
+    // VHOST related
+    uint32_t vhost_prefix_len() const {return prefix_len_;}
+    void set_vhost_prefix_len(uint32_t plen) {prefix_len_ = plen;}
+
+    Ip4Address vhost_default_gateway() const {return gateway_id_;}
+    void set_vhost_default_gateway(const Ip4Address &addr) {
+        gateway_id_ = addr;
+    }
+
+    Ip4Address router_id() const {return router_id_;}
+    void set_router_id(const Ip4Address &addr) {
         router_id_ = addr;
-        SetRouterIdConfigured(true);
-    };
+        set_router_id_configured(true);
+    }
+    bool router_id_configured() { return router_id_configured_; }
+    void set_router_id_configured(bool value) {
+        router_id_configured_ = value;
+    }
 
-    uint32_t GetPrefixLen() {return prefix_len_;};
-    void SetPrefixLen(uint32_t plen) {prefix_len_ = plen;};
+    AgentSignal *agent_signal() const { return agent_signal_.get(); }
 
-    bool GetRouterIdConfigured() { return router_id_configured_; }
-    LifetimeManager *GetLifetimeManager() { return lifetime_manager_;};
+    // TODO: Should they be moved under controller/dns/cfg?
 
-    Ip4Address GetGatewayId() {return gateway_id_; };
-    void SetGatewayId(const Ip4Address &addr) {gateway_id_ = addr;};
+    // Common XMPP Client for control-node and config clients
+    const std::string &controller_ifmap_xmpp_server(uint8_t idx) const {
+        return xs_addr_[idx];
+    }
+    void set_controller_ifmap_xmpp_server(const std::string &addr, uint8_t idx) {
+        xs_addr_[idx] = addr;
+    }
 
-    const std::string &GetIpFabricItfName() {
-        return ip_fabric_intf_name_;
-    };
+    const uint32_t controller_ifmap_xmpp_port(uint8_t idx) const {
+        return xs_port_[idx];
+    }
+    void set_controller_ifmap_xmpp_port(uint32_t port, uint8_t idx) {
+        xs_port_[idx] = port;
+    }
 
-    const std::string &GetXmppCfgServer() {return xs_cfg_addr_; };
-    const int8_t &GetXmppCfgServerIdx() {return xs_idx_; };
-    void SetXmppCfgServer(const std::string &addr, uint8_t xs_idx) {
+    XmppInit *controller_ifmap_xmpp_init(uint8_t idx) const {
+        return xmpp_init_[idx];
+    }
+    void set_controller_ifmap_xmpp_init(XmppInit *init, uint8_t idx) {
+        xmpp_init_[idx] = init;
+    }
+
+    XmppClient *controller_ifmap_xmpp_client(uint8_t idx) {
+        return xmpp_client_[idx];
+    }
+
+    void set_controller_ifmap_xmpp_client(XmppClient *client, uint8_t idx) {
+        xmpp_client_[idx] = client;
+    }
+
+    // Config XMPP server specific
+    const int8_t &ifmap_active_xmpp_server_index() const {return xs_idx_;}
+    const std::string &ifmap_active_xmpp_server() const {return xs_cfg_addr_;}
+    void set_ifmap_active_xmpp_server(const std::string &addr,
+                                      uint8_t xs_idx) {
         xs_cfg_addr_ = addr;
         xs_idx_ = xs_idx;
-    };
-    void ResetXmppCfgServer() {
+    }
+    void reset_ifmap_active_xmpp_server() {
         xs_cfg_addr_.clear();
         xs_idx_ = -1;
     }
-    const std::string &GetXmppServer(uint8_t idx) {return xs_addr_[idx]; };
-    const uint32_t GetXmppPort(uint8_t idx) {return xs_port_[idx]; };
-    void SetXmppServer(const std::string &addr, uint8_t idx) {
-        xs_addr_[idx] = addr;
-    };
 
-    void SetXmppPort(uint32_t port, uint8_t idx) {
-        xs_port_[idx] = port;
-    };
+    AgentIfMapXmppChannel *ifmap_xmpp_channel(uint8_t idx) const {
+        return ifmap_channel_[idx];
+    }
+    void set_ifmap_xmpp_channel(AgentIfMapXmppChannel *channel, 
+                                uint8_t idx) {
+        ifmap_channel_[idx] = channel;
+    }
 
-    const uint64_t GetAgentXmppChannelSetupTime(uint8_t idx) {return xs_stime_[idx];}
-    void SetAgentXmppChannelSetupTime(uint64_t time, uint8_t idx) {xs_stime_[idx] = time;}
+    // Controller XMPP server
+    const uint64_t controller_xmpp_channel_setup_time(uint8_t idx) const {
+        return xs_stime_[idx];
+    }
+    void set_controller_xmpp_channel_setup_time(uint64_t time, uint8_t idx) {
+        xs_stime_[idx] = time;
+    }
  
-    const int8_t &GetXmppDnsCfgServerIdx() {return xs_dns_idx_; };
-    void SetXmppDnsCfgServer(uint8_t xs_idx) { xs_dns_idx_ = xs_idx; };
-    const std::string &GetDnsXmppServer(uint8_t idx) {
-        return xs_dns_addr_[idx]; 
-    }
-    void SetDnsXmppServer(const std::string &addr, uint8_t idx) {
-        xs_dns_addr_[idx] = addr;
+    AgentXmppChannel *controller_xmpp_channel(uint8_t idx) { 
+        return agent_xmpp_channel_[idx];
     }
 
-    const uint32_t GetDnsXmppPort(uint8_t idx) {
-        return xs_dns_port_[idx]; 
+    void set_controller_xmpp_channel(AgentXmppChannel *channel, uint8_t idx) {
+        agent_xmpp_channel_[idx] = channel;
+    };
+
+    // DNS XMPP Server
+    const int8_t &dns_xmpp_server_index() const {return xs_dns_idx_;}
+    void set_dns_xmpp_server_index(uint8_t xs_idx) {xs_dns_idx_ = xs_idx;}
+
+    XmppInit *dns_xmpp_init(uint8_t idx) const {
+        return dns_xmpp_init_[idx];
     }
-    void SetDnsXmppPort(uint32_t port, uint8_t idx) {
-        xs_dns_port_[idx] = port;
+    void set_dns_xmpp_init(XmppInit *xmpp, uint8_t idx) {
+        dns_xmpp_init_[idx] = xmpp;
+    }
+
+    XmppClient *dns_xmpp_client(uint8_t idx) const {
+        return dns_xmpp_client_[idx];
+    }
+    void set_dns_xmpp_client(XmppClient *client, uint8_t idx) {
+        dns_xmpp_client_[idx] = client;
+    }
+
+    AgentDnsXmppChannel *dns_xmpp_channel(uint8_t idx) const {
+        return dns_xmpp_channel_[idx];
+    }
+    void set_dns_xmpp_channel(AgentDnsXmppChannel *chnl, uint8_t idx) {
+        dns_xmpp_channel_[idx] = chnl;
+    }
+
+    // DNS Server and port
+    const std::string &dns_server(uint8_t idx) const {return dns_addr_[idx];}
+    void set_dns_server(const std::string &addr, uint8_t idx) {
+        dns_addr_[idx] = addr;
+    }
+
+    const uint32_t dns_server_port(uint8_t idx) const {return dns_port_[idx];}
+    void set_dns_server_port(uint32_t port, uint8_t idx) {
+        dns_port_[idx] = port;
     }
 
     /* Discovery Server, port, service-instances */
-    const std::string &GetDiscoveryServer() {
-        return dss_addr_; 
-    }
-
-    const uint32_t GetDiscoveryServerPort() {
+    const std::string &discovery_server() const {return dss_addr_;}
+    const uint32_t discovery_server_port() {
         return dss_port_; 
     }
-
-    const int GetDiscoveryXmppServerInstances() {
-        return dss_xs_instances_; 
+    const int discovery_xmpp_server_instances() const {
+        return dss_xs_instances_;
     }
-   
-    const std::string &GetAgentMcastLabelRange(uint8_t idx) { 
-        return label_range_[idx]; 
-    };
 
+    DiscoveryServiceClient *discovery_service_client() {
+        return ds_client_; 
+    }
+    void set_discovery_service_client(DiscoveryServiceClient *client) {
+        ds_client_ = client;
+    }
+
+    // Multicast related
+    const std::string &multicast_label_range(uint8_t idx) { 
+        return label_range_[idx]; 
+    }
     void SetAgentMcastLabelRange(uint8_t idx) {
         std::stringstream str;
         str << (MULTICAST_LABEL_RANGE_START + 
@@ -263,24 +424,26 @@ public:
             << (MULTICAST_LABEL_RANGE_START + 
                 ((idx + 1) * MULTICAST_LABEL_BLOCK_SIZE) - 1); 
         label_range_[idx] = str.str();
-    };
+    }
     void ResetAgentMcastLabelRange(uint8_t idx) {
         label_range_[idx].clear();
     }
 
-    AgentXmppChannel* GetControlNodeMulticastBuilder() {
+    AgentXmppChannel* mulitcast_builder() {
         return cn_mcast_builder_;
     };
     void set_cn_mcast_builder(AgentXmppChannel *peer);
 
-    const std::string &GetFabricVnName() {return fabric_vn_name_;};
-    const std::string &GetDefaultVrf() {return fabric_vrf_name_;};
-    const std::string &GetLinkLocalVnName() {return link_local_vn_name_;}
-    const std::string &GetLinkLocalVrfName() {return link_local_vrf_name_;}
+    // Fabric related
+    const std::string &fabric_vn_name() {return fabric_vn_name_;};
 
+    const std::string &fabric_vrf_name() {return fabric_vrf_name_;};
     void set_fabric_vrf_name(const std::string &name) {
         fabric_vrf_name_ = name;
     }
+
+    const std::string &linklocal_vn_name() {return link_local_vn_name_;}
+    const std::string &linklocal_vrf_name() {return link_local_vrf_name_;}
 
     const std::string &vhost_interface_name() const;
     void set_vhost_interface_name(const std::string &name) {
@@ -290,12 +453,11 @@ public:
     const std::string &pkt_interface_name() const {
         return pkt_interface_name_; 
     }
-
     void set_pkt_interface_name(const std::string &name) {
         pkt_interface_name_ = name;
     }
 
-    const std::string &GetHostInterfaceName();
+    const std::string &GetHostInterfaceName() const;
 
     const Interface *vhost_interface() const {
         return vhost_interface_;
@@ -303,227 +465,123 @@ public:
     void set_vhost_interface(const Interface *interface) {
         vhost_interface_ = interface;
     }
-
-    AgentXmppChannel *GetAgentXmppChannel(uint8_t idx) { 
-        return agent_xmpp_channel_[idx];
-    };
-    AgentIfMapXmppChannel *GetAgentIfMapXmppChannel(uint8_t idx) { 
-        return ifmap_channel_[idx];
-    };
-    XmppClient *GetAgentXmppClient(uint8_t idx) {
-        return xmpp_client_[idx];
-    };
-    XmppInit *GetAgentXmppInit(uint8_t idx) {
-        return xmpp_init_[idx];
-    };
-    AgentDnsXmppChannel *GetAgentDnsXmppChannel(uint8_t idx) { 
-        return dns_xmpp_channel_[idx];
-    };
-    XmppClient *GetAgentDnsXmppClient(uint8_t idx) {
-        return dns_xmpp_client_[idx];
-    };
-    XmppInit *GetAgentDnsXmppInit(uint8_t idx) {
-        return dns_xmpp_init_[idx];
-    };
-    DiscoveryServiceClient *GetDiscoveryServiceClient() {
-        return ds_client_; 
-    };
-    uint16_t GetMetadataServerPort() {
-        return metadata_server_port_;
+    ConnectionState* connection_state() const {
+        return connection_state_;
     }
-    IFMapAgentParser *GetIfMapAgentParser() {return ifmap_parser_;};
-    IFMapAgentStaleCleaner *GetIfMapAgentStaleCleaner() {return agent_stale_cleaner_;};
-    
-    ArpProto *GetArpProto() { return arp_proto_; }
-    DhcpProto *GetDhcpProto() { return dhcp_proto_; }
-    DnsProto *GetDnsProto() { return dns_proto_; }
-    IcmpProto *GetIcmpProto() { return icmp_proto_; }
-    FlowProto *GetFlowProto() { return flow_proto_; }
+    void set_connection_state(ConnectionState* state) {
+        connection_state_ = state;
+    }
+    uint16_t metadata_server_port() const {return metadata_server_port_;}
+    void set_metadata_server_port(uint16_t port) {
+        metadata_server_port_ = port;
+    }
 
+    // Protocol objects
+    ArpProto *GetArpProto() { return arp_proto_; }
+    void SetArpProto(ArpProto *proto) { arp_proto_ = proto; }
+
+    DhcpProto *GetDhcpProto() { return dhcp_proto_; }
+    void SetDhcpProto(DhcpProto *proto) { dhcp_proto_ = proto; }
+
+    DnsProto *GetDnsProto() { return dns_proto_; }
+    void SetDnsProto(DnsProto *proto) { dns_proto_ = proto; }
+
+    IcmpProto *GetIcmpProto() { return icmp_proto_; }
+    void SetIcmpProto(IcmpProto *proto) { icmp_proto_ = proto; }
+
+    FlowProto *GetFlowProto() { return flow_proto_; }
+    void SetFlowProto(FlowProto *proto) { flow_proto_ = proto; }
+
+    // Peer objects
     const Peer *local_peer() const {return local_peer_.get();}
     const Peer *local_vm_peer() const {return local_vm_peer_.get();}
     const Peer *link_local_peer() const {return linklocal_peer_.get();}
     const Peer *ecmp_peer() const {return ecmp_peer_.get();}
     const Peer *vgw_peer() const {return vgw_peer_.get();}
 
-    bool debug() { return debug_; }
-    void set_debug(bool debug) { debug_ = debug; }
-    VxLanNetworkIdentifierMode vxlan_network_identifier_mode() const {
-        return vxlan_network_identifier_mode_;
-    }
-    bool headless_agent_mode() const {return headless_agent_mode_;}
+    // Agent Modules
+    AgentConfig *cfg() const; 
+    void set_cfg(AgentConfig *cfg);
 
-    void SetInterfaceTable(InterfaceTable *table) {
-         intf_table_ = table;
-    };
+    CfgListener *cfg_listener() const;
 
-    void SetNextHopTable(NextHopTable *table) {
-        nh_table_ = table;
-    };
+    AgentStats *stats() const;
+    void set_stats(AgentStats *stats);
 
-    void SetDefaultInet4UnicastRouteTable(Inet4UnicastAgentRouteTable *
-                                                 table) {
-        uc_rt_table_ = table;
-    };
+    KSync *ksync() const;
+    void set_ksync(KSync *ksync);
 
-    void SetDefaultInet4UnicastRouteTable(RouteTable * table) {
-        uc_rt_table_ = (Inet4UnicastAgentRouteTable *)table;
-    };
+    AgentUve *uve() const;
+    void set_uve(AgentUve *uve);
 
-    void SetDefaultInet4MulticastRouteTable(Inet4MulticastAgentRouteTable *
-                                                   table) {
-        mc_rt_table_ = table;
-    };
+    PktModule *pkt() const;
+    void set_pkt(PktModule *pkt);
 
-    void SetDefaultInet4MulticastRouteTable(RouteTable *table) {
-        mc_rt_table_ = (Inet4MulticastAgentRouteTable *)table;
-    };
+    ServicesModule *services() const;
+    void set_services(ServicesModule *services);
 
-    void SetDefaultLayer2RouteTable(Layer2AgentRouteTable *table) {
-        l2_rt_table_ = table;
-    };
+    DiscoveryAgentClient *discovery_client() const;
+    void set_discovery_client(DiscoveryAgentClient *client);
 
-    void SetDefaultLayer2RouteTable(RouteTable *table) {
-        l2_rt_table_ = (Layer2AgentRouteTable *)table;
-    };
+    VirtualGateway *vgw() const;
+    void set_vgw(VirtualGateway *vgw);
 
-    void SetVrfTable(VrfTable *table) {
-        vrf_table_ = table;
-    };
+    OperDB *oper_db() const;
+    void set_oper_db(OperDB *oper_db);
 
-    void SetVmTable(VmTable *table) {
-        vm_table_ = table;
-    };
+    VNController *controller() const;
+    void set_controller(VNController *val);
 
-    void SetVnTable(VnTable *table) {
-        vn_table_ = table;
-    };
-
-    void SetSgTable(SgTable *table) {
-        sg_table_ = table;
-    }
-
-    void SetAddressTable(AddrTable *table) { 
-        addr_table_ = table;
-    };
-
-    void SetMplsTable(MplsTable *table) { 
-        mpls_table_ = table;
-    };
-    
-    void SetAclTable(AclTable *table) { 
-        acl_table_ = table;
-    };
-    
-    void SetIntfCfgTable(CfgIntTable *table) {
-        intf_cfg_table_ = table;
-    };
-
-    void SetMirrorCfgTable(MirrorCfgTable *table) {
-        mirror_cfg_table_ = table;
-    }
-
-    void SetIntfMirrorCfgTable(IntfMirrorCfgTable *table) {
-        intf_mirror_cfg_table_ = table;
-    }
-
-    void SetMirrorTable(MirrorTable *table) {
-        mirror_table_ = table;
-    };
-
-    void SetDomainConfigTable(DomainConfig *table) {
-        domain_config_table_ = table;
-    };
-
-    void SetVrfAssignTable(VrfAssignTable *table) {
-        vrf_assign_table_ = table;
-    };
-
-    void SetVxLanTable(VxLanTable *table) { 
-        vxlan_table_ = table;
-    };
-    
-    void SetMirrorPort(uint16_t mirr_port) {
-        mirror_src_udp_port_ = mirr_port;
-    }
-
-    void SetAgentXmppChannel(AgentXmppChannel *channel, uint8_t idx) {
-        agent_xmpp_channel_[idx] = channel;
-    };
-
-    void SetAgentIfMapXmppChannel(AgentIfMapXmppChannel *channel, 
-                                         uint8_t idx) {
-        ifmap_channel_[idx] = channel;
-    };
-
-    void SetAgentXmppClient(XmppClient *client, uint8_t idx) {
-        xmpp_client_[idx] = client;
-    };
-
-    void SetAgentXmppInit(XmppInit *init, uint8_t idx) {
-        xmpp_init_[idx] = init;
-    };
-
-    void SetAgentDnsXmppChannel(AgentDnsXmppChannel *chnl, uint8_t idx) { 
-        dns_xmpp_channel_[idx] = chnl;
-    };
-
-    void SetAgentDnsXmppClient(XmppClient *client, uint8_t idx) {
-        dns_xmpp_client_[idx] = client;
-    };
-
-    void SetAgentDnsXmppInit(XmppInit *xmpp, uint8_t idx) {
-        dns_xmpp_init_[idx] = xmpp;
-    };
-
-    void SetDiscoveryServiceClient(DiscoveryServiceClient *client) {
-        ds_client_ = client;
-    };
-
-    void SetMetadataServerPort(uint16_t port) {
-        metadata_server_port_ = port;
-    };
-
-    void SetAgentStaleCleaner(IFMapAgentStaleCleaner *cl) {
-        agent_stale_cleaner_ = cl;
-    };
-
-    void SetIfMapAgentParser(IFMapAgentParser *parser) {
-        ifmap_parser_ = parser;
-    };
-
-    void SetArpProto(ArpProto *proto) { arp_proto_ = proto; }
-    void SetDhcpProto(DhcpProto *proto) { dhcp_proto_ = proto; }
-    void SetDnsProto(DnsProto *proto) { dns_proto_ = proto; }
-    void SetIcmpProto(IcmpProto *proto) { icmp_proto_ = proto; }
-    void SetFlowProto(FlowProto *proto) { flow_proto_ = proto; }
-
-    void SetRouterIdConfigured(bool value) {
-        router_id_configured_ = value;
-    }
-
-    void SetEventManager(EventManager *evm) {
+    // Miscellaneous
+    EventManager *event_manager() const {return event_mgr_;}
+    void set_event_manager(EventManager *evm) {
         event_mgr_ = evm;
     }
 
+    DiagTable *diag_table() const;
+    void set_diag_table(DiagTable *table);
+
+    uint16_t mirror_port() const {return mirror_src_udp_port_;}
+    void set_mirror_port(uint16_t mirr_port) {
+        mirror_src_udp_port_ = mirr_port;
+    }
+
+    int sandesh_port() const { return sandesh_port_;}
+    DB *db() const {return db_;}
+    const std::string &fabric_interface_name() const {
+        return ip_fabric_intf_name_;
+    }
+
+    bool debug() { return debug_; }
+    void set_debug(bool debug) { debug_ = debug; }
+
+    VxLanNetworkIdentifierMode vxlan_network_identifier_mode() const {
+        return vxlan_network_identifier_mode_;
+    }
     void set_vxlan_network_identifier_mode(VxLanNetworkIdentifierMode mode) {
         vxlan_network_identifier_mode_ = mode;
     }
 
+    bool headless_agent_mode() const {return headless_agent_mode_;}
     void set_headless_agent_mode(bool mode) {headless_agent_mode_ = mode;}
-    std::string GetUuidStr(boost::uuids::uuid uuid_val) {
-        std::ostringstream str;
-        str << uuid_val;
-        return str.str();
-    }
-    void GlobalVrouterConfig(IFMapNode *node);
 
+    IFMapAgentParser *ifmap_parser() const {return ifmap_parser_;}
+    void set_ifmap_parser(IFMapAgentParser *parser) {
+        ifmap_parser_ = parser;
+    }
+
+    IFMapAgentStaleCleaner *ifmap_stale_cleaner() const {
+        return agent_stale_cleaner_;
+    }
+    void set_ifmap_stale_cleaner(IFMapAgentStaleCleaner *cl) {
+        agent_stale_cleaner_ = cl;
+    }
+
+    std::string GetUuidStr(boost::uuids::uuid uuid_val) const;
+
+    bool ksync_sync_mode() const {return ksync_sync_mode_;}
     void set_ksync_sync_mode(bool sync_mode) {
         ksync_sync_mode_ = sync_mode;
-    }
-
-    bool ksync_sync_mode() const {
-        return ksync_sync_mode_;
     }
 
     bool test_mode() const { return test_mode_; }
@@ -532,80 +590,43 @@ public:
     uint32_t flow_table_size() const { return flow_table_size_; }
     void set_flow_table_size(uint32_t count) { flow_table_size_ = count; }
 
+    bool init_done() const { return init_done_; }
+    void set_init_done(bool done) { init_done_ = done; }
+
+    AgentParam *params() const { return params_; }
+
     bool isXenMode();
-
-    static Agent *GetInstance() {return singleton_;}
-
-    void Shutdown() {
-    }
-
-    DiagTable *diag_table() const { return diag_table_.get(); }
-    void set_diag_table(DiagTable *table) { diag_table_.reset(table); }
-
-    void CreateLifetimeManager();
-    void ShutdownLifetimeManager();
     void SetAgentTaskPolicy();
+    void CopyConfig(AgentParam *params);
 
+    void Init(AgentParam *param);
+    void InitModules();
+    void InitPeers();
+    void InitDone();
+    void InitXenLinkLocalIntf();
     void InitCollector();
     void CreateDBTables();
     void CreateDBClients();
     void CreateVrf();
     void CreateNextHops();
     void CreateInterfaces();
-    void InitPeers();
-    void InitModules();
-    void InitDone();
 
-    void Init(AgentParam *param, AgentInit *init);
-    AgentParam *params() const { return params_; }
-    AgentInit *init() const { return init_; }
+    LifetimeManager *lifetime_manager() { return lifetime_manager_;}
+    void CreateLifetimeManager();
+    void ShutdownLifetimeManager();
 
-    AgentConfig *cfg() const { return cfg_.get(); }
-    void set_cfg(AgentConfig *cfg) { cfg_.reset(cfg); }
-
-    CfgListener *cfg_listener() const;
-
-    AgentStats *stats() const { return stats_.get(); }
-    void set_stats(AgentStats *stats) { stats_.reset(stats); }
-
-    KSync *ksync() const { return ksync_.get(); }
-    void set_ksync(KSync *ksync) { return ksync_.reset(ksync); }
-
-    AgentUve *uve() const { return uve_.get(); }
-    void set_uve(AgentUve *uve) { uve_.reset(uve); }
-
-    PktModule *pkt() const { return pkt_.get(); }
-    void set_pkt(PktModule *pkt) { pkt_.reset(pkt); }
-
-    ServicesModule *services() const { return services_.get(); }
-    void set_services(ServicesModule *services) { services_.reset(services); }
-
-    DiscoveryAgentClient *discovery_client() const;
-    void set_discovery_client(DiscoveryAgentClient *client);
-
-    VirtualGateway *vgw() const { return vgw_.get(); }
-    void set_vgw(VirtualGateway *vgw) { vgw_.reset(vgw); }
-
-    OperDB *oper_db() const { return oper_db_.get(); }
-    void set_oper_db(OperDB *oper_db) { oper_db_.reset(oper_db); }
-
-    VNController *controller() const {return controller_.get();}
-    void set_controller(VNController *val) {controller_.reset(val);}
-
-    void CopyConfig(AgentParam *params, AgentInit *init);
 private:
 
     AgentParam *params_;
-    AgentInit *init_;
     std::auto_ptr<AgentConfig> cfg_;
     std::auto_ptr<AgentStats> stats_;
     std::auto_ptr<KSync> ksync_;
     std::auto_ptr<AgentUve> uve_;
-    std::auto_ptr<PktModule> pkt_;
-    std::auto_ptr<ServicesModule> services_;
+    PktModule *pkt_;
+    ServicesModule *services_;
     std::auto_ptr<VirtualGateway> vgw_;
     std::auto_ptr<OperDB> oper_db_;
-    std::auto_ptr<DiagTable> diag_table_;
+    DiagTable *diag_table_;
     std::auto_ptr<VNController> controller_;
 
     EventManager *event_mgr_;
@@ -635,7 +656,6 @@ private:
     VmTable *vm_table_;
     VnTable *vn_table_;
     SgTable *sg_table_;
-    AddrTable *addr_table_;
     MplsTable *mpls_table_;
     AclTable *acl_table_;
     MirrorTable *mirror_table_;
@@ -662,8 +682,8 @@ private:
     uint32_t xs_port_[MAX_XMPP_SERVERS];
     uint64_t xs_stime_[MAX_XMPP_SERVERS];
     int8_t xs_dns_idx_;
-    std::string xs_dns_addr_[MAX_XMPP_SERVERS];
-    uint32_t xs_dns_port_[MAX_XMPP_SERVERS];
+    std::string dns_addr_[MAX_XMPP_SERVERS];
+    uint32_t dns_port_[MAX_XMPP_SERVERS];
     std::string dss_addr_;
     uint32_t dss_port_;
     int dss_xs_instances_;
@@ -685,6 +705,8 @@ private:
     std::auto_ptr<Peer> ecmp_peer_;
     std::auto_ptr<Peer> vgw_peer_;
 
+    std::auto_ptr<AgentSignal> agent_signal_;
+
     IFMapAgentParser *ifmap_parser_;
     bool router_id_configured_;
 
@@ -696,8 +718,10 @@ private:
     VxLanNetworkIdentifierMode vxlan_network_identifier_mode_;
     bool headless_agent_mode_;
     const Interface *vhost_interface_;
+    ConnectionState* connection_state_;
     bool debug_;
     bool test_mode_;
+    bool init_done_;
 
     // Flow information
     uint32_t flow_table_size_;
@@ -705,13 +729,15 @@ private:
     // Constants
     static const std::string config_file_;
     static const std::string log_file_;
-    static const std::string null_str_;
+    static const std::string null_string_;
     static std::string fabric_vrf_name_;
     static const std::string fabric_vn_name_;
     static const std::string link_local_vrf_name_;
     static const std::string link_local_vn_name_;
     static const uint8_t vrrp_mac_[ETHER_ADDR_LEN];
     static const std::string bcast_mac_;
+    static const std::string xmpp_dns_server_connection_name_prefix_;
+    static const std::string xmpp_control_node_connection_name_prefix_;
 };
 
 #endif // vnsw_agent_hpp

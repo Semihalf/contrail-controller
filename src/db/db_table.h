@@ -143,10 +143,8 @@ public:
     // Delete hook for user function
     virtual void Delete(DBEntry *entry, const DBRequest *req);
 
-    //
     // Suspended deletion resume hook for user function
-    //
-    virtual void MayResumeDelete(bool is_empty) { return; }
+    virtual void RetryDelete() { }
 
     ///////////////////////////////////////////////////////////
     // Utility methods for table
@@ -172,8 +170,14 @@ public:
 
     virtual int PartitionCount() const;
 
-    // Calcuate the size across all partitions.
+    // Calculate the size across all partitions.
     virtual size_t Size() const;
+
+    // helper functions
+
+    // Delete all the state entries of a specific listener.
+    // Not thread-safe. Used to shutdown and cleanup the process.
+    static void DBStateClear(DBTable *table, ListenerId id);
 
 private:
     ///////////////////////////////////////////////////////////

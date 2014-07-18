@@ -2,11 +2,12 @@
  * Copyright (c) 2013 Juniper Networks, Inc. All rights reserved.
  */
 
+#include <algorithm>
 #include "test/test_cmn_util.h"
 #include "test_flow_util.h"
 #include "ksync/ksync_sock_user.h"
 #include "oper/tunnel_nh.h"
-#include <algorithm>
+#include "pkt/flow_table.h"
 
 #define MAX_VNET 4
 
@@ -39,8 +40,11 @@ struct TestFlowKey {
 #define linklocal_port 4000
 #define fabric_port 8000
 
-int fd_table[MAX_VNET];
+#define vm_a_ip "16.1.1.1"
+#define vm_b_ip "16.1.1.2"
 
+int fd_table[MAX_VNET];
+InetInterface *vhost;
 struct PortInfo input[] = {
         {"flow0", 6, vm1_ip, "00:00:00:01:01:01", 5, 1},
         {"flow1", 7, vm2_ip, "00:00:00:01:01:02", 5, 2},
@@ -55,12 +59,25 @@ struct PortInfo input3[] = {
         {"flow4", 10, vm5_ip, "00:00:00:01:01:06", 4, 5},
 };
 
+struct PortInfo input4[] = {
+        {"flow5", 3, vm_a_ip, "00:00:00:01:01:07", 6, 6},
+        {"flow6", 4, vm_b_ip, "00:00:00:01:01:08", 6, 7},
+};
+
+typedef enum {
+    INGRESS = 0,
+    EGRESS = 1,
+    BIDIRECTION = 2
+} AclDirection;
+
 int hash_id;
 VmInterface *flow0;
 VmInterface *flow1;
 VmInterface *flow2;
 VmInterface *flow3;
 VmInterface *flow4;
+VmInterface *flow5;
+VmInterface *flow6;
 std::string eth_itf;
 
 static void NHNotify(DBTablePartBase *partition, DBEntryBase *entry) {
@@ -69,6 +86,9 @@ static void NHNotify(DBTablePartBase *partition, DBEntryBase *entry) {
 class FlowTest : public ::testing::Test {
 public:
     FlowTest() : peer_(NULL), agent_(Agent::GetInstance()) {
+        boost::scoped_ptr<InetInterfaceKey> key(new InetInterfaceKey("vhost0"));
+        vhost = static_cast<InetInterface *>(Agent::GetInstance()->
+                interface_table()->FindActiveEntry(key.get()));
     }
 
     bool FlowTableWait(size_t count) {
@@ -93,10 +113,10 @@ public:
     void CreateLocalRoute(const char *vrf, const char *ip,
                           VmInterface *intf, int label) {
         Ip4Address addr = Ip4Address::from_string(ip);
-        agent()->GetDefaultInet4UnicastRouteTable()->
-            AddLocalVmRouteReq(NULL, vrf, addr, 32, intf->GetUuid(),
+        agent()->fabric_inet4_unicast_table()->
+            AddLocalVmRouteReq(peer_, vrf, addr, 32, intf->GetUuid(),
                                intf->vn()->GetName(), label,
-                               SecurityGroupList(), false); 
+                               SecurityGroupList(), false, PathPreference());
         client->WaitForIdle();
         EXPECT_TRUE(RouteFind(vrf, addr, 32));
     }
@@ -105,35 +125,34 @@ public:
                            const char *serv, int label, const char *vn) {
         Ip4Address addr = Ip4Address::from_string(remote_vm);
         Ip4Address gw = Ip4Address::from_string(serv);
-        agent()->GetDefaultInet4UnicastRouteTable()->AddRemoteVmRouteReq
-            (peer_, vrf, addr, 32, gw, TunnelType::MplsType(), label, vn,
-             SecurityGroupList());
+        Inet4TunnelRouteAdd(peer_, vrf, addr, 32, gw, TunnelType::MplsType(), label, vn,
+                            SecurityGroupList(), PathPreference());
         client->WaitForIdle(2);
         WAIT_FOR(1000, 500, (RouteFind(vrf, addr, 32) == true));
     }
 
     void DeleteRoute(const char *vrf, const char *ip) {
         Ip4Address addr = Ip4Address::from_string(ip);
-        agent()->GetDefaultInet4UnicastRouteTable()->DeleteReq(NULL, 
-                                                vrf, addr, 32);
+        agent()->fabric_inet4_unicast_table()->DeleteReq(peer_, 
+                                                vrf, addr, 32, NULL);
         client->WaitForIdle();
         WAIT_FOR(1000, 1, (RouteFind(vrf, addr, 32) == false));
     }
 
     void DeleteRemoteRoute(const char *vrf, const char *ip) {
         Ip4Address addr = Ip4Address::from_string(ip);
-        agent()->GetDefaultInet4UnicastRouteTable()->DeleteReq(peer_, 
-                vrf, addr, 32);
+        agent()->fabric_inet4_unicast_table()->DeleteReq(peer_, 
+                vrf, addr, 32, NULL);
         client->WaitForIdle();
         WAIT_FOR(1000, 1, (RouteFind(vrf, addr, 32) == false));
     }
 
     static void FlowDel(int vrf, const char *sip, const char *dip,
                         int proto, int sport, int dport, 
-                        bool del_reverse_flow) {
+                        bool del_reverse_flow, uint32_t nh_id) {
         FlowKey key;
 
-        key.vrf = vrf;
+        key.nh = nh_id;
         key.src.ipv4 = ntohl(inet_addr(sip));
         key.dst.ipv4 = ntohl(inet_addr(dip));
         key.protocol = proto;
@@ -301,6 +320,145 @@ public:
         }
     }
 
+    std::string AddAclXmlString(const char *name, int id, int proto,
+                                const char *action, const char* uuid) {
+        char buff[10240];
+        sprintf(buff,
+                "<?xml version=\"1.0\"?>\n"
+                "<config>\n"
+                "   <update>\n"
+                "       <node type=\"access-control-list\">\n"
+                "           <name>%s</name>\n"
+                "           <id-perms>\n"
+                "               <permissions>\n"
+                "                   <owner></owner>\n"
+                "                   <owner_access>0</owner_access>\n"
+                "                   <group></group>\n"
+                "                   <group_access>0</group_access>\n"
+                "                   <other_access>0</other_access>\n"
+                "               </permissions>\n"
+                "               <uuid>\n"
+                "                   <uuid-mslong>0</uuid-mslong>\n"
+                "                   <uuid-lslong>%d</uuid-lslong>\n"
+                "               </uuid>\n"
+                "           </id-perms>\n"
+                "           <access-control-list-entries>\n"
+                "                <dynamic>false</dynamic>\n"
+                "                <acl-rule>\n"
+                "                    <match-condition>\n"
+                "                        <src-address>\n"
+                "                            <virtual-network> any </virtual-network>\n"
+                "                        </src-address>\n"
+                "                        <protocol>%d</protocol>\n"
+                "                        <src-port>\n"
+                "                            <start-port> 0 </start-port>\n"
+                "                            <end-port> 10000 </end-port>\n"
+                "                        </src-port>\n"
+                "                        <dst-address>\n"
+                "                            <virtual-network> any </virtual-network>\n"
+                "                        </dst-address>\n"
+                "                        <dst-port>\n"
+                "                            <start-port> 0 </start-port>\n"
+                "                            <end-port> 10000 </end-port>\n"
+                "                        </dst-port>\n"
+                "                    </match-condition>\n"
+                "                    <action-list>\n"
+                "                        <simple-action>\n"
+                "                            %s\n"
+                "                        </simple-action>\n"
+                "                    </action-list>\n"
+                "                    <rule-uuid>%s</rule-uuid>\n"
+                "                </acl-rule>\n"
+                "                <acl-rule>\n"
+                "                    <match-condition>\n"
+                "                        <src-address>\n"
+                "                            <virtual-network> vn6 </virtual-network>\n"
+                "                        </src-address>\n"
+                "                        <protocol>any</protocol>\n"
+                "                        <src-port>\n"
+                "                            <start-port> 0 </start-port>\n"
+                "                            <end-port> 60000 </end-port>\n"
+                "                        </src-port>\n"
+                "                        <dst-address>\n"
+                "                            <virtual-network> vn6 </virtual-network>\n"
+                "                        </dst-address>\n"
+                "                        <dst-port>\n"
+                "                            <start-port> 0 </start-port>\n"
+                "                            <end-port> 60000 </end-port>\n"
+                "                        </dst-port>\n"
+                "                    </match-condition>\n"
+                "                    <action-list>\n"
+                "                        <simple-action>\n"
+                "                            deny\n"
+                "                        </simple-action>\n"
+                "                    </action-list>\n"
+                "                    <rule-uuid>fe6a4dcb-dde4-48e6-8957-856a7aacb2e1</rule-uuid>\n"
+                "                </acl-rule>\n"
+                "           </access-control-list-entries>\n"
+                "       </node>\n"
+                "   </update>\n"
+                "</config>\n", name, id, proto, action, uuid);
+        string s(buff);
+        return s;
+    }
+
+    void AddAclEntry(const char *name, int id, int proto,
+                     const char *action, const char *uuid_str) {
+        std::string s = AddAclXmlString(name, id, proto, action, uuid_str);
+        pugi::xml_document xdoc_;
+        pugi::xml_parse_result result = xdoc_.load(s.c_str());
+        EXPECT_TRUE(result);
+        Agent::GetInstance()->ifmap_parser()->ConfigParse(xdoc_.first_child(), 0);
+        client->WaitForIdle();
+    }
+
+    void AddSgEntry(const char *sg_name, const char *name, int id,
+                    int proto, const char *action, AclDirection direction,
+                    const char *uuid1, const char* uuid2) {
+
+        AddSg(sg_name, id);
+        char acl_name[1024];
+        uint16_t max_len = sizeof(acl_name) - 1;
+        strncpy(acl_name, name, max_len);
+        switch (direction) {
+            case INGRESS:
+                strncat(acl_name, "ingress-access-control-list", max_len);
+                AddAclEntry(acl_name, id, proto, action, uuid1);
+                AddLink("security-group", sg_name, "access-control-list", acl_name);
+                break;
+            case EGRESS:
+                strncat(acl_name, "egress-access-control-list", max_len);
+                AddAclEntry(acl_name, id, proto, action, uuid1);
+                AddLink("security-group", sg_name, "access-control-list", acl_name);
+                break;
+            case BIDIRECTION:
+                strncat(acl_name, "egress-access-control-list", max_len);
+                AddAclEntry(acl_name, id, proto, action, uuid1);
+                AddLink("security-group", sg_name, "access-control-list", acl_name);
+
+                strncpy(acl_name, name, max_len);
+                strncat(acl_name, "ingress-access-control-list", max_len);
+                AddAclEntry(acl_name, id, proto, action, uuid2);
+                AddLink("security-group", sg_name, "access-control-list", acl_name);
+                break;
+        }
+    }
+
+    void FlowSetup() {
+        CreateVmportEnv(input4, 2, 0);
+        client->WaitForIdle(5);
+        flow5 = VmInterfaceGet(input4[0].intf_id);
+        assert(flow5);
+        flow6 = VmInterfaceGet(input4[1].intf_id);
+        assert(flow6);
+    }
+
+    void FlowTeardown() {
+        client->Reset();
+        DeleteVmportEnv(input4, 2, true, 0);
+        client->WaitForIdle(5);
+        client->PortDelNotifyWait(2);
+    }
 protected:
     virtual void SetUp() {
         unsigned int vn_count = 0;
@@ -317,10 +475,10 @@ protected:
         EXPECT_TRUE(VmPortPolicyEnable(input, 0));
         EXPECT_TRUE(VmPortPolicyEnable(input, 1));
         EXPECT_TRUE(VmPortPolicyEnable(input, 2));
-        EXPECT_EQ(7U, agent()->GetInterfaceTable()->Size());
-        EXPECT_EQ(3U, agent()->GetVmTable()->Size());
-        EXPECT_EQ(vn_count, agent()->GetVnTable()->Size());
-        EXPECT_EQ(3U, agent()->GetIntfCfgTable()->Size());
+        EXPECT_EQ(7U, agent()->interface_table()->Size());
+        EXPECT_EQ(3U, agent()->vm_table()->Size());
+        EXPECT_EQ(vn_count, agent()->vn_table()->Size());
+        EXPECT_EQ(3U, agent()->interface_config_table()->Size());
 
         flow0 = VmInterfaceGet(input[0].intf_id);
         assert(flow0);
@@ -336,25 +494,25 @@ protected:
         vn_count++;
         EXPECT_TRUE(VmPortActive(input2, 0));
         EXPECT_TRUE(VmPortPolicyEnable(input2, 0));
-        EXPECT_EQ(8U, agent()->GetInterfaceTable()->Size());
-        EXPECT_EQ(4U, agent()->GetVmTable()->Size());
-        EXPECT_EQ(vn_count, agent()->GetVnTable()->Size());
-        EXPECT_EQ(4U, agent()->GetIntfCfgTable()->Size());
-        EXPECT_EQ(2U, agent()->GetAclTable()->Size());
+        EXPECT_EQ(8U, agent()->interface_table()->Size());
+        EXPECT_EQ(4U, agent()->vm_table()->Size());
+        EXPECT_EQ(vn_count, agent()->vn_table()->Size());
+        EXPECT_EQ(4U, agent()->interface_config_table()->Size());
+        EXPECT_EQ(2U, agent()->acl_table()->Size());
 
         flow3 = VmInterfaceGet(input2[0].intf_id);
         assert(flow3);
 
-        /* Create interface flow4 in vn4 */
+        /* Create interface flow4 in default-project:vn4 */
         client->Reset();
         CreateVmportFIpEnv(input3, 1);
         client->WaitForIdle(5);
         vn_count++;
         EXPECT_TRUE(VmPortActive(input3, 0));
-        EXPECT_EQ(9U, agent()->GetInterfaceTable()->Size());
-        EXPECT_EQ(5U, agent()->GetVmTable()->Size());
-        EXPECT_EQ(vn_count, agent()->GetVnTable()->Size());
-        EXPECT_EQ(5U, agent()->GetIntfCfgTable()->Size());
+        EXPECT_EQ(9U, agent()->interface_table()->Size());
+        EXPECT_EQ(5U, agent()->vm_table()->Size());
+        EXPECT_EQ(vn_count, agent()->vn_table()->Size());
+        EXPECT_EQ(5U, agent()->interface_config_table()->Size());
         flow4 = VmInterfaceGet(input3[0].intf_id);
         assert(flow4);
         // Configure Floating-IP
@@ -363,10 +521,13 @@ protected:
         AddFloatingIp("fip2", 1, "14.1.1.101");
         AddLink("floating-ip", "fip1", "floating-ip-pool", "fip-pool1");
         AddLink("floating-ip", "fip2", "floating-ip-pool", "fip-pool1");
-        AddLink("floating-ip-pool", "fip-pool1", "virtual-network", "vn4");
+        AddLink("floating-ip-pool", "fip-pool1", "virtual-network",
+                "default-project:vn4");
         AddLink("virtual-machine-interface", "flow0", "floating-ip", "fip1");
         client->WaitForIdle();
-        peer_ = CreateBgpPeer(Ip4Address(1), "BGP Peer 1");
+        boost::system::error_code ec;
+        peer_ = CreateBgpPeer(Ip4Address::from_string("0.0.0.1", ec),
+                              "xmpp channel");
         Ip4Address gw_ip = Ip4Address::from_string("11.1.1.254");
         //Add a gateway route pointing to pkt0
         VrfEntry *vrf = VrfGet("vrf5");
@@ -381,8 +542,8 @@ protected:
         client->Reset();
         VrfEntry *vrf = VrfGet("vrf5");
         Ip4Address gw_ip = Ip4Address::from_string("11.1.1.254");
-        Agent::GetInstance()->GetDefaultInet4UnicastRouteTable()->DeleteReq(
-            Agent::GetInstance()->local_peer(), "vrf5", gw_ip, 32);
+        Agent::GetInstance()->fabric_inet4_unicast_table()->DeleteReq(
+            Agent::GetInstance()->local_peer(), "vrf5", gw_ip, 32, NULL);
         client->WaitForIdle();
         DeleteVmportEnv(input, 3, true, 1);
         client->WaitForIdle(3);
@@ -390,28 +551,28 @@ protected:
         EXPECT_FALSE(VmPortFind(input, 0));
         EXPECT_FALSE(VmPortFind(input, 1));
         EXPECT_FALSE(VmPortFind(input, 2));
-        EXPECT_EQ(6U, agent()->GetInterfaceTable()->Size());
-        EXPECT_EQ(2U, agent()->GetIntfCfgTable()->Size());
+        EXPECT_EQ(6U, agent()->interface_table()->Size());
+        EXPECT_EQ(2U, agent()->interface_config_table()->Size());
 
         client->Reset();
         DeleteVmportEnv(input2, 1, true, 2);
         client->WaitForIdle(3);
         client->PortDelNotifyWait(1);
-        EXPECT_EQ(5U, agent()->GetInterfaceTable()->Size());
-        EXPECT_EQ(1U, agent()->GetIntfCfgTable()->Size());
+        EXPECT_EQ(5U, agent()->interface_table()->Size());
+        EXPECT_EQ(1U, agent()->interface_config_table()->Size());
         EXPECT_FALSE(VmPortFind(input2, 0));
 
         client->Reset();
         DeleteVmportFIpEnv(input3, 1, true);
         client->WaitForIdle(3);
         client->PortDelNotifyWait(1);
-        EXPECT_EQ(4U, agent()->GetInterfaceTable()->Size());
-        EXPECT_EQ(0U, agent()->GetIntfCfgTable()->Size());
+        EXPECT_EQ(4U, agent()->interface_table()->Size());
+        EXPECT_EQ(0U, agent()->interface_config_table()->Size());
         EXPECT_FALSE(VmPortFind(input3, 0));
 
-        EXPECT_EQ(0U, agent()->GetVmTable()->Size());
-        EXPECT_EQ(0U, agent()->GetVnTable()->Size());
-        EXPECT_EQ(0U, agent()->GetAclTable()->Size());
+        EXPECT_EQ(0U, agent()->vm_table()->Size());
+        EXPECT_EQ(0U, agent()->vn_table()->Size());
+        EXPECT_EQ(0U, agent()->acl_table()->Size());
         DeleteBgpPeer(peer_);
     }
 
@@ -471,7 +632,7 @@ TEST_F(FlowTest, FlowAdd_1) {
     all_flow_records_sandesh->Release();
 
     FetchFlowRecord *flow_record_sandesh = new FetchFlowRecord();
-    flow_record_sandesh->set_vrf(1);
+    flow_record_sandesh->set_nh(GetFlowKeyNH(input[0].intf_id));
     flow_record_sandesh->set_sip(vm1_ip);
     flow_record_sandesh->set_dip(vm2_ip);
     flow_record_sandesh->set_src_port(1000);
@@ -498,7 +659,7 @@ TEST_F(FlowTest, FlowAdd_2) {
     //Create PHYSICAL interface to receive GRE packets on it.
     PhysicalInterfaceKey key(eth_itf);
     Interface *intf = static_cast<Interface *>
-        (agent()->GetInterfaceTable()->FindActiveEntry(&key));
+        (agent()->interface_table()->FindActiveEntry(&key));
     EXPECT_TRUE(intf != NULL);
 
     //Create remote VM route. This will be used to figure out destination VN for
@@ -513,7 +674,7 @@ TEST_F(FlowTest, FlowAdd_2) {
         //Send an ICMP flow from remote VM to local VM
         {
             TestFlowPkt(remote_vm1_ip, vm1_ip, 1, 0, 0, "vrf5", 
-                    remote_router_ip, 16),
+                    remote_router_ip, flow0->label()),
             { 
                 new VerifyVn("vn5", "vn5"),
                 new VerifyVrf("vrf5", "vrf5")
@@ -531,7 +692,7 @@ TEST_F(FlowTest, FlowAdd_2) {
         //Send a TCP flow from remote VM to local VM
         {
             TestFlowPkt(remote_vm3_ip, vm3_ip, IPPROTO_TCP, 1001, 1002,
-                    "vrf5", remote_router_ip, 18),
+                    "vrf5", remote_router_ip, flow2->label()),
             {
                 new VerifyVn("vn5", "vn5"),
                 new VerifyVrf("vrf5", "vrf5")
@@ -637,7 +798,7 @@ TEST_F(FlowTest, FlowAdd_3) {
 TEST_F(FlowTest, FlowAdd_4) {
     /* Add remote VN route to vrf5 */
     CreateRemoteRoute("vrf5", remote_vm4_ip, remote_router_ip, 8, "vn3");
-    Ip4Address rid1 = agent()->GetRouterId();
+    Ip4Address rid1 = agent()->router_id();
     std::string router_ip_str = rid1.to_string();
 
     TestFlow flow[] = {
@@ -955,8 +1116,10 @@ TEST_F(FlowTest, FlowAge_3) {
     client->WaitForIdle();
     WAIT_FOR(1000, 1000, (2U == agent()->pkt()->flow_table()->Size()));
     EXPECT_EQ(2U, agent()->pkt()->flow_table()->Size());
-    EXPECT_TRUE(FlowGet(1, vm1_ip, vm2_ip, 1, 0, 0, false, -1, -1));
-    EXPECT_TRUE(FlowGet(1, vm2_ip, vm1_ip, 1, 0, 0, false, -1, -1));
+    EXPECT_TRUE(FlowGet(1, vm1_ip, vm2_ip, 1, 0, 0, false, -1, -1,
+                        GetFlowKeyNH(input[0].intf_id)));
+    EXPECT_TRUE(FlowGet(1, vm2_ip, vm1_ip, 1, 0, 0, false, -1, -1,
+                        GetFlowKeyNH(input[1].intf_id)));
 
     usleep(tmp_age_time + 10);
     client->EnqueueFlowAge();
@@ -988,7 +1151,7 @@ TEST_F(FlowTest, ScaleFlowAge_1) {
             },
             {
                 TestFlowPkt(dip.to_string(), vm1_ip, 1, 0, 0, "vrf5",
-                        flow1->id(), i + 100),
+                        flow0->id(), i + 100),
                 { }
             }
         };
@@ -1047,9 +1210,10 @@ TEST_F(FlowTest, Nat_FlowAge_1) {
 
     EXPECT_EQ(2U, agent()->pkt()->flow_table()->Size());
     EXPECT_TRUE(FlowGet(VrfGet("vrf5")->vrf_id(), vm1_ip, vm5_ip, 1, 0, 0, 
-                        false, -1, -1));
-    EXPECT_TRUE(FlowGet(VrfGet("vn4:vn4")->vrf_id(), vm5_ip, vm1_fip, 1, 0, 0, 
-                        false, -1, -1));
+                        false, -1, -1, GetFlowKeyNH(input[0].intf_id)));
+    EXPECT_TRUE(FlowGet(VrfGet("default-project:vn4:vn4")->vrf_id(), vm5_ip,
+                        vm1_fip, 1, 0, 0, false, -1, -1,
+                        GetFlowKeyNH(input3[0].intf_id)));
 
     // Sleep for age-time
     usleep(tmp_age_time + 10);
@@ -1093,15 +1257,19 @@ TEST_F(FlowTest, NonNatFlowAdd_1) {
 
     // Delete forward flow. It should delete both flows
     DeleteFlow(flow, 1);
-    EXPECT_TRUE(FlowFail(1, "1.1.1.1", "2.2.2.2", 1, 0, 0));
-    EXPECT_TRUE(FlowFail(1, "2.2.2.2", "1.1.1.1", 1, 0, 0));
+    EXPECT_TRUE(FlowFail(1, "1.1.1.1", "2.2.2.2", 1, 0, 0,
+                         GetFlowKeyNH(input[0].intf_id)));
+    EXPECT_TRUE(FlowFail(1, "2.2.2.2", "1.1.1.1", 1, 0, 0,
+                         GetFlowKeyNH(input[1].intf_id)));
 
     // Add forward and reverse flow
     CreateFlow(flow, 2);
     // Delete reverse flow. Should delete both flows
     DeleteFlow(flow + 1, 1);
-    EXPECT_TRUE(FlowFail(1, "1.1.1.1", "2.2.2.2", 1, 0, 0));
-    EXPECT_TRUE(FlowFail(1, "2.2.2.2", "1.1.1.1", 1, 0, 0));
+    EXPECT_TRUE(FlowFail(1, "1.1.1.1", "2.2.2.2", 1, 0, 0,
+                         GetFlowKeyNH(input[0].intf_id)));
+    EXPECT_TRUE(FlowFail(1, "2.2.2.2", "1.1.1.1", 1, 0, 0,
+                         GetFlowKeyNH(input[1].intf_id)));
     EXPECT_TRUE(FlowTableWait(0));
 }
 
@@ -1127,8 +1295,10 @@ TEST_F(FlowTest, NonNatDupFlowAdd_1) {
 
     // Delete forward flow. It should delete both flows
     DeleteFlow(flow, 1);
-    EXPECT_TRUE(FlowFail(1, "1.1.1.1", "2.2.2.2", 1, 0, 0));
-    EXPECT_TRUE(FlowFail(1, "2.2.2.2", "1.1.1.1", 1, 0, 0));
+    EXPECT_TRUE(FlowFail(1, "1.1.1.1", "2.2.2.2", 1, 0, 0,
+                         GetFlowKeyNH(input[0].intf_id)));
+    EXPECT_TRUE(FlowFail(1, "2.2.2.2", "1.1.1.1", 1, 0, 0,
+                         GetFlowKeyNH(input[0].intf_id)));
     EXPECT_TRUE(FlowTableWait(0));
 }
 
@@ -1161,12 +1331,13 @@ TEST_F(FlowTest, NonNatAddOldNat_1) {
     // Add Non-NAT forward flow
     CreateFlow(non_nat_flow, 1);
     //Make sure NAT reverse flow is also deleted
-    EXPECT_TRUE(FlowFail(VrfGet("vn4:vn4")->vrf_id(), vm5_ip, vm1_fip, 1, 
-                          0, 0));
+    EXPECT_TRUE(FlowFail(VrfGet("default-project:vn4:vn4")->vrf_id(),
+                          vm5_ip, vm1_fip, 1,
+                          0, 0, GetFlowKeyNH(input[0].intf_id)));
 
     DeleteFlow(non_nat_flow, 1); 
-    EXPECT_TRUE(FlowFail(VrfGet("vrf5")->vrf_id(), vm5_ip, vm1_ip, 1, 
-                         0, 0));
+    EXPECT_TRUE(FlowFail(VrfGet("vrf5")->vrf_id(), vm5_ip, vm1_ip, 1,
+                         0, 0, GetFlowKeyNH(input[0].intf_id)));
 
     client->EnqueueFlowAge();
     client->WaitForIdle();
@@ -1178,7 +1349,7 @@ TEST_F(FlowTest, NonNatAddOldNat_2) {
 #if 0
     TestFlow nat_flow[] = {
         {
-             TestFlowPkt(vm5_ip, vm1_fip, 1, 0, 0, "vn4:vn4", 
+             TestFlowPkt(vm5_ip, vm1_fip, 1, 0, 0, "default-project:vn4:vn4",
                     flow4->id()),
             {
                 new VerifyNat(vm1_ip, vm5_ip, 1, 0, 0) 
@@ -1188,7 +1359,7 @@ TEST_F(FlowTest, NonNatAddOldNat_2) {
 
     TestFlow non_nat_flow[] = {
         {
-             TestFlowPkt(vm5_ip, vm1_fip, 1, 0, 0, "vn4:vn4", 
+             TestFlowPkt(vm5_ip, vm1_fip, 1, 0, 0, "default-project:vn4:vn4",
                     flow4->id()),
             {
                 new VerifyVn(unknown_vn_, unknown_vn_)
@@ -1205,8 +1376,8 @@ TEST_F(FlowTest, NonNatAddOldNat_2) {
     //Make sure NAT reverse flow is deleted
     EXPECT_TRUE(FlowFail(VrfGet("vrf5")->vrf_id(), vm1_ip, vm5_ip, 1, 
                          0, 0));
-    EXPECT_TRUE(FlowFail(VrfGet("vn4:vn4")->vrf_id(), vm5_ip, vm1_fip, 1, 
-                         0, 0));
+    EXPECT_TRUE(FlowFail(VrfGet("default-project:vn4:vn4")->vrf_id(), vm5_ip,
+                         vm1_fip, 1, 0, 0));
 
     // Add Non-NAT reverse flow
     CreateFlow(non_nat_flow, 1);
@@ -1236,7 +1407,7 @@ TEST_F(FlowTest, NonNatAddOldNat_3) {
             TestFlowPkt(vm1_ip, vm5_ip, 1, 0, 0, "vrf5", 
                     flow0->id()),
             {
-                new VerifyVn(unknown_vn_, unknown_vn_)
+                new VerifyVn("vn5", unknown_vn_)
             }
         }
     };
@@ -1248,17 +1419,18 @@ TEST_F(FlowTest, NonNatAddOldNat_3) {
     DelLink("virtual-machine-interface", "flow0", "floating-ip", "fip1"); 
     client->WaitForIdle();
     //Make sure NAT reverse flow is also deleted
-    EXPECT_TRUE(FlowFail(VrfGet("vn4:vn4")->vrf_id(), vm5_ip, vm1_fip, 1, 
-                0, 0));
+    EXPECT_TRUE(FlowFail(VrfGet("default-project:vn4:vn4")->vrf_id(), vm5_ip,
+                         vm1_fip, 1, 0, 0, GetFlowKeyNH(input3[0].intf_id)));
 
     // Add Non-NAT forward flow
     CreateFlow(non_nat_flow, 1);
     DeleteFlow(non_nat_flow, 1); 
     EXPECT_TRUE(FlowFail(VrfGet("vrf5")->vrf_id(), vm5_ip, vm1_ip, 1, 
-                0, 0));
+                0, 0, GetFlowKeyNH(input3[0].intf_id)));
     //Make sure NAT reverse flow is not present
-    EXPECT_TRUE(FlowFail(VrfGet("vn4:vn4")->vrf_id(), vm5_ip, vm1_fip, 1, 
-                0, 0));
+    EXPECT_TRUE(FlowFail(VrfGet("default-project:vn4:vn4")->vrf_id(),
+                         vm5_ip, vm1_fip, 1, 0, 0,
+                         GetFlowKeyNH(input3[0].intf_id)));
 
     client->EnqueueFlowAge();
     client->WaitForIdle();
@@ -1283,7 +1455,7 @@ TEST_F(FlowTest, NatFlowAdd_1) {
     //Send a reverse nat flow packet
     TestFlow nat_rev_flow[] = {
         {
-            TestFlowPkt(vm5_ip, vm1_fip, 1, 0, 0, "vn4:vn4", 
+            TestFlowPkt(vm5_ip, vm1_fip, 1, 0, 0, "default-project:vn4:vn4",
                     flow4->id(), 2),
             {
                 new VerifyNat(vm1_ip, vm5_ip, 1, 0, 0)
@@ -1294,11 +1466,13 @@ TEST_F(FlowTest, NatFlowAdd_1) {
 
     //Delete a forward flow and expect both flows to be deleted
     DeleteFlow(nat_flow, 1);
-    EXPECT_TRUE(FlowFail(VrfGet("vn4:vn4")->vrf_id(), vm5_ip, vm1_fip, 1, 0, 0));
+    EXPECT_TRUE(FlowFail(VrfGet("default-project:vn4:vn4")->vrf_id(), vm5_ip,
+                         vm1_fip, 1, 0, 0, GetFlowKeyNH(input3[0].intf_id)));
 
     CreateFlow(nat_flow, 1); 
     DeleteFlow(nat_rev_flow, 1);
-    EXPECT_TRUE(FlowFail(VrfGet("vrf5")->vrf_id(), vm1_ip, vm5_ip, 1, 0, 0));
+    EXPECT_TRUE(FlowFail(VrfGet("vrf5")->vrf_id(), vm1_ip, vm5_ip, 1, 0, 0,
+                         GetFlowKeyNH(input[0].intf_id)));
     EXPECT_TRUE(FlowTableWait(0));
 }
 
@@ -1319,7 +1493,7 @@ TEST_F(FlowTest, NatFlowAdd_2) {
     //Send a reverse nat flow packet
     TestFlow nat_rev_flow[] = {
         {
-             TestFlowPkt(vm5_ip, vm1_fip, 1, 0, 0, "vn4:vn4", 
+             TestFlowPkt(vm5_ip, vm1_fip, 1, 0, 0, "default-project:vn4:vn4",
                     flow4->id(), 2),
             {
                 new VerifyNat(vm1_ip, vm5_ip, 1, 0, 0)
@@ -1330,7 +1504,8 @@ TEST_F(FlowTest, NatFlowAdd_2) {
 
     //Delete a forward flow and expect both flows to be deleted
     DeleteFlow(nat_flow, 1);
-    EXPECT_TRUE(FlowFail(VrfGet("vrf3")->vrf_id(), vm5_ip, vm1_fip, 1, 0, 0));
+    EXPECT_TRUE(FlowFail(VrfGet("vrf3")->vrf_id(), vm5_ip, vm1_fip, 1, 0, 0,
+                         GetFlowKeyNH(input3[0].intf_id)));
     EXPECT_TRUE(FlowTableWait(0));
 }
 
@@ -1344,7 +1519,7 @@ TEST_F(FlowTest, NatAddOldNonNat_1) {
              TestFlowPkt(vm1_ip, vm5_ip, 1, 0, 0, "vrf5", 
                     flow0->id(), 1),
             {
-                new VerifyVn(unknown_vn_, unknown_vn_) 
+                new VerifyVn("vn5", unknown_vn_) 
             }
         }
     };
@@ -1365,8 +1540,9 @@ TEST_F(FlowTest, NatAddOldNonNat_1) {
     CreateFlow(nat_flow, 1);
     DeleteFlow(nat_flow, 1);
 
-    EXPECT_TRUE(FlowGet(VrfGet("vn4:vn4")->vrf_id(), vm5_ip, 
-                       vm1_fip, 1, 0, 0) == NULL);
+    EXPECT_TRUE(FlowGet(VrfGet("default-project:vn4:vn4")->vrf_id(), vm5_ip,
+                        vm1_fip, 1, 0, 0,
+                        GetFlowKeyNH(input3[0].intf_id)) == NULL);
     client->EnqueueFlowAge();
     client->WaitForIdle();
     WAIT_FOR(1000, 1000, (agent()->pkt()->flow_table()->Size() == 0U));
@@ -1382,7 +1558,7 @@ TEST_F(FlowTest, NatAddOldNonNat_2) {
              TestFlowPkt(vm1_ip, vm5_ip, 1, 0, 0, "vrf5", 
                     flow0->id(), 1),
             {
-                new VerifyVn(unknown_vn_, unknown_vn_) 
+                new VerifyVn("vn5", unknown_vn_) 
             }
         }
     };
@@ -1393,7 +1569,7 @@ TEST_F(FlowTest, NatAddOldNonNat_2) {
     client->WaitForIdle();
     TestFlow nat_flow[] = {
         {
-             TestFlowPkt(vm5_ip, vm1_fip, 1, 0, 0, "vn4:vn4", 
+             TestFlowPkt(vm5_ip, vm1_fip, 1, 0, 0, "default-project:vn4:vn4",
                     flow4->id(), 1),
             {
                 new VerifyNat(vm1_ip, vm5_ip, 1, 0, 0) 
@@ -1404,7 +1580,7 @@ TEST_F(FlowTest, NatAddOldNonNat_2) {
     DeleteFlow(nat_flow, 1);
 
     EXPECT_TRUE(FlowGet(VrfGet("vrf5")->vrf_id(), vm1_ip, 
-                vm5_ip, 1, 0, 0) == NULL);
+                vm5_ip, 1, 0, 0, GetFlowKeyNH(input3[0].intf_id)) == NULL);
 
     client->EnqueueFlowAge();
     client->WaitForIdle();
@@ -1498,7 +1674,7 @@ TEST_F(FlowTest, NatAddOldNat_3) {
 
     TestFlow new_nat_flow[] = {
         {
-             TestFlowPkt(vm5_ip, vm1_fip, 1, 0, 0, "vn4:vn4", 
+             TestFlowPkt(vm5_ip, vm1_fip, 1, 0, 0, "default-project:vn4:vn4",
                     flow4->id(), 1),
             {
                 new VerifyNat(vm2_ip, vm5_ip, 1, 0, 0)
@@ -1528,7 +1704,7 @@ TEST_F(FlowTest, TwoNatFlow) {
     CreateFlow(nat_flow, 1);
     TestFlow nat_rev_flow[] = {
         {
-             TestFlowPkt(vm5_ip, vm1_fip, 1, 0, 0, "vn4:vn4", 
+             TestFlowPkt(vm5_ip, vm1_fip, 1, 0, 0, "default-project:vn4:vn4",
                     flow4->id(), 1),
             {
                 new VerifyNat(vm1_ip, vm5_ip, 1, 0, 0)
@@ -1553,7 +1729,7 @@ TEST_F(FlowTest, FlowAudit) {
     KFlowPurgeHold();
 
     string vrf_name =
-        Agent::GetInstance()->GetVrfTable()->FindVrfFromId(1)->GetName();
+        Agent::GetInstance()->vrf_table()->FindVrfFromId(1)->GetName();
     TestFlow flow[] = {
         {
             TestFlowPkt("1.1.1.1", "2.2.2.2", 1, 0, 0, vrf_name,
@@ -1640,6 +1816,7 @@ TEST_F(FlowTest, FlowOnDeletedInterface) {
     };
     CreateVmportEnv(input, 1);
     client->WaitForIdle();
+    int nh_id = GetFlowKeyNH(input[0].intf_id);
 
     InterfaceRef intf(VmInterfaceGet(input[0].intf_id));
     //Delete the interface with reference help
@@ -1653,7 +1830,7 @@ TEST_F(FlowTest, FlowOnDeletedInterface) {
     //Flow find should fail as interface is delete marked, and packet get dropped
     // in packet parsing
     FlowEntry *fe = FlowGet(VrfGet("vrf5")->vrf_id(), "11.1.1.3", vm1_ip,
-                            IPPROTO_TCP, 30, 40);
+                            IPPROTO_TCP, 30, 40, nh_id);
     EXPECT_TRUE(fe == NULL);
 }
 
@@ -1663,6 +1840,7 @@ TEST_F(FlowTest, FlowOnDeletedVrf) {
     };
     CreateVmportEnv(input, 1);
     client->WaitForIdle();
+    int nh_id = GetFlowKeyNH(input[0].intf_id);
 
     uint32_t vrf_id = VrfGet("vrf5")->vrf_id();
     InterfaceRef intf(VmInterfaceGet(input[0].intf_id));
@@ -1675,9 +1853,8 @@ TEST_F(FlowTest, FlowOnDeletedVrf) {
 
     //Flow find should fail as interface is delete marked
     FlowEntry *fe = FlowGet(vrf_id, "11.1.1.3", vm1_ip,
-                            IPPROTO_TCP, 30, 40);
+                            IPPROTO_TCP, 30, 40, 0);
     EXPECT_TRUE(fe != NULL && fe->is_flags_set(FlowEntry::ShortFlow) == true);
-
     DeleteVmportEnv(input, 1, false);
     client->WaitForIdle();
 }
@@ -1688,7 +1865,7 @@ TEST_F(FlowTest, Flow_with_encap_change) {
     //Create PHYSICAL interface to receive GRE packets on it.
     PhysicalInterfaceKey key(eth_itf);
     Interface *intf = static_cast<Interface *>
-        (agent()->GetInterfaceTable()->FindActiveEntry(&key));
+        (agent()->interface_table()->FindActiveEntry(&key));
     EXPECT_TRUE(intf != NULL);
     CreateRemoteRoute("vrf5", remote_vm1_ip, remote_router_ip, 30, "vn5");
     client->WaitForIdle();
@@ -1710,7 +1887,8 @@ TEST_F(FlowTest, Flow_with_encap_change) {
     CreateFlow(flow + 1, 1);
 
     FlowEntry *fe = 
-        FlowGet(VrfGet("vrf5")->vrf_id(), remote_vm1_ip, vm1_ip, 1, 0, 0);
+        FlowGet(VrfGet("vrf5")->vrf_id(), remote_vm1_ip, vm1_ip, 1, 0, 0,
+                GetFlowKeyNH(input[0].intf_id));
     const NextHop *nh = (fe->data().nh_state_.get())->nh();
     EXPECT_TRUE(nh != NULL);
     EXPECT_TRUE(nh->GetType() == NextHop::TUNNEL);
@@ -1719,7 +1897,8 @@ TEST_F(FlowTest, Flow_with_encap_change) {
 
     AddEncapList("MPLSoUDP", "MPLSoGRE", "VXLAN");
     client->WaitForIdle();
-    fe = FlowGet(VrfGet("vrf5")->vrf_id(), remote_vm1_ip, vm1_ip, 1, 0, 0);
+    fe = FlowGet(VrfGet("vrf5")->vrf_id(), remote_vm1_ip, vm1_ip, 1, 0, 0,
+                 GetFlowKeyNH(input[0].intf_id));
     EXPECT_TRUE(fe->data().nh_state_.get() != NULL);
     nh = (fe->data().nh_state_.get())->nh();
     EXPECT_TRUE(nh != NULL);
@@ -1729,7 +1908,8 @@ TEST_F(FlowTest, Flow_with_encap_change) {
 
     AddEncapList("VXLAN", "MPLSoGRE", "MPLSoUDP");
     client->WaitForIdle();
-    fe = FlowGet(VrfGet("vrf5")->vrf_id(), remote_vm1_ip, vm1_ip, 1, 0, 0);
+    fe = FlowGet(VrfGet("vrf5")->vrf_id(), remote_vm1_ip, vm1_ip, 1, 0, 0,
+                 GetFlowKeyNH(input[0].intf_id));
     EXPECT_TRUE(fe->data().nh_state_.get() != NULL);
     nh = (fe->data().nh_state_.get())->nh();
     EXPECT_TRUE(nh != NULL);
@@ -1739,7 +1919,8 @@ TEST_F(FlowTest, Flow_with_encap_change) {
 
     AddEncapList("VXLAN", "MPLSoUDP", "MPLSoGRE");
     client->WaitForIdle();
-    fe = FlowGet(VrfGet("vrf5")->vrf_id(), remote_vm1_ip, vm1_ip, 1, 0, 0);
+    fe = FlowGet(VrfGet("vrf5")->vrf_id(), remote_vm1_ip, vm1_ip, 1, 0, 0,
+                 GetFlowKeyNH(input[0].intf_id));
     EXPECT_TRUE(fe->data().nh_state_.get() != NULL);
     nh = (fe->data().nh_state_.get())->nh();
     EXPECT_TRUE(nh != NULL);
@@ -1749,7 +1930,8 @@ TEST_F(FlowTest, Flow_with_encap_change) {
 
     DelEncapList();
     client->WaitForIdle();
-    fe = FlowGet(VrfGet("vrf5")->vrf_id(), remote_vm1_ip, vm1_ip, 1, 0, 0);
+    fe = FlowGet(VrfGet("vrf5")->vrf_id(), remote_vm1_ip, vm1_ip, 1, 0, 0,
+                 GetFlowKeyNH(input[0].intf_id));
     EXPECT_TRUE(fe->data().nh_state_.get() != NULL);
     nh = (fe->data().nh_state_.get())->nh();
     EXPECT_TRUE(nh != NULL);
@@ -1758,8 +1940,10 @@ TEST_F(FlowTest, Flow_with_encap_change) {
     EXPECT_TRUE(tnh->GetTunnelType().GetType() == TunnelType::MPLS_GRE);
 
     DeleteFlow(flow, 1);
-    EXPECT_TRUE(FlowFail(1, "1.1.1.1", "2.2.2.2", 1, 0, 0));
-    EXPECT_TRUE(FlowFail(1, "2.2.2.2", "1.1.1.1", 1, 0, 0));
+    EXPECT_TRUE(FlowFail(1, "1.1.1.1", "2.2.2.2", 1, 0, 0,
+                         GetFlowKeyNH(input[0].intf_id)));
+    EXPECT_TRUE(FlowFail(1, "2.2.2.2", "1.1.1.1", 1, 0, 0,
+                         GetFlowKeyNH(input[0].intf_id)));
     EXPECT_TRUE(FlowTableWait(0));
     DeleteRemoteRoute("vrf5", remote_vm1_ip);
     client->WaitForIdle();
@@ -1772,7 +1956,7 @@ TEST_F(FlowTest, Flow_return_error) {
     //Create PHYSICAL interface to receive GRE packets on it.
     PhysicalInterfaceKey key(eth_itf);
     Interface *intf = static_cast<Interface *>
-        (agent()->GetInterfaceTable()->FindActiveEntry(&key));
+        (agent()->interface_table()->FindActiveEntry(&key));
     EXPECT_TRUE(intf != NULL);
     CreateRemoteRoute("vrf5", remote_vm1_ip, remote_router_ip, 30, "vn5");
     client->WaitForIdle();
@@ -1791,7 +1975,8 @@ TEST_F(FlowTest, Flow_return_error) {
     CreateFlow(flow, 1);
 
     uint32_t vrf_id = VrfGet("vrf5")->vrf_id();
-    FlowEntry *fe = FlowGet(vrf_id, vm1_ip, remote_vm1_ip, 1, 0, 0);
+    FlowEntry *fe = FlowGet(vrf_id, vm1_ip, remote_vm1_ip, 1, 0, 0,
+                            GetFlowKeyNH(input[0].intf_id));
     EXPECT_TRUE(fe != NULL && fe->is_flags_set(FlowEntry::ShortFlow) != true);
 
     sock->SetBlockMsgProcessing(false);
@@ -1812,7 +1997,8 @@ TEST_F(FlowTest, Flow_return_error) {
     sock->SetKSyncError(KSyncSockTypeMap::KSYNC_FLOW_ENTRY_TYPE, -EBADF);
     CreateFlow(flow, 1);
 
-    fe = FlowGet(vrf_id, vm1_ip, remote_vm1_ip, 1, 0, 0);
+    fe = FlowGet(vrf_id, vm1_ip, remote_vm1_ip, 1, 0, 0,
+                 GetFlowKeyNH(input[0].intf_id));
     EXPECT_TRUE(fe != NULL && fe->is_flags_set(FlowEntry::ShortFlow) != true);
     sock->SetBlockMsgProcessing(false);
     flow[0].pkt_.set_allow_wait_for_idle(true);
@@ -1834,7 +2020,7 @@ TEST_F(FlowTest, Flow_return_error) {
 //Test for subnet broadcast flow
 TEST_F(FlowTest, Subnet_broadcast_Flow) {
     IpamInfo ipam_info[] = {
-        {"11.1.1.0", 24, "11.1.1.200"},
+        {"11.1.1.0", 24, "11.1.1.200", true},
     };
     AddIPAM("vn5", ipam_info, 1);
     client->WaitForIdle();
@@ -1844,17 +2030,17 @@ TEST_F(FlowTest, Subnet_broadcast_Flow) {
                        flow0->id()),
         {}
         },
-        {  TestFlowPkt("11.1.1.255", vm1_ip, 1, 0, 0, "vrf5", 
+        {  TestFlowPkt(vm2_ip, vm1_ip, 1, 0, 0, "vrf5",
                        flow1->id()),
         {}
-        },
+        }
     };
 
     CreateFlow(flow, 2);
-    EXPECT_EQ(2U, agent()->pkt()->flow_table()->Size());
+    EXPECT_EQ(4U, agent()->pkt()->flow_table()->Size());
 
     const FlowEntry *fe = flow[0].pkt_.FlowFetch();
-    const FlowEntry *rev_fe = flow[1].pkt_.FlowFetch();
+    const FlowEntry *rev_fe = fe->reverse_flow_entry();
     EXPECT_TRUE(fe->is_flags_set(FlowEntry::Multicast));
     EXPECT_TRUE(rev_fe->is_flags_set(FlowEntry::Multicast));
     EXPECT_TRUE(fe->data().match_p.action_info.action == 
@@ -1867,8 +2053,8 @@ TEST_F(FlowTest, Subnet_broadcast_Flow) {
     uint32_t in_count, out_count;
     const VnEntry *vn = fe->data().vn_entry.get();
     agent()->pkt()->flow_table()->VnFlowCounters(vn, &in_count, &out_count);
-    EXPECT_EQ(2U, in_count);
-    EXPECT_EQ(2U, out_count);
+    EXPECT_EQ(3U, in_count);
+    EXPECT_EQ(3U, out_count);
 
     DelIPAM("vn5");
     client->WaitForIdle();
@@ -1887,7 +2073,7 @@ TEST_F(FlowTest, Flow_ksync_nh_state_find_failure) {
         }
     };
 
-    DBTableBase *table = Agent::GetInstance()->GetNextHopTable();
+    DBTableBase *table = Agent::GetInstance()->nexthop_table();
     NHKSyncObject *nh_object = Agent::GetInstance()->ksync()->nh_ksync_obj();
     DBTableBase::ListenerId nh_listener =
         table->Register(boost::bind(&NHNotify, _1, _2));
@@ -1899,7 +2085,8 @@ TEST_F(FlowTest, Flow_ksync_nh_state_find_failure) {
     CreateFlow(flow, 1);
 
     FlowEntry *fe = 
-        FlowGet(VrfGet("vrf5")->vrf_id(), remote_vm1_ip, vm1_ip, 1, 0, 0);
+        FlowGet(VrfGet("vrf5")->vrf_id(), remote_vm1_ip, vm1_ip, 1, 0, 0,
+                GetFlowKeyNH(input[0].intf_id));
 
 
     EXPECT_TRUE((vr_flow->fe_flags & VR_FLOW_FLAG_ACTIVE) != 0);
@@ -1934,7 +2121,8 @@ TEST_F(FlowTest, Flow_entry_reuse) {
     CreateFlow(flow, 1);
     EXPECT_TRUE(FlowTableWait(2));
     FlowEntry *fe = 
-        FlowGet(VrfGet("vrf5")->vrf_id(), vm1_ip, remote_vm1_ip, 1, 0, 0); 
+        FlowGet(VrfGet("vrf5")->vrf_id(), vm1_ip, remote_vm1_ip, 1, 0, 0,
+                GetFlowKeyNH(input[0].intf_id));
     EXPECT_TRUE(fe->flow_handle() == 1001);
 
     flow[0].pkt_.set_allow_wait_for_idle(false);
@@ -1961,7 +2149,7 @@ TEST_F(FlowTest, Flow_entry_reuse) {
 
 // Linklocal flow add & delete
 TEST_F(FlowTest, LinkLocalFlow_1) {
-    Agent::GetInstance()->SetRouterId(Ip4Address::from_string(vhost_ip_addr));
+    Agent::GetInstance()->set_router_id(Ip4Address::from_string(vhost_ip_addr));
     std::string fabric_ip("1.2.3.4");
     std::vector<std::string> fabric_ip_list;
     fabric_ip_list.push_back("1.2.3.4");
@@ -1993,8 +2181,12 @@ TEST_F(FlowTest, LinkLocalFlow_1) {
     client->WaitForIdle();
     all_flow_records_sandesh->Release();
 
-    EXPECT_TRUE(FlowGet(0, fabric_ip.c_str(), vhost_ip_addr, IPPROTO_TCP, fabric_port, linklocal_src_port));
-    EXPECT_TRUE(FlowGet(VrfGet("vrf5")->vrf_id(), vm1_ip, linklocal_ip, IPPROTO_TCP, 3000, linklocal_port));
+    EXPECT_TRUE(FlowGet(0, fabric_ip.c_str(), vhost_ip_addr, IPPROTO_TCP,
+                        fabric_port, linklocal_src_port,
+                        vhost->flow_key_nh()->id()));
+    EXPECT_TRUE(FlowGet(VrfGet("vrf5")->vrf_id(), vm1_ip, linklocal_ip,
+                        IPPROTO_TCP, 3000, linklocal_port,
+                        GetFlowKeyNH(input[0].intf_id)));
     
     // Check that a reverse pkt will not create a new flow
     TestFlow reverse_flow[] = {
@@ -2007,14 +2199,22 @@ TEST_F(FlowTest, LinkLocalFlow_1) {
         }
     };
     EXPECT_EQ(2U, Agent::GetInstance()->pkt()->flow_table()->Size());
-    EXPECT_TRUE(FlowGet(0, fabric_ip.c_str(), vhost_ip_addr, IPPROTO_TCP, fabric_port, linklocal_src_port));
-    EXPECT_TRUE(FlowGet(VrfGet("vrf5")->vrf_id(), vm1_ip, linklocal_ip, IPPROTO_TCP, 3000, linklocal_port));
+    EXPECT_TRUE(FlowGet(0, fabric_ip.c_str(), vhost_ip_addr, IPPROTO_TCP,
+                        fabric_port, linklocal_src_port,
+                        vhost->flow_key_nh()->id()));
+    EXPECT_TRUE(FlowGet(VrfGet("vrf5")->vrf_id(), vm1_ip, linklocal_ip,
+                        IPPROTO_TCP, 3000, linklocal_port,
+                        GetFlowKeyNH(input[0].intf_id)));
 
     //Delete forward flow and expect both flows to be deleted
     DeleteFlow(nat_flow, 1);
     client->WaitForIdle();
-    EXPECT_TRUE(FlowFail(0, fabric_ip.c_str(), vhost_ip_addr, IPPROTO_TCP, fabric_port, linklocal_src_port));
-    EXPECT_TRUE(FlowFail(VrfGet("vrf5")->vrf_id(), vm1_ip, linklocal_ip, IPPROTO_TCP, 3000, linklocal_port));
+    EXPECT_TRUE(FlowFail(0, fabric_ip.c_str(), vhost_ip_addr, IPPROTO_TCP,
+                         fabric_port, linklocal_src_port,
+                         GetFlowKeyNH(input[0].intf_id)));
+    EXPECT_TRUE(FlowFail(VrfGet("vrf5")->vrf_id(), vm1_ip, linklocal_ip,
+                         IPPROTO_TCP, 3000, linklocal_port,
+                         GetFlowKeyNH(input[0].intf_id)));
     EXPECT_TRUE(FlowTableWait(0));
 
     DelLinkLocalConfig();
@@ -2022,7 +2222,7 @@ TEST_F(FlowTest, LinkLocalFlow_1) {
 }
 
 TEST_F(FlowTest, LinkLocalFlow_Fail1) {
-    Agent::GetInstance()->SetRouterId(Ip4Address::from_string(vhost_ip_addr));
+    Agent::GetInstance()->set_router_id(Ip4Address::from_string(vhost_ip_addr));
     std::string fabric_ip("1.2.3.4");
     std::vector<std::string> fabric_ip_list;
     fabric_ip_list.push_back("1.2.3.4");
@@ -2069,8 +2269,12 @@ TEST_F(FlowTest, LinkLocalFlow_Fail1) {
         const FlowEntry *fe = nat_flow[i].pkt_.FlowFetch();
         linklocal_src_port[i] = fe->linklocal_src_port();
 
-        EXPECT_TRUE(FlowGet(0, fabric_ip.c_str(), vhost_ip_addr, IPPROTO_TCP, fabric_port+i, linklocal_src_port[i]));
-        EXPECT_TRUE(FlowGet(VrfGet("vrf5")->vrf_id(), vm1_ip, linklocal_ip, IPPROTO_TCP, 3000+i, linklocal_port+i));
+        EXPECT_TRUE(FlowGet(0, fabric_ip.c_str(), vhost_ip_addr,
+                            IPPROTO_TCP, fabric_port+i, linklocal_src_port[i],
+                            vhost->flow_key_nh()->id()));
+        EXPECT_TRUE(FlowGet(VrfGet("vrf5")->vrf_id(), vm1_ip, linklocal_ip,
+                            IPPROTO_TCP, 3000+i, linklocal_port+i,
+                            GetFlowKeyNH(input[0].intf_id)));
         if (i == 2) {
             EXPECT_TRUE(fe->is_flags_set(FlowEntry::ShortFlow));
             EXPECT_EQ(linklocal_src_port[i], 0);
@@ -2083,8 +2287,13 @@ TEST_F(FlowTest, LinkLocalFlow_Fail1) {
     DeleteFlow(nat_flow + 2, 1);
     client->WaitForIdle();
     for (uint32_t i = 0; i < 3; i++) {
-        EXPECT_TRUE(FlowFail(0, fabric_ip.c_str(), vhost_ip_addr, IPPROTO_TCP, fabric_port+i, linklocal_src_port[i]));
-        EXPECT_TRUE(FlowFail(VrfGet("vrf5")->vrf_id(), vm1_ip, linklocal_ip, IPPROTO_TCP, 3000+i, linklocal_port+i));
+        EXPECT_TRUE(FlowFail(0, fabric_ip.c_str(), vhost_ip_addr,
+                             IPPROTO_TCP, fabric_port+i,
+                             linklocal_src_port[i],
+                             vhost->flow_key_nh()->id()));
+        EXPECT_TRUE(FlowFail(VrfGet("vrf5")->vrf_id(), vm1_ip,
+                             linklocal_ip, IPPROTO_TCP, 3000+i,
+                             linklocal_port+i, GetFlowKeyNH(input[0].intf_id)));
     }
     EXPECT_TRUE(FlowTableWait(0));
 
@@ -2093,7 +2302,7 @@ TEST_F(FlowTest, LinkLocalFlow_Fail1) {
 }
 
 TEST_F(FlowTest, LinkLocalFlow_Fail2) {
-    Agent::GetInstance()->SetRouterId(Ip4Address::from_string(vhost_ip_addr));
+    Agent::GetInstance()->set_router_id(Ip4Address::from_string(vhost_ip_addr));
     std::string fabric_ip("1.2.3.4");
     std::vector<std::string> fabric_ip_list;
     fabric_ip_list.push_back("1.2.3.4");
@@ -2126,14 +2335,14 @@ TEST_F(FlowTest, LinkLocalFlow_Fail2) {
         },
         {
             TestFlowPkt(vm2_ip, linklocal_ip, IPPROTO_TCP, 3002, linklocal_port+2, "vrf5",
-                        flow0->id(), 1),
+                        flow1->id(), 1),
             {
                 new VerifyNat(fabric_ip, vhost_ip_addr, IPPROTO_TCP, fabric_port+2, 0) 
             }
         },
         {
             TestFlowPkt(vm2_ip, linklocal_ip, IPPROTO_TCP, 3003, linklocal_port+3, "vrf5",
-                        flow0->id(), 1),
+                        flow1->id(), 1),
             {
                 new VerifyNat(fabric_ip, vhost_ip_addr, IPPROTO_TCP, fabric_port+3, 0) 
             }
@@ -2148,11 +2357,17 @@ TEST_F(FlowTest, LinkLocalFlow_Fail2) {
         const FlowEntry *fe = nat_flow[i].pkt_.FlowFetch();
         linklocal_src_port[i] = fe->linklocal_src_port();
 
-        EXPECT_TRUE(FlowGet(0, fabric_ip.c_str(), vhost_ip_addr, IPPROTO_TCP, fabric_port+i, linklocal_src_port[i]));
+        EXPECT_TRUE(FlowGet(0, fabric_ip.c_str(), vhost_ip_addr, IPPROTO_TCP,
+                            fabric_port+i, linklocal_src_port[i],
+                            vhost->flow_key_nh()->id()));
         if (i <= 1)
-            EXPECT_TRUE(FlowGet(VrfGet("vrf5")->vrf_id(), vm1_ip, linklocal_ip, IPPROTO_TCP, 3000+i, linklocal_port+i));
+            EXPECT_TRUE(FlowGet(VrfGet("vrf5")->vrf_id(), vm1_ip, linklocal_ip,
+                                IPPROTO_TCP, 3000+i, linklocal_port+i,
+                                GetFlowKeyNH(input[0].intf_id)));
         else
-            EXPECT_TRUE(FlowGet(VrfGet("vrf5")->vrf_id(), vm2_ip, linklocal_ip, IPPROTO_TCP, 3000+i, linklocal_port+i));
+            EXPECT_TRUE(FlowGet(VrfGet("vrf5")->vrf_id(), vm2_ip, linklocal_ip,
+                                IPPROTO_TCP, 3000+i, linklocal_port+i,
+                                GetFlowKeyNH(input[1].intf_id)));
         if (i == 3) {
             EXPECT_TRUE(fe->is_flags_set(FlowEntry::ShortFlow));
             EXPECT_EQ(linklocal_src_port[i], 0);
@@ -2166,11 +2381,19 @@ TEST_F(FlowTest, LinkLocalFlow_Fail2) {
     DeleteFlow(nat_flow + 3, 1);
     client->WaitForIdle();
     for (uint32_t i = 0; i < 4; i++) {
-        EXPECT_TRUE(FlowFail(0, fabric_ip.c_str(), vhost_ip_addr, IPPROTO_TCP, fabric_port+i, linklocal_src_port[i]));
+        EXPECT_TRUE(FlowFail(0, fabric_ip.c_str(), vhost_ip_addr,
+                             IPPROTO_TCP, fabric_port+i,
+                             linklocal_src_port[i],
+                             vhost->flow_key_nh()->id()));
         if (i <= 1)
-            EXPECT_TRUE(FlowFail(VrfGet("vrf5")->vrf_id(), vm1_ip, linklocal_ip, IPPROTO_TCP, 3000+i, linklocal_port+i));
+            EXPECT_TRUE(FlowFail(VrfGet("vrf5")->vrf_id(), vm1_ip,
+                                 linklocal_ip, IPPROTO_TCP, 3000+i,
+                                 linklocal_port+i,
+                                 GetFlowKeyNH(input[0].intf_id)));
         else
-            EXPECT_TRUE(FlowFail(VrfGet("vrf5")->vrf_id(), vm2_ip, linklocal_ip, IPPROTO_TCP, 3000+i, linklocal_port+i));
+            EXPECT_TRUE(FlowFail(VrfGet("vrf5")->vrf_id(), vm2_ip, linklocal_ip,
+                                 IPPROTO_TCP, 3000+i, linklocal_port+i,
+                                 GetFlowKeyNH(input[0].intf_id)));
     }
     EXPECT_TRUE(FlowTableWait(0));
 
@@ -2180,7 +2403,7 @@ TEST_F(FlowTest, LinkLocalFlow_Fail2) {
 
 // Check that flow limit per VM works
 TEST_F(FlowTest, FlowLimit_1) {
-    Agent::GetInstance()->SetRouterId(Ip4Address::from_string(vhost_ip_addr));
+    Agent::GetInstance()->set_router_id(Ip4Address::from_string(vhost_ip_addr));
     uint32_t vm_flows = Agent::GetInstance()->pkt()->flow_table()->max_vm_flows();
     Agent::GetInstance()->pkt()->flow_table()->set_max_vm_flows(3);
 
@@ -2253,7 +2476,8 @@ TEST_F(FlowTest, Flow_introspect_delete_all) {
     CreateFlow(flow, 1);
 
     uint32_t vrf_id = VrfGet("vrf5")->vrf_id();
-    FlowEntry *fe = FlowGet(vrf_id, vm1_ip, remote_vm1_ip, 1, 0, 0);
+    FlowEntry *fe = FlowGet(vrf_id, vm1_ip, remote_vm1_ip, 1, 0, 0,
+                            GetFlowKeyNH(input[0].intf_id));
     EXPECT_TRUE(fe != NULL);
 
     DeleteAllFlowRecords *delete_all_sandesh = new DeleteAllFlowRecords();
@@ -2267,24 +2491,967 @@ TEST_F(FlowTest, Flow_introspect_delete_all) {
     client->WaitForIdle();
 }
 
+TEST_F(FlowTest, Flow_Source_Vn_1) {
+    TestFlow flow[] = {
+        {
+            TestFlowPkt(vm1_ip, "17.1.1.1", 1, 0, 0, "vrf5",
+                        flow0->id(), 1),
+            {
+                new VerifyVn("vn5", unknown_vn_),
+            }
+        }
+    };
+
+    CreateFlow(flow, 1);
+    EXPECT_EQ(2U, agent()->pkt()->flow_table()->Size());
+}
+
+/* Create flow for a VN which has ACL attached to it.
+ * Make sure that ACL does not have any matching entries for flow
+ * Very that network policy UUID is set to IMPLICIT_DENY and SG UUID
+ * is set to NOT_EVALUATED
+ */
+TEST_F(FlowTest, FlowPolicyUuid_1) {
+    TestFlow flow[] = {
+        //Add a ICMP forward and reverse flow
+        {  TestFlowPkt(vm1_ip, vm2_ip, 1, 0, 0, "vrf5",
+                       flow0->id()),
+        {
+            new VerifyVn("vn5", "vn5"),
+            new VerifyVrf("vrf5", "vrf5")
+        }
+        },
+        {  TestFlowPkt(vm2_ip, vm1_ip, 1, 0, 0, "vrf5",
+                       flow1->id()),
+        {
+            new VerifyVn("vn5", "vn5"),
+            new VerifyVrf("vrf5", "vrf5")
+        }
+        }
+    };
+
+    CreateFlow(flow, 2);
+    EXPECT_EQ(2U, agent()->pkt()->flow_table()->Size());
+
+    //Verify the network policy uuid and SG rule UUID for flow.
+    const FlowEntry *fe = flow[0].pkt_.FlowFetch();
+    EXPECT_STREQ(FlowEntry::FlowPolicyStateStr.at(FlowEntry::IMPLICIT_DENY),
+                 fe->nw_ace_uuid().c_str());
+    EXPECT_STREQ(FlowEntry::FlowPolicyStateStr.at(FlowEntry::NOT_EVALUATED),
+                 fe->sg_rule_uuid().c_str());
+
+    //cleanup
+    FlushFlowTable();
+    client->WaitForIdle();
+    EXPECT_EQ(0U, agent()->pkt()->flow_table()->Size());
+}
+
+TEST_F(FlowTest, FlowPolicyUuid_2) {
+    AddAclEntry("acl4", 4, 1, "deny", "fe6a4dcb-dde4-48e6-8957-856a7aacb2e2");
+    FlowSetup();
+    AddLink("virtual-network", "vn6", "access-control-list", "acl4");
+    client->WaitForIdle();
+
+    TestFlow flow[] = {
+        //Add a ICMP forward and reverse flow
+        {  TestFlowPkt(vm_a_ip, vm_b_ip, 1, 0, 0, "vrf6",
+                       flow5->id()),
+        {
+            new VerifyVn("vn6", "vn6"),
+            new VerifyVrf("vrf6", "vrf6")
+        }
+        },
+        {  TestFlowPkt(vm_b_ip, vm_a_ip, 1, 0, 0, "vrf6",
+                       flow6->id()),
+        {
+            new VerifyVn("vn6", "vn6"),
+            new VerifyVrf("vrf6", "vrf6")
+        }
+        }
+    };
+
+    CreateFlow(flow, 2);
+    EXPECT_EQ(2U, agent()->pkt()->flow_table()->Size());
+
+    //Verify the network policy uuid and SG rule UUID for flow.
+    const FlowEntry *fe = flow[0].pkt_.FlowFetch();
+    EXPECT_STREQ("fe6a4dcb-dde4-48e6-8957-856a7aacb2e2", fe->nw_ace_uuid().c_str());
+    EXPECT_STREQ(FlowEntry::FlowPolicyStateStr.at(FlowEntry::NOT_EVALUATED),
+                 fe->sg_rule_uuid().c_str());
+
+    //cleanup
+    FlushFlowTable();
+    client->WaitForIdle();
+    EXPECT_EQ(0U, agent()->pkt()->flow_table()->Size());
+    DelLink("virtual-network", "vn6", "access-control-list", "acl4");
+    FlowTeardown();
+    DelNode("access-control-list", "acl4");
+    client->WaitForIdle(5);
+}
+
+/* Create a Local flow for a VN which does not have any ACL attached.
+ * Verify that network ACE UUID is set to IMPLICIT_ALLOW.
+ * Port 'A' has IP 'X' and port 'B' has IP 'Y'
+ * Configure only INGRESS SG ACL on port 'A'
+ * Send traffic (SIP X and DIP Y) in only one direction from port 'A'
+ * Verify that SG UUID is not set
+ */
+TEST_F(FlowTest, FlowPolicyUuid_3) {
+    char acl_name[1024];
+    uint16_t max_len = sizeof(acl_name) - 1;
+    FlowSetup();
+
+    EXPECT_EQ(flow5->sg_list().list_.size(), 0U);
+    AddSgEntry("sg1", "sg_acl1", 10, 1, "pass", INGRESS,
+               "fe6a4dcb-dde4-48e6-8957-856a7aacb2d2", "0");
+    AddLink("virtual-machine-interface", "flow5", "security-group", "sg1");
+    client->WaitForIdle();
+    EXPECT_EQ(flow5->sg_list().list_.size(), 1U);
+
+    TestFlow flow[] = {
+        //Add a ICMP forward and reverse flow
+        {  TestFlowPkt(vm_a_ip, vm_b_ip, 1, 0, 0, "vrf6",
+                       flow5->id()),
+        {
+            new VerifyVn("vn6", "vn6"),
+            new VerifyVrf("vrf6", "vrf6")
+        }
+        }
+    };
+
+    CreateFlow(flow, 1);
+    EXPECT_EQ(2U, agent()->pkt()->flow_table()->Size());
+
+    //Verify the network policy uuid and SG rule UUID for flow.
+    const FlowEntry *fe = flow[0].pkt_.FlowFetch();
+    EXPECT_STREQ(FlowEntry::FlowPolicyStateStr.at(FlowEntry::IMPLICIT_ALLOW),
+                 fe->nw_ace_uuid().c_str());
+    EXPECT_STREQ(FlowEntry::FlowPolicyStateStr.at(FlowEntry::IMPLICIT_DENY),
+                 fe->sg_rule_uuid().c_str());
+
+    //cleanup
+    FlushFlowTable();
+    client->WaitForIdle();
+    EXPECT_EQ(0U, agent()->pkt()->flow_table()->Size());
+    DelLink("virtual-machine-interface", "flow5", "security-group", "sg1");
+
+    strncpy(acl_name, "sg_acl1", max_len);
+    strncat(acl_name, "ingress-access-control-list", max_len);
+    DelLink("security-group", "sg1", "access-control-list", acl_name);
+    DelNode("access-control-list", acl_name);
+
+    DelNode("security-group", "sg1");
+    client->WaitForIdle();
+    FlowTeardown();
+    client->WaitForIdle(5);
+}
+
+/* Local flow. Port 'A' has IP 'X' and port 'B' has IP 'Y'
+ * Configure only INGRESS SG ACL on port 'A'
+ * Send traffic (SIP Y and DIP X) in only one direction from port 'B'
+ * Verify that SG UUID is set
+ */
+TEST_F(FlowTest, FlowPolicyUuid_4) {
+    char acl_name[1024];
+    uint16_t max_len = sizeof(acl_name) - 1;
+    FlowSetup();
+
+    EXPECT_EQ(flow5->sg_list().list_.size(), 0U);
+    AddSgEntry("sg1", "sg_acl1", 10, 1, "pass", INGRESS,
+               "fe6a4dcb-dde4-48e6-8957-856a7aacb2d2", "0");
+    AddLink("virtual-machine-interface", "flow5", "security-group", "sg1");
+    client->WaitForIdle();
+    EXPECT_EQ(flow5->sg_list().list_.size(), 1U);
+
+    TestFlow flow[] = {
+        //Add a ICMP forward flow
+        {  TestFlowPkt(vm_b_ip, vm_a_ip, 1, 0, 0, "vrf6",
+                       flow6->id()),
+        {
+            new VerifyVn("vn6", "vn6"),
+            new VerifyVrf("vrf6", "vrf6")
+        }
+        }
+    };
+
+    CreateFlow(flow, 1);
+    EXPECT_EQ(2U, agent()->pkt()->flow_table()->Size());
+
+    //Verify the network policy uuid and SG rule UUID for flow.
+    const FlowEntry *fe = flow[0].pkt_.FlowFetch();
+    EXPECT_STREQ(FlowEntry::FlowPolicyStateStr.at(FlowEntry::IMPLICIT_ALLOW),
+                 fe->nw_ace_uuid().c_str());
+    EXPECT_STREQ("fe6a4dcb-dde4-48e6-8957-856a7aacb2d2", fe->sg_rule_uuid().c_str());
+
+    //cleanup
+    FlushFlowTable();
+    client->WaitForIdle();
+    EXPECT_EQ(0U, agent()->pkt()->flow_table()->Size());
+    DelLink("virtual-machine-interface", "flow5", "security-group", "sg1");
+
+    strncpy(acl_name, "sg_acl1", max_len);
+    strncat(acl_name, "ingress-access-control-list", max_len);
+    DelLink("security-group", "sg1", "access-control-list", acl_name);
+    DelNode("access-control-list", acl_name);
+
+    DelNode("security-group", "sg1");
+    client->WaitForIdle();
+    FlowTeardown();
+    client->WaitForIdle(5);
+}
+
+/* Local flow. Port 'A' has IP 'X' and port 'B' has IP 'Y'
+ * Configure only INGRESS SG ACL on port 'A'
+ * Send bidirectional traffic from both directions
+ * Verify that SG UUID is set
+ */
+TEST_F(FlowTest, FlowPolicyUuid_5) {
+    char acl_name[1024];
+    uint16_t max_len = sizeof(acl_name) - 1;
+    FlowSetup();
+
+    EXPECT_EQ(flow5->sg_list().list_.size(), 0U);
+    AddSgEntry("sg1", "sg_acl1", 10, 1, "pass", INGRESS,
+               "fe6a4dcb-dde4-48e6-8957-856a7aacb2d2", "0");
+    AddLink("virtual-machine-interface", "flow5", "security-group", "sg1");
+    client->WaitForIdle();
+    EXPECT_EQ(flow5->sg_list().list_.size(), 1U);
+
+    TestFlow flow[] = {
+        //Add a ICMP forward and reverse flow
+        {  TestFlowPkt(vm_a_ip, vm_b_ip, 1, 0, 0, "vrf6",
+                       flow5->id()),
+        {
+            new VerifyVn("vn6", "vn6"),
+            new VerifyVrf("vrf6", "vrf6")
+        }
+        },
+        {  TestFlowPkt(vm_b_ip, vm_a_ip, 1, 0, 0, "vrf6",
+                       flow6->id()),
+        {
+            new VerifyVn("vn6", "vn6"),
+            new VerifyVrf("vrf6", "vrf6")
+        }
+        }
+    };
+
+    CreateFlow(flow, 2);
+    EXPECT_EQ(2U, agent()->pkt()->flow_table()->Size());
+
+    //Verify the network policy uuid and SG rule UUID for flow.
+    const FlowEntry *fe = flow[0].pkt_.FlowFetch();
+    EXPECT_STREQ(FlowEntry::FlowPolicyStateStr.at(FlowEntry::IMPLICIT_ALLOW),
+                 fe->nw_ace_uuid().c_str());
+    EXPECT_STREQ(FlowEntry::FlowPolicyStateStr.at(FlowEntry::IMPLICIT_DENY),
+                 fe->sg_rule_uuid().c_str());
+
+    //cleanup
+    FlushFlowTable();
+    client->WaitForIdle();
+    EXPECT_EQ(0U, agent()->pkt()->flow_table()->Size());
+    DelLink("virtual-machine-interface", "flow5", "security-group", "sg1");
+
+    strncpy(acl_name, "sg_acl1", max_len);
+    strncat(acl_name, "ingress-access-control-list", max_len);
+    DelLink("security-group", "sg1", "access-control-list", acl_name);
+    DelNode("access-control-list", acl_name);
+
+    DelNode("security-group", "sg1");
+    client->WaitForIdle();
+    FlowTeardown();
+    client->WaitForIdle(5);
+}
+
+/* Local flow. Port 'A' has IP 'X' and port 'B' has IP 'Y'
+ * Configure only EGRESS SG ACL on port 'A'
+ * Send traffic (SIP X and DIP Y) in only one direction from port 'A'
+ * Verify that SG UUID is set
+ */
+TEST_F(FlowTest, FlowPolicyUuid_6) {
+    char acl_name[1024];
+    uint16_t max_len = sizeof(acl_name) - 1;
+    FlowSetup();
+
+    EXPECT_EQ(flow5->sg_list().list_.size(), 0U);
+    AddSgEntry("sg1", "sg_acl1", 10, 1, "pass", EGRESS,
+               "fe6a4dcb-dde4-48e6-8957-856a7aacb2e2", "0");
+    AddLink("virtual-machine-interface", "flow5", "security-group", "sg1");
+    client->WaitForIdle();
+    EXPECT_EQ(flow5->sg_list().list_.size(), 1U);
+
+    TestFlow flow[] = {
+        //Add a ICMP forward and reverse flow
+        {  TestFlowPkt(vm_a_ip, vm_b_ip, 1, 0, 0, "vrf6",
+                       flow5->id()),
+        {
+            new VerifyVn("vn6", "vn6"),
+            new VerifyVrf("vrf6", "vrf6")
+        }
+        }
+    };
+
+    CreateFlow(flow, 1);
+    EXPECT_EQ(2U, agent()->pkt()->flow_table()->Size());
+
+    //Verify the network policy uuid and SG rule UUID for flow.
+    const FlowEntry *fe = flow[0].pkt_.FlowFetch();
+    EXPECT_STREQ(FlowEntry::FlowPolicyStateStr.at(FlowEntry::IMPLICIT_ALLOW),
+                 fe->nw_ace_uuid().c_str());
+    EXPECT_STREQ("fe6a4dcb-dde4-48e6-8957-856a7aacb2e2", fe->sg_rule_uuid().c_str());
+
+    //cleanup
+    FlushFlowTable();
+    client->WaitForIdle();
+    EXPECT_EQ(0U, agent()->pkt()->flow_table()->Size());
+    DelLink("virtual-machine-interface", "flow5", "security-group", "sg1");
+
+    strncpy(acl_name, "sg_acl1", max_len);
+    strncat(acl_name, "egress-access-control-list", max_len);
+    DelLink("security-group", "sg1", "access-control-list", acl_name);
+    DelNode("access-control-list", acl_name);
+
+    DelNode("security-group", "sg1");
+    client->WaitForIdle();
+    FlowTeardown();
+    client->WaitForIdle(5);
+}
+
+/* Local flow. Port 'A' has IP 'X' and port 'B' has IP 'Y'
+ * Configure only EGRESS SG ACL on port 'A'
+ * Send traffic (SIP Y and DIP X) in only one direction from port 'B'
+ * Verify that SG UUID is NOT set
+ */
+TEST_F(FlowTest, FlowPolicyUuid_7) {
+    char acl_name[1024];
+    uint16_t max_len = sizeof(acl_name) - 1;
+    FlowSetup();
+
+    EXPECT_EQ(flow5->sg_list().list_.size(), 0U);
+    AddSgEntry("sg1", "sg_acl1", 10, 1, "pass", EGRESS,
+               "fe6a4dcb-dde4-48e6-8957-856a7aacb2e2", "0");
+    AddLink("virtual-machine-interface", "flow5", "security-group", "sg1");
+    client->WaitForIdle();
+    EXPECT_EQ(flow5->sg_list().list_.size(), 1U);
+
+    TestFlow flow[] = {
+        {  TestFlowPkt(vm_b_ip, vm_a_ip, 1, 0, 0, "vrf6",
+                       flow6->id()),
+        {
+            new VerifyVn("vn6", "vn6"),
+            new VerifyVrf("vrf6", "vrf6")
+        }
+        }
+    };
+
+    CreateFlow(flow, 1);
+    EXPECT_EQ(2U, agent()->pkt()->flow_table()->Size());
+
+    //Verify the network policy uuid and SG rule UUID for flow.
+    const FlowEntry *fe = flow[0].pkt_.FlowFetch();
+    EXPECT_STREQ(FlowEntry::FlowPolicyStateStr.at(FlowEntry::IMPLICIT_ALLOW),
+                 fe->nw_ace_uuid().c_str());
+    EXPECT_STREQ(FlowEntry::FlowPolicyStateStr.at(FlowEntry::IMPLICIT_DENY),
+                 fe->sg_rule_uuid().c_str());
+
+    //cleanup
+    FlushFlowTable();
+    client->WaitForIdle();
+    EXPECT_EQ(0U, agent()->pkt()->flow_table()->Size());
+    DelLink("virtual-machine-interface", "flow5", "security-group", "sg1");
+
+    strncpy(acl_name, "sg_acl1", max_len);
+    strncat(acl_name, "egress-access-control-list", max_len);
+    DelLink("security-group", "sg1", "access-control-list", acl_name);
+    DelNode("access-control-list", acl_name);
+
+    DelNode("security-group", "sg1");
+    client->WaitForIdle();
+    FlowTeardown();
+    client->WaitForIdle(5);
+}
+
+/* Local flow. Port 'A' has IP 'X' and port 'B' has IP 'Y'
+ * Configure only EGRESS SG ACL on port 'A'
+ * Send bidirectional traffic from both directions
+ * Verify that SG UUID is NOT set
+ */
+TEST_F(FlowTest, FlowPolicyUuid_8) {
+    char acl_name[1024];
+    uint16_t max_len = sizeof(acl_name) - 1;
+    FlowSetup();
+
+    EXPECT_EQ(flow5->sg_list().list_.size(), 0U);
+    AddSgEntry("sg1", "sg_acl1", 10, 1, "pass", EGRESS,
+               "fe6a4dcb-dde4-48e6-8957-856a7aacb2d2", "0");
+    AddLink("virtual-machine-interface", "flow5", "security-group", "sg1");
+    client->WaitForIdle();
+    EXPECT_EQ(flow5->sg_list().list_.size(), 1U);
+
+    TestFlow flow[] = {
+        //Add a ICMP forward and reverse flow
+        {  TestFlowPkt(vm_a_ip, vm_b_ip, 1, 0, 0, "vrf6",
+                       flow5->id()),
+        {
+            new VerifyVn("vn6", "vn6"),
+            new VerifyVrf("vrf6", "vrf6")
+        }
+        },
+        {  TestFlowPkt(vm_b_ip, vm_a_ip, 1, 0, 0, "vrf6",
+                       flow6->id()),
+        {
+            new VerifyVn("vn6", "vn6"),
+            new VerifyVrf("vrf6", "vrf6")
+        }
+        }
+    };
+
+    CreateFlow(flow, 2);
+    EXPECT_EQ(2U, agent()->pkt()->flow_table()->Size());
+
+    //Verify the network policy uuid and SG rule UUID for flow.
+    const FlowEntry *fe = flow[0].pkt_.FlowFetch();
+    EXPECT_STREQ(FlowEntry::FlowPolicyStateStr.at(FlowEntry::IMPLICIT_ALLOW),
+                 fe->nw_ace_uuid().c_str());
+    EXPECT_STREQ("fe6a4dcb-dde4-48e6-8957-856a7aacb2d2", fe->sg_rule_uuid().c_str());
+
+    //cleanup
+    FlushFlowTable();
+    client->WaitForIdle();
+    EXPECT_EQ(0U, agent()->pkt()->flow_table()->Size());
+    DelLink("virtual-machine-interface", "flow5", "security-group", "sg1");
+
+    strncpy(acl_name, "sg_acl1", max_len);
+    strncat(acl_name, "egress-access-control-list", max_len);
+    DelLink("security-group", "sg1", "access-control-list", acl_name);
+    DelNode("access-control-list", acl_name);
+
+    strncpy(acl_name, "sg_acl1", max_len);
+    strncat(acl_name, "ingress-access-control-list", max_len);
+    DelLink("security-group", "sg1", "access-control-list", acl_name);
+    DelNode("access-control-list", acl_name);
+
+    DelNode("security-group", "sg1");
+    client->WaitForIdle();
+    FlowTeardown();
+    client->WaitForIdle(5);
+}
+
+/* Local flow. Port 'A' has IP 'X' and port 'B' has IP 'Y'
+ * Configure SG ACLs (both direction) on port 'A'
+ * Send bidirectional traffic from both directions
+ * Verify that SG UUID is set
+ */
+TEST_F(FlowTest, FlowPolicyUuid_9) {
+    char acl_name[1024];
+    uint16_t max_len = sizeof(acl_name) - 1;
+    FlowSetup();
+
+    EXPECT_EQ(flow5->sg_list().list_.size(), 0U);
+    AddSgEntry("sg1", "sg_acl1", 10, 1, "pass", BIDIRECTION,
+               "fe6a4dcb-dde4-48e6-8957-856a7aacb2d2",
+               "fe6a4dcb-dde4-48e6-8957-856a7aacb2e2");
+    AddLink("virtual-machine-interface", "flow5", "security-group", "sg1");
+    client->WaitForIdle();
+    EXPECT_EQ(flow5->sg_list().list_.size(), 1U);
+
+    TestFlow flow[] = {
+        //Add a ICMP forward and reverse flow
+        {  TestFlowPkt(vm_a_ip, vm_b_ip, 1, 0, 0, "vrf6",
+                       flow5->id()),
+        {
+            new VerifyVn("vn6", "vn6"),
+            new VerifyVrf("vrf6", "vrf6")
+        }
+        },
+        {  TestFlowPkt(vm_b_ip, vm_a_ip, 1, 0, 0, "vrf6",
+                       flow6->id()),
+        {
+            new VerifyVn("vn6", "vn6"),
+            new VerifyVrf("vrf6", "vrf6")
+        }
+        }
+    };
+
+    CreateFlow(flow, 2);
+    EXPECT_EQ(2U, agent()->pkt()->flow_table()->Size());
+
+    //Verify the network policy uuid and SG rule UUID for flow.
+    const FlowEntry *fe = flow[0].pkt_.FlowFetch();
+    EXPECT_STREQ(FlowEntry::FlowPolicyStateStr.at(FlowEntry::IMPLICIT_ALLOW),
+                 fe->nw_ace_uuid().c_str());
+    EXPECT_STREQ("fe6a4dcb-dde4-48e6-8957-856a7aacb2d2", fe->sg_rule_uuid().c_str());
+
+    //cleanup
+    FlushFlowTable();
+    client->WaitForIdle();
+    EXPECT_EQ(0U, agent()->pkt()->flow_table()->Size());
+    DelLink("virtual-machine-interface", "flow5", "security-group", "sg1");
+
+    strncpy(acl_name, "sg_acl1", max_len);
+    strncat(acl_name, "egress-access-control-list", max_len);
+    DelLink("security-group", "sg1", "access-control-list", acl_name);
+    DelNode("access-control-list", acl_name);
+
+    strncpy(acl_name, "sg_acl1", max_len);
+    strncat(acl_name, "ingress-access-control-list", max_len);
+    DelLink("security-group", "sg1", "access-control-list", acl_name);
+    DelNode("access-control-list", acl_name);
+
+    DelNode("security-group", "sg1");
+    client->WaitForIdle();
+    FlowTeardown();
+    client->WaitForIdle(5);
+}
+
+/* Local flow. Port 'A' has IP 'X' and port 'B' has IP 'Y'
+ * Configure EGRESS SG ACL on port 'A' with action 'deny'
+ * Configure INGRESS SG ACL on port 'B' with action 'pass'
+ * Send traffic (SIP X and DIP Y) in only one direction from port 'A'
+ * Verify that SG UUID is set to deny sg rule uuid
+ */
+TEST_F(FlowTest, FlowPolicyUuid_10) {
+    char acl_name[1024];
+    uint16_t max_len = sizeof(acl_name) - 1;
+    FlowSetup();
+
+    EXPECT_EQ(flow5->sg_list().list_.size(), 0U);
+    AddSgEntry("sg_e", "sg_acl_e", 10, 1, "pass", EGRESS,
+               "fe6a4dcb-dde4-48e6-8957-856a7aacb2d2", "0");
+    AddLink("virtual-machine-interface", "flow5", "security-group", "sg_e");
+    client->WaitForIdle();
+    EXPECT_EQ(flow5->sg_list().list_.size(), 1U);
+
+    EXPECT_EQ(flow6->sg_list().list_.size(), 0U);
+    AddSgEntry("sg_i", "sg_acl_i", 11, 1, "deny", INGRESS,
+               "fe6a4dcb-dde4-48e6-8957-856a7aacb2e2", "0");
+    AddLink("virtual-machine-interface", "flow6", "security-group", "sg_i");
+    client->WaitForIdle();
+    EXPECT_EQ(flow6->sg_list().list_.size(), 1U);
+
+    TestFlow flow[] = {
+        {  TestFlowPkt(vm_a_ip, vm_b_ip, 1, 0, 0, "vrf6",
+                       flow5->id()),
+        {
+            new VerifyVn("vn6", "vn6"),
+            new VerifyVrf("vrf6", "vrf6")
+        }
+        }
+    };
+
+    CreateFlow(flow, 1);
+    EXPECT_EQ(2U, agent()->pkt()->flow_table()->Size());
+
+    //Verify the network policy uuid and SG rule UUID for flow.
+    const FlowEntry *fe = flow[0].pkt_.FlowFetch();
+    EXPECT_STREQ(FlowEntry::FlowPolicyStateStr.at(FlowEntry::IMPLICIT_ALLOW),
+                 fe->nw_ace_uuid().c_str());
+    EXPECT_STREQ("fe6a4dcb-dde4-48e6-8957-856a7aacb2e2", fe->sg_rule_uuid().c_str());
+
+    //cleanup
+    FlushFlowTable();
+    client->WaitForIdle();
+    EXPECT_EQ(0U, agent()->pkt()->flow_table()->Size());
+    DelLink("virtual-machine-interface", "flow5", "security-group", "sg_e");
+    DelLink("virtual-machine-interface", "flow6", "security-group", "sg_i");
+
+    strncpy(acl_name, "sg_acl_e", max_len);
+    strncat(acl_name, "egress-access-control-list", max_len);
+    DelLink("security-group", "sg_e", "access-control-list", acl_name);
+    DelNode("access-control-list", acl_name);
+
+    strncpy(acl_name, "sg_acl_i", max_len);
+    strncat(acl_name, "ingress-access-control-list", max_len);
+    DelLink("security-group", "sg_i", "access-control-list", acl_name);
+    DelNode("access-control-list", acl_name);
+
+    DelNode("security-group", "sg_e");
+    DelNode("security-group", "sg_i");
+    client->WaitForIdle();
+    FlowTeardown();
+    client->WaitForIdle(5);
+}
+
+/* Local flow. Port 'A' has IP 'X' and port 'B' has IP 'Y'
+ * Configure EGRESS SG ACL on port 'A' with action 'pass'
+ * Configure INGRESS SG ACL on port 'B' with action 'pass'
+ * Send traffic (SIP X and DIP Y) in only one direction from port 'A'
+ * Verify that SG UUID is set to EGRESS sg rule uuid
+ */
+TEST_F(FlowTest, FlowPolicyUuid_11) {
+    char acl_name[1024];
+    uint16_t max_len = sizeof(acl_name) - 1;
+    FlowSetup();
+
+    EXPECT_EQ(flow5->sg_list().list_.size(), 0U);
+    AddSgEntry("sg_e", "sg_acl_e", 10, 1, "pass", EGRESS,
+               "fe6a4dcb-dde4-48e6-8957-856a7aacb2d2", "0");
+    AddLink("virtual-machine-interface", "flow5", "security-group", "sg_e");
+    client->WaitForIdle();
+    EXPECT_EQ(flow5->sg_list().list_.size(), 1U);
+
+    EXPECT_EQ(flow6->sg_list().list_.size(), 0U);
+    AddSgEntry("sg_i", "sg_acl_i", 11, 1, "pass", INGRESS,
+               "fe6a4dcb-dde4-48e6-8957-856a7aacb2e2", "0");
+    AddLink("virtual-machine-interface", "flow6", "security-group", "sg_i");
+    client->WaitForIdle();
+    EXPECT_EQ(flow6->sg_list().list_.size(), 1U);
+
+    TestFlow flow[] = {
+        {  TestFlowPkt(vm_a_ip, vm_b_ip, 1, 0, 0, "vrf6",
+                       flow5->id()),
+        {
+            new VerifyVn("vn6", "vn6"),
+            new VerifyVrf("vrf6", "vrf6")
+        }
+        }
+    };
+
+    CreateFlow(flow, 1);
+    EXPECT_EQ(2U, agent()->pkt()->flow_table()->Size());
+
+    //Verify the network policy uuid and SG rule UUID for flow.
+    const FlowEntry *fe = flow[0].pkt_.FlowFetch();
+    EXPECT_STREQ(FlowEntry::FlowPolicyStateStr.at(FlowEntry::IMPLICIT_ALLOW),
+                 fe->nw_ace_uuid().c_str());
+    EXPECT_STREQ("fe6a4dcb-dde4-48e6-8957-856a7aacb2d2", fe->sg_rule_uuid().c_str());
+
+    //cleanup
+    FlushFlowTable();
+    client->WaitForIdle();
+    EXPECT_EQ(0U, agent()->pkt()->flow_table()->Size());
+    DelLink("virtual-machine-interface", "flow5", "security-group", "sg_e");
+    DelLink("virtual-machine-interface", "flow6", "security-group", "sg_i");
+
+    strncpy(acl_name, "sg_acl_e", max_len);
+    strncat(acl_name, "egress-access-control-list", max_len);
+    DelLink("security-group", "sg_e", "access-control-list", acl_name);
+    DelNode("access-control-list", acl_name);
+
+    strncpy(acl_name, "sg_acl_i", max_len);
+    strncat(acl_name, "ingress-access-control-list", max_len);
+    DelLink("security-group", "sg_i", "access-control-list", acl_name);
+    DelNode("access-control-list", acl_name);
+
+    DelNode("security-group", "sg_e");
+    DelNode("security-group", "sg_i");
+    client->WaitForIdle();
+    FlowTeardown();
+    client->WaitForIdle(5);
+}
+
+/* Local flow. Port 'A' has IP 'X' and port 'B' has IP 'Y'
+ * Configure EGRESS SG ACL on port 'A' with action 'pass'
+ * Configure INGRESS SG ACL on port 'B' with action 'deny'
+ * Send TCP Ack pkt (SIP X and DIP Y) in only one direction from port 'A'
+ * Verify that SG UUID is set to deny sg rule uuid
+ */
+TEST_F(FlowTest, FlowPolicyUuid_12) {
+    char acl_name[1024];
+    uint16_t max_len = sizeof(acl_name) - 1;
+    FlowSetup();
+
+    EXPECT_EQ(flow5->sg_list().list_.size(), 0U);
+    AddSgEntry("sg_e", "sg_acl_e", 10, 6, "pass", EGRESS,
+               "fe6a4dcb-dde4-48e6-8957-856a7aacb2d2", "0");
+    AddLink("virtual-machine-interface", "flow5", "security-group", "sg_e");
+    client->WaitForIdle();
+    EXPECT_EQ(flow5->sg_list().list_.size(), 1U);
+
+    EXPECT_EQ(flow6->sg_list().list_.size(), 0U);
+    AddSgEntry("sg_i", "sg_acl_i", 11, 6, "deny", INGRESS,
+               "fe6a4dcb-dde4-48e6-8957-856a7aacb2e2", "0");
+    AddLink("virtual-machine-interface", "flow6", "security-group", "sg_i");
+    client->WaitForIdle();
+    EXPECT_EQ(flow6->sg_list().list_.size(), 1U);
+
+    TxTcpPacket(flow5->id(), vm_a_ip, vm_b_ip, 1, 2, true, 10);
+    client->WaitForIdle();
+
+    EXPECT_EQ(2U, agent()->pkt()->flow_table()->Size());
+
+    //Verify the network policy uuid and SG rule UUID for flow.
+    const FlowEntry *fe = FlowGet(flow5->vrf()->vrf_id(), vm_a_ip, vm_b_ip, 6,
+                                  1, 2, flow5->flow_key_nh()->id());
+    EXPECT_STREQ(FlowEntry::FlowPolicyStateStr.at(FlowEntry::IMPLICIT_ALLOW),
+                 fe->nw_ace_uuid().c_str());
+    EXPECT_STREQ("fe6a4dcb-dde4-48e6-8957-856a7aacb2e2", fe->sg_rule_uuid().c_str());
+
+    //cleanup
+    FlushFlowTable();
+    client->WaitForIdle();
+    EXPECT_EQ(0U, agent()->pkt()->flow_table()->Size());
+    DelLink("virtual-machine-interface", "flow5", "security-group", "sg_e");
+    DelLink("virtual-machine-interface", "flow6", "security-group", "sg_i");
+
+    strncpy(acl_name, "sg_acl_e", max_len);
+    strncat(acl_name, "egress-access-control-list", max_len);
+    DelLink("security-group", "sg_e", "access-control-list", acl_name);
+    DelNode("access-control-list", acl_name);
+
+    strncpy(acl_name, "sg_acl_i", max_len);
+    strncat(acl_name, "ingress-access-control-list", max_len);
+    DelLink("security-group", "sg_i", "access-control-list", acl_name);
+    DelNode("access-control-list", acl_name);
+
+    DelNode("security-group", "sg_e");
+    DelNode("security-group", "sg_i");
+    client->WaitForIdle();
+    FlowTeardown();
+    client->WaitForIdle(5);
+}
+
+/* Local flow. Port 'A' has IP 'X' and port 'B' has IP 'Y'
+ * Configure EGRESS SG ACL on port 'A' with action 'pass'
+ * Configure EGRESS SG ACL on port 'B' with action 'deny'
+ * (Because of above config, flows on port A (X - Y) will be marked as
+ * 'implicit_deny'. It is implicity denied because port 'B' does not have
+ * any matching 'ingress' rule
+ * Send TCP Ack pkt (SIP X and DIP Y) in only one direction from port 'A'
+ * Verify that SG UUID is set to IMPLICIT_DENY
+ */
+TEST_F(FlowTest, FlowPolicyUuid_13) {
+    char acl_name[1024];
+    uint16_t max_len = sizeof(acl_name) - 1;
+    FlowSetup();
+
+    EXPECT_EQ(flow5->sg_list().list_.size(), 0U);
+    AddSgEntry("sg_e", "sg_acl_e", 10, 6, "pass", EGRESS,
+               "fe6a4dcb-dde4-48e6-8957-856a7aacb2d2", "0");
+    AddLink("virtual-machine-interface", "flow5", "security-group", "sg_e");
+    client->WaitForIdle();
+    EXPECT_EQ(flow5->sg_list().list_.size(), 1U);
+
+    EXPECT_EQ(flow6->sg_list().list_.size(), 0U);
+    AddSgEntry("sg_e2", "sg_acl_e2", 11, 6, "deny", EGRESS,
+               "fe6a4dcb-dde4-48e6-8957-856a7aacb2e2", "0");
+    AddLink("virtual-machine-interface", "flow6", "security-group", "sg_e2");
+    client->WaitForIdle();
+    EXPECT_EQ(flow6->sg_list().list_.size(), 1U);
+
+    //Send TCP Ack pkt
+    TxTcpPacket(flow5->id(), vm_a_ip, vm_b_ip, 1, 2, true, 10);
+    client->WaitForIdle();
+
+    EXPECT_EQ(2U, agent()->pkt()->flow_table()->Size());
+
+    //Verify the network policy uuid and SG rule UUID for flow.
+    const FlowEntry *fe = FlowGet(flow5->vrf()->vrf_id(), vm_a_ip, vm_b_ip, 6,
+                                  1, 2, flow5->flow_key_nh()->id());
+    EXPECT_STREQ(FlowEntry::FlowPolicyStateStr.at(FlowEntry::IMPLICIT_ALLOW),
+                 fe->nw_ace_uuid().c_str());
+    EXPECT_STREQ(FlowEntry::FlowPolicyStateStr.at(FlowEntry::IMPLICIT_DENY),
+                 fe->sg_rule_uuid().c_str());
+
+    //cleanup
+    FlushFlowTable();
+    client->WaitForIdle();
+    EXPECT_EQ(0U, agent()->pkt()->flow_table()->Size());
+    DelLink("virtual-machine-interface", "flow5", "security-group", "sg_e");
+    DelLink("virtual-machine-interface", "flow6", "security-group", "sg_e2");
+
+    strncpy(acl_name, "sg_acl_e", max_len);
+    strncat(acl_name, "egress-access-control-list", max_len);
+    DelLink("security-group", "sg_e", "access-control-list", acl_name);
+    DelNode("access-control-list", acl_name);
+
+    strncpy(acl_name, "sg_acl_e2", max_len);
+    strncat(acl_name, "egress-access-control-list", max_len);
+    DelLink("security-group", "sg_e2", "access-control-list", acl_name);
+    DelNode("access-control-list", acl_name);
+
+    DelNode("security-group", "sg_e");
+    DelNode("security-group", "sg_e2");
+    client->WaitForIdle();
+    FlowTeardown();
+    client->WaitForIdle(5);
+}
+
+/* Local flow. Port 'A' has IP 'X' and port 'B' has IP 'Y'
+ * Configure EGRESS SG ACL on port 'A' with action 'pass'
+ * Configure INGRESS SG ACL on port 'B' with action 'pass'
+ * Configure EGRESS SG ACL on port 'B' with action 'deny'
+ * Configure INGRESS SG ACL on port 'A' with action 'deny'
+ * Send TCP Ack pkt (SIP X and DIP Y) in only one direction from port 'A'
+ * Verify that SG UUID is set to first pass UUID
+ */
+TEST_F(FlowTest, FlowPolicyUuid_14) {
+    char acl_name[1024];
+    uint16_t max_len = sizeof(acl_name) - 1;
+    FlowSetup();
+
+    EXPECT_EQ(flow5->sg_list().list_.size(), 0U);
+    EXPECT_EQ(flow6->sg_list().list_.size(), 0U);
+    AddSgEntry("sg_e", "sg_acl_e", 10, 6, "pass", EGRESS,
+               "fe6a4dcb-dde4-48e6-8957-856a7aacb2d2", "0");
+    AddLink("virtual-machine-interface", "flow5", "security-group", "sg_e");
+    AddSgEntry("sg_i", "sg_acl_i", 11, 6, "pass", INGRESS,
+               "fe6a4dcb-dde4-48e6-8957-856a7aacb2d3", "0");
+    AddLink("virtual-machine-interface", "flow6", "security-group", "sg_i");
+    client->WaitForIdle();
+    EXPECT_EQ(flow5->sg_list().list_.size(), 1U);
+    EXPECT_EQ(flow6->sg_list().list_.size(), 1U);
+
+    AddSgEntry("sg_e2", "sg_acl_e2", 12, 6, "deny", EGRESS,
+               "fe6a4dcb-dde4-48e6-8957-856a7aacb2e2", "0");
+    AddLink("virtual-machine-interface", "flow6", "security-group", "sg_e2");
+    AddSgEntry("sg_i2", "sg_acl_i2", 13, 6, "deny", INGRESS,
+               "fe6a4dcb-dde4-48e6-8957-856a7aacb2e3", "0");
+    AddLink("virtual-machine-interface", "flow5", "security-group", "sg_i2");
+    client->WaitForIdle();
+    EXPECT_EQ(flow5->sg_list().list_.size(), 2U);
+    EXPECT_EQ(flow6->sg_list().list_.size(), 2U);
+
+    //Send TCP Ack pkt
+    TxTcpPacket(flow5->id(), vm_a_ip, vm_b_ip, 1, 2, true, 10);
+    client->WaitForIdle();
+
+    EXPECT_EQ(2U, agent()->pkt()->flow_table()->Size());
+
+    //Verify the network policy uuid and SG rule UUID for flow.
+    const FlowEntry *fe = FlowGet(flow5->vrf()->vrf_id(), vm_a_ip, vm_b_ip, 6,
+                                  1, 2, flow5->flow_key_nh()->id());
+    EXPECT_STREQ(FlowEntry::FlowPolicyStateStr.at(FlowEntry::IMPLICIT_ALLOW),
+                 fe->nw_ace_uuid().c_str());
+    EXPECT_STREQ("fe6a4dcb-dde4-48e6-8957-856a7aacb2d2",
+                 fe->sg_rule_uuid().c_str());
+
+    //cleanup
+    FlushFlowTable();
+    client->WaitForIdle();
+    EXPECT_EQ(0U, agent()->pkt()->flow_table()->Size());
+    DelLink("virtual-machine-interface", "flow5", "security-group", "sg_e");
+    DelLink("virtual-machine-interface", "flow6", "security-group", "sg_e2");
+    DelLink("virtual-machine-interface", "flow5", "security-group", "sg_i2");
+    DelLink("virtual-machine-interface", "flow6", "security-group", "sg_i");
+
+    strncpy(acl_name, "sg_acl_e", max_len);
+    strncat(acl_name, "egress-access-control-list", max_len);
+    DelLink("security-group", "sg_e", "access-control-list", acl_name);
+    DelNode("access-control-list", acl_name);
+
+    strncpy(acl_name, "sg_acl_e2", max_len);
+    strncat(acl_name, "egress-access-control-list", max_len);
+    DelLink("security-group", "sg_e2", "access-control-list", acl_name);
+    DelNode("access-control-list", acl_name);
+
+    strncpy(acl_name, "sg_acl_i", max_len);
+    strncat(acl_name, "ingress-access-control-list", max_len);
+    DelLink("security-group", "sg_i", "access-control-list", acl_name);
+    DelNode("access-control-list", acl_name);
+
+    strncpy(acl_name, "sg_acl_i2", max_len);
+    strncat(acl_name, "ingress-access-control-list", max_len);
+    DelLink("security-group", "sg_i2", "access-control-list", acl_name);
+    DelNode("access-control-list", acl_name);
+
+    DelNode("security-group", "sg_e");
+    DelNode("security-group", "sg_e2");
+    DelNode("security-group", "sg_i");
+    DelNode("security-group", "sg_i2");
+    client->WaitForIdle();
+    FlowTeardown();
+    client->WaitForIdle(5);
+}
+
+/* For link_local flows verify network policy UUID and SG UUID are set to
+ * the value of link_local UUID value
+ */
+TEST_F(FlowTest, FlowPolicyUuid_15) {
+    Agent::GetInstance()->set_router_id(Ip4Address::from_string(vhost_ip_addr));
+    std::string fabric_ip("1.2.3.4");
+    std::vector<std::string> fabric_ip_list;
+    fabric_ip_list.push_back("1.2.3.4");
+    TestLinkLocalService service = { "test_service", linklocal_ip, linklocal_port,
+                                     "", fabric_ip_list, fabric_port };
+    AddLinkLocalConfig(&service, 1);
+    client->WaitForIdle();
+
+    TestFlow nat_flow[] = {
+        {
+            TestFlowPkt(vm1_ip, linklocal_ip, IPPROTO_TCP, 3000, linklocal_port, "vrf5",
+                        flow0->id(), 1),
+            {
+                new VerifyNat(fabric_ip, vhost_ip_addr, IPPROTO_TCP, fabric_port, 0)
+            }
+        }
+    };
+
+    CreateFlow(nat_flow, 1);
+    client->WaitForIdle();
+    EXPECT_EQ(2U, Agent::GetInstance()->pkt()->flow_table()->Size());
+    const FlowEntry *fe = nat_flow[0].pkt_.FlowFetch();
+    EXPECT_STREQ(FlowEntry::FlowPolicyStateStr.at(FlowEntry::LINKLOCAL_FLOW),
+                 fe->nw_ace_uuid().c_str());
+    EXPECT_STREQ(FlowEntry::FlowPolicyStateStr.at(FlowEntry::LINKLOCAL_FLOW),
+                 fe->sg_rule_uuid().c_str());
+
+    //Delete forward flow and expect both flows to be deleted
+    DeleteFlow(nat_flow, 1);
+    client->WaitForIdle();
+    EXPECT_TRUE(FlowTableWait(0));
+
+    DelLinkLocalConfig();
+    client->WaitForIdle();
+}
+
+/* For multicast flows verify network policy UUID and SG UUID are set to
+ * the value of multicast UUID value
+ */
+TEST_F(FlowTest, FlowPolicyUuid_16) {
+    IpamInfo ipam_info[] = {
+        {"11.1.1.0", 24, "11.1.1.200", true},
+    };
+    AddIPAM("vn5", ipam_info, 1);
+    client->WaitForIdle();
+
+    TestFlow flow[] = {
+        {  TestFlowPkt(vm1_ip, "11.1.1.255", 1, 0, 0, "vrf5", 
+                       flow0->id()),
+        {}
+        }
+    };
+
+    CreateFlow(flow, 1);
+    EXPECT_EQ(2U, agent()->pkt()->flow_table()->Size());
+
+    const FlowEntry *fe = flow[0].pkt_.FlowFetch();
+    const FlowEntry *rev_fe = fe->reverse_flow_entry();
+    EXPECT_TRUE(fe->is_flags_set(FlowEntry::Multicast));
+    EXPECT_TRUE(rev_fe->is_flags_set(FlowEntry::Multicast));
+    EXPECT_STREQ(FlowEntry::FlowPolicyStateStr.at(FlowEntry::MULTICAST_FLOW),
+                 fe->nw_ace_uuid().c_str());
+    EXPECT_STREQ(FlowEntry::FlowPolicyStateStr.at(FlowEntry::MULTICAST_FLOW),
+                 fe->sg_rule_uuid().c_str());
+
+    //cleanup
+    DeleteFlow(flow, 1);
+    client->WaitForIdle();
+    EXPECT_TRUE(FlowTableWait(0));
+    DelIPAM("vn5");
+    client->WaitForIdle();
+}
+
 int main(int argc, char *argv[]) {
     GETUSERARGS();
 
     client = 
         TestInit(init_file, ksync_init, true, true, true, (1000000 * 60 * 10), (3 * 60 * 1000));
     if (vm.count("config")) {
-		eth_itf = Agent::GetInstance()->GetIpFabricItfName();
+        eth_itf = Agent::GetInstance()->fabric_interface_name();
     } else {
         eth_itf = "eth0";
-        PhysicalInterface::CreateReq(Agent::GetInstance()->GetInterfaceTable(),
-                                eth_itf, Agent::GetInstance()->GetDefaultVrf());
+        PhysicalInterface::CreateReq(Agent::GetInstance()->interface_table(),
+                                eth_itf,
+                                Agent::GetInstance()->fabric_vrf_name(),
+                                false);
         client->WaitForIdle();
     }
 
     FlowTest::TestSetup(ksync_init);
     int ret = RUN_ALL_TESTS();
     usleep(1000);
-    Agent::GetInstance()->GetEventManager()->Shutdown();
+    Agent::GetInstance()->event_manager()->Shutdown();
     AsioStop();
+    TaskScheduler::GetInstance()->Terminate();
     return ret;
 }

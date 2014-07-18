@@ -4,8 +4,7 @@
 
 #include <cmn/agent_cmn.h>
 #include <cmn/agent_db.h>
-#include <init/agent_param.h>
-#include <init/agent_init.h>
+#include <cmn/agent_param.h>
 #include <oper/agent_sandesh.h>
 #include <oper/agent_types.h>
 #include <oper/route_common.h>
@@ -22,7 +21,7 @@
 #include <oper/sg.h>
 
 DBTable *AgentVnSandesh::AgentGetTable() {
-    return static_cast<DBTable *>(Agent::GetInstance()->GetVnTable());
+    return static_cast<DBTable *>(Agent::GetInstance()->vn_table());
 }
 
 void AgentVnSandesh::Alloc() {
@@ -30,7 +29,7 @@ void AgentVnSandesh::Alloc() {
 }
 
 DBTable *AgentSgSandesh::AgentGetTable() {
-    return static_cast<DBTable *>(Agent::GetInstance()->GetSgTable());
+    return static_cast<DBTable *>(Agent::GetInstance()->sg_table());
 }
 
 void AgentSgSandesh::Alloc() {
@@ -38,7 +37,7 @@ void AgentSgSandesh::Alloc() {
 }
 
 DBTable *AgentVmSandesh::AgentGetTable() {
-    return static_cast<DBTable *>(Agent::GetInstance()->GetVmTable());
+    return static_cast<DBTable *>(Agent::GetInstance()->vm_table());
 }
 
 void AgentVmSandesh::Alloc() {
@@ -46,7 +45,7 @@ void AgentVmSandesh::Alloc() {
 }
 
 DBTable *AgentIntfSandesh::AgentGetTable() {
-    return static_cast<DBTable *>(Agent::GetInstance()->GetInterfaceTable());
+    return static_cast<DBTable *>(Agent::GetInstance()->interface_table());
 }
 
 void AgentIntfSandesh::Alloc() {
@@ -54,7 +53,7 @@ void AgentIntfSandesh::Alloc() {
 }
 
 DBTable *AgentNhSandesh::AgentGetTable() {
-    return static_cast<DBTable *>(Agent::GetInstance()->GetNextHopTable());
+    return static_cast<DBTable *>(Agent::GetInstance()->nexthop_table());
 }
 
 void AgentNhSandesh::Alloc() {
@@ -62,7 +61,7 @@ void AgentNhSandesh::Alloc() {
 }
 
 DBTable *AgentMplsSandesh::AgentGetTable() {
-    return static_cast<DBTable *>(Agent::GetInstance()->GetMplsTable());
+    return static_cast<DBTable *>(Agent::GetInstance()->mpls_table());
 }
 
 void AgentMplsSandesh::Alloc() {
@@ -70,7 +69,7 @@ void AgentMplsSandesh::Alloc() {
 }
 
 DBTable *AgentVrfSandesh::AgentGetTable() {
-    return static_cast<DBTable *>(Agent::GetInstance()->GetVrfTable());
+    return static_cast<DBTable *>(Agent::GetInstance()->vrf_table());
 }
 
 void AgentVrfSandesh::Alloc() {
@@ -120,7 +119,7 @@ bool AgentLayer2RtSandesh::UpdateResp(DBEntryBase *entry) {
 }
 
 DBTable *AgentAclSandesh::AgentGetTable() {
-    return static_cast<DBTable *>(Agent::GetInstance()->GetAclTable());
+    return static_cast<DBTable *>(Agent::GetInstance()->acl_table());
 }
 
 void AgentAclSandesh::Alloc() {
@@ -133,7 +132,7 @@ bool AgentAclSandesh::UpdateResp(DBEntryBase *entry) {
 }
 
 DBTable *AgentMirrorSandesh::AgentGetTable(){
-    return static_cast<DBTable *>(Agent::GetInstance()->GetMirrorTable());
+    return static_cast<DBTable *>(Agent::GetInstance()->mirror_table());
 }
 
 void AgentMirrorSandesh::Alloc(){
@@ -141,7 +140,7 @@ void AgentMirrorSandesh::Alloc(){
 }
 
 DBTable *AgentVrfAssignSandesh::AgentGetTable(){
-    return static_cast<DBTable *>(Agent::GetInstance()->GetVrfAssignTable());
+    return static_cast<DBTable *>(Agent::GetInstance()->vrf_assign_table());
 }
 
 void AgentVrfAssignSandesh::Alloc(){
@@ -149,7 +148,7 @@ void AgentVrfAssignSandesh::Alloc(){
 }
 
 DBTable *AgentVxLanSandesh::AgentGetTable() {
-    return static_cast<DBTable *>(Agent::GetInstance()->GetVxLanTable());
+    return static_cast<DBTable *>(Agent::GetInstance()->vxlan_table());
 }
 
 void AgentVxLanSandesh::Alloc() {
@@ -211,7 +210,7 @@ void AgentInitStateReq::HandleRequest() const {
     AgentInitState *resp = new AgentInitState();
     resp->set_context(context());
     Agent *agent = Agent::GetInstance();
-    if (agent->init()->init_done()) {
+    if (agent->init_done()) {
         resp->set_state("InitDone");
     } else {
         resp->set_state("InProgress");

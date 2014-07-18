@@ -476,6 +476,8 @@ string BgpPeerCloseTest::GetConfig() {
             <session to=\'B\'>\
                 <address-families>\
                 <family>inet-vpn</family>\
+                <family>e-vpn</family>\
+                <family>erm-vpn</family>\
                 <family>route-target</family>\
                 </address-families>\
             </session>\
@@ -632,6 +634,7 @@ void BgpPeerCloseTest::AddAllRoutes() {
             // Add routes to RibIn
             AddRoutes(table, npeer);
         }
+        npeer->peer()->set_vpn_tables_registered(true);
     }
 
     WaitForIdle();

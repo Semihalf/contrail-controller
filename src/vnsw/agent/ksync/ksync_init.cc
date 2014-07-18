@@ -27,9 +27,9 @@
 #include <ksync/ksync_index.h>
 #include <ksync/ksync_entry.h>
 #include <ksync/ksync_object.h>
+#include <ksync/ksync_netlink.h>
 #include <ksync/ksync_sock.h>
 
-#include "init/agent_init.h"
 #include "ksync_init.h"
 #include "ksync/interface_ksync.h"
 #include "ksync/route_ksync.h"
@@ -69,16 +69,16 @@ void KSync::RegisterDBClients(DB *db) {
     mirror_ksync_obj_.get()->RegisterDBClients();
     vrf_assign_ksync_obj_.get()->RegisterDBClients();
     vxlan_ksync_obj_.get()->RegisterDBClients();
-    agent_->SetRouterIdConfigured(false);
+    agent_->set_router_id_configured(false);
     KSyncDebug::set_debug(agent_->debug());
 }
 
-void KSync::Init() {
+void KSync::Init(bool create_vhost) {
     NetlinkInit();
     VRouterInterfaceSnapshot();
     InitFlowMem();
     ResetVRouter();
-    if (agent()->init()->create_vhost()) {
+    if (create_vhost) {
         CreateVhostIntf();
     }
     interface_ksync_obj_.get()->Init();
@@ -91,7 +91,7 @@ void KSync::InitFlowMem() {
 void KSync::NetlinkInit() {
     EventManager *event_mgr;
 
-    event_mgr = agent_->GetEventManager();
+    event_mgr = agent_->event_manager();
     boost::asio::io_service &io = *event_mgr->io_service();
 
     KSyncSockNetlink::Init(io, DB::PartitionCount(), NETLINK_GENERIC);
@@ -207,9 +207,9 @@ void KSync::UpdateVhostMac() {
     strcpy(ifm.if_kind, VHOST_KIND);
     ifm.if_flags = IFF_UP;
 
-    PhysicalInterfaceKey key(agent_->GetIpFabricItfName());
+    PhysicalInterfaceKey key(agent_->fabric_interface_name());
     Interface *eth = static_cast<Interface *>
-        (agent_->GetInterfaceTable()->FindActiveEntry(&key));
+        (agent_->interface_table()->FindActiveEntry(&key));
     memcpy(ifm.if_mac, eth->mac().ether_addr_octet, ETHER_ADDR_LEN);
     assert(nl_build_if_create_msg(cl, &ifm, 1) == 0);
     assert(nl_sendmsg(cl) > 0);

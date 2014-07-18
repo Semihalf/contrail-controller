@@ -12,7 +12,7 @@
 
 #include <uve/agent_stats_sandesh_context.h>
 #include <uve/agent_stats_collector.h>
-#include <cmn/agent_stats.h>
+#include <pkt/agent_stats.h>
 
 AgentStatsSandeshContext::AgentStatsSandeshContext(AgentStatsCollector *col) 
     : collector_(col), marker_id_(-1) {
@@ -69,10 +69,8 @@ void AgentStatsSandeshContext::IfMsgHandler(vr_interface_req *req) {
                                                    stats->out_bytes);
     }
 
-    stats->in_pkts = req->get_vifr_ipackets();
-    stats->in_bytes = req->get_vifr_ibytes();
-    stats->out_pkts = req->get_vifr_opackets();
-    stats->out_bytes = req->get_vifr_obytes();
+    stats->UpdateStats(req->get_vifr_ibytes(), req->get_vifr_ipackets(),
+                       req->get_vifr_obytes(), req->get_vifr_opackets());
     stats->speed = req->get_vifr_speed();
     stats->duplexity = req->get_vifr_duplex();
 }
@@ -80,7 +78,7 @@ void AgentStatsSandeshContext::IfMsgHandler(vr_interface_req *req) {
 void AgentStatsSandeshContext::VrfStatsMsgHandler(vr_vrf_stats_req *req) {
     set_marker_id(req->get_vsr_vrf());
     bool vrf_present = true;
-    const VrfEntry *vrf = collector_->agent()->GetVrfTable()->
+    const VrfEntry *vrf = collector_->agent()->vrf_table()->
                           FindVrfFromId(req->get_vsr_vrf());
     if (vrf == NULL) {
         if (req->get_vsr_vrf() != collector_->GetNamelessVrfId()) { 

@@ -122,23 +122,23 @@ void InterfaceTable::Delete(DBEntry *entry, const DBRequest *req) {
 VrfEntry *InterfaceTable::FindVrfRef(const string &name) const {
     VrfKey key(name);
     return static_cast<VrfEntry *>
-        (agent_->GetVrfTable()->FindActiveEntry(&key));
+        (agent_->vrf_table()->FindActiveEntry(&key));
 }
 
 VmEntry *InterfaceTable::FindVmRef(const uuid &uuid) const {
     VmKey key(uuid);
-    return static_cast<VmEntry *>(agent_->GetVmTable()->FindActiveEntry(&key));
+    return static_cast<VmEntry *>(agent_->vm_table()->FindActiveEntry(&key));
 }
 
 VnEntry *InterfaceTable::FindVnRef(const uuid &uuid) const {
     VnKey key(uuid);
-    return static_cast<VnEntry *>(agent_->GetVnTable()->FindActiveEntry(&key));
+    return static_cast<VnEntry *>(agent_->vn_table()->FindActiveEntry(&key));
 }
 
 MirrorEntry *InterfaceTable::FindMirrorRef(const string &name) const {
     MirrorEntryKey key(name);
     return static_cast<MirrorEntry *>
-        (agent_->GetMirrorTable()->FindActiveEntry(&key));
+        (agent_->mirror_table()->FindActiveEntry(&key));
 }
 
 DBTableBase *InterfaceTable::CreateTable(DB *db, const std::string &name) {
@@ -209,7 +209,7 @@ void InterfaceTable::VmInterfaceWalkDone(DBTableBase *partition) {
 }
 
 void InterfaceTable::UpdateVxLanNetworkIdentifierMode() {
-    DBTableWalker *walker = agent_->GetDB()->GetWalker();
+    DBTableWalker *walker = agent_->db()->GetWalker();
     if (walkid_ != DBTableWalker::kInvalidWalkerId) {
         walker->WalkCancel(walkid_);
     }
@@ -229,7 +229,7 @@ Interface::Interface(Type type, const uuid &uuid, const string &name,
     vrf_(vrf), label_(MplsTable::kInvalidLabel), 
     l2_label_(MplsTable::kInvalidLabel), ipv4_active_(true), l2_active_(true),
     id_(kInvalidIndex), dhcp_enabled_(true), dns_enabled_(true), mac_(),
-    os_index_(kInvalidIndex), test_oper_state_(true) { 
+    os_index_(kInvalidIndex), admin_state_(true), test_oper_state_(true) { 
 }
 
 Interface::~Interface() { 
@@ -269,8 +269,7 @@ void Interface::GetOsParams(Agent *agent) {
 #endif
         LOG(ERROR, "Error <" << errno << ": " << strerror(errno) << 
             "> querying mac-address for interface <" << name_ << ">");
-        os_index_ = Interface::kInvalidIndex;
-        bzero(&mac_, sizeof(mac_));
+        os_oper_state_ = false;
         close(fd);
         return;
     }
@@ -279,8 +278,6 @@ void Interface::GetOsParams(Agent *agent) {
     if (ioctl(fd, SIOCGIFFLAGS, (void *)&ifr) < 0) {
         LOG(ERROR, "Error <" << errno << ": " << strerror(errno) << 
             "> querying mac-address for interface <" << name_ << ">");
-        os_index_ = Interface::kInvalidIndex;
-        bzero(&mac_, sizeof(mac_));
         os_oper_state_ = false;
         close(fd);
         return;
@@ -297,7 +294,11 @@ void Interface::GetOsParams(Agent *agent) {
 #elif defined(__FreeBSD__)
     memcpy(mac_.octet, ifr.ifr_addr.sa_data, ETHER_ADDR_LEN);
 #endif
-    os_index_ = if_nametoindex(name_.c_str());
+    if (os_index_ == kInvalidIndex) {
+        int idx = if_nametoindex(name_.c_str());
+        if (idx)
+            os_index_ = idx;
+    }
 }
 
 void Interface::SetKey(const DBRequestKey *key) { 
@@ -315,12 +316,29 @@ uint32_t Interface::vrf_id() const {
     return vrf_->vrf_id();
 }
 
+void InterfaceTable::set_update_floatingip_cb(UpdateFloatingIpFn fn) {
+    update_floatingip_cb_ = fn;
+}
+
+const InterfaceTable::UpdateFloatingIpFn &InterfaceTable::update_floatingip_cb()
+    const { 
+    return update_floatingip_cb_;
+}
+
 /////////////////////////////////////////////////////////////////////////////
 // Pkt Interface routines
 /////////////////////////////////////////////////////////////////////////////
 DBEntryBase::KeyPtr PacketInterface::GetDBRequestKey() const {
     InterfaceKey *key = new PacketInterfaceKey(uuid_, name_);
     return DBEntryBase::KeyPtr(key);
+}
+
+void PacketInterface::PostAdd() {
+    InterfaceNH::CreatePacketInterfaceNh(name_);
+}
+
+void PacketInterface::Delete() {
+    flow_key_nh_= NULL;
 }
 
 // Enqueue DBRequest to create a Pkt Interface
@@ -364,18 +382,18 @@ DBEntryBase::KeyPtr PhysicalInterface::GetDBRequestKey() const {
 
 // Enqueue DBRequest to create a Host Interface
 void PhysicalInterface::CreateReq(InterfaceTable *table, const string &ifname,
-                                  const string &vrf_name) {
+                                  const string &vrf_name, bool persistent) {
     DBRequest req(DBRequest::DB_ENTRY_ADD_CHANGE);
     req.key.reset(new PhysicalInterfaceKey(ifname));
-    req.data.reset(new PhysicalInterfaceData(vrf_name));
+    req.data.reset(new PhysicalInterfaceData(vrf_name, persistent));
     table->Enqueue(&req);
 }
 
 void PhysicalInterface::Create(InterfaceTable *table, const string &ifname,
-                               const string &vrf_name) {
+                               const string &vrf_name, bool persistent) {
     DBRequest req(DBRequest::DB_ENTRY_ADD_CHANGE);
     req.key.reset(new PhysicalInterfaceKey(ifname));
-    req.data.reset(new PhysicalInterfaceData(vrf_name));
+    req.data.reset(new PhysicalInterfaceData(vrf_name, persistent));
     table->Process(req);
 }
 
@@ -475,6 +493,7 @@ void InterfaceTable::AuditDhcpSnoopTable() {
         }
     }
 }
+
 /////////////////////////////////////////////////////////////////////////////
 // Sandesh routines
 /////////////////////////////////////////////////////////////////////////////
@@ -513,6 +532,9 @@ void Interface::SetItfSandeshData(ItfSandeshData &data) const {
     }
     data.set_label(label_);
     data.set_l2_label(l2_label_);
+    if (flow_key_nh()) {
+        data.set_flow_key_idx(flow_key_nh()->id());
+    }
 
     switch (type_) {
     case Interface::PHYSICAL:
@@ -539,6 +561,11 @@ void Interface::SetItfSandeshData(ItfSandeshData &data) const {
         if ((ipv4_active_ == false) ||
             (l2_active_ == false)) {
             string common_reason = "";
+
+            if (!vintf->admin_state()) {
+                common_reason += "admin-down ";
+            }
+
             if (vintf->vn() == NULL) {
                 common_reason += "vn-null ";
             }
@@ -639,6 +666,20 @@ void Interface::SetItfSandeshData(ItfSandeshData &data) const {
         }
         data.set_static_route_list(static_route_list);
 
+        std::vector<StaticRouteSandesh> aap_list;
+        VmInterface::AllowedAddressPairSet::iterator aap_it =
+            vintf->allowed_address_pair_list().list_.begin();
+        while (aap_it != vintf->allowed_address_pair_list().list_.end()) {
+            const VmInterface::AllowedAddressPair &rt = *aap_it;
+            StaticRouteSandesh entry;
+            entry.set_vrf_name(rt.vrf_);
+            entry.set_ip_addr(rt.addr_.to_string());
+            entry.set_prefix(rt.plen_);
+            aap_it++;
+            aap_list.push_back(entry);
+        }
+        data.set_allowed_address_pair_list(aap_list);
+
         if (vintf->fabric_port()) {
             data.set_fabric_port("FabricPort");
         } else {
@@ -678,6 +719,11 @@ void Interface::SetItfSandeshData(ItfSandeshData &data) const {
         break;
     }
     data.set_os_ifindex(os_index_);
+    if (admin_state_) {
+        data.set_admin_state("Enabled");
+    } else {
+        data.set_admin_state("Disabled");
+    }
 }
 
 bool Interface::DBEntrySandesh(Sandesh *sresp, std::string &name) const {

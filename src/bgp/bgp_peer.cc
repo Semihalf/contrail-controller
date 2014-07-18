@@ -25,6 +25,7 @@
 #include "bgp/bgp_session_manager.h"
 #include "bgp/bgp_peer_types.h"
 #include "bgp/bgp_sandesh.h"
+#include "bgp/ermvpn/ermvpn_table.h"
 #include "bgp/evpn/evpn_table.h"
 #include "bgp/inet/inet_table.h"
 #include "bgp/l3vpn/inetvpn_table.h"
@@ -264,6 +265,7 @@ void BgpPeer::MembershipRequestCallback(IPeer *ipeer, BgpTable *table,
         trigger_.Set();
         return;
     }
+
     BgpPeerInfoData peer_info;
     peer_info.set_name(ToUVEKey());
     peer_info.set_send_state("in sync");
@@ -307,6 +309,7 @@ BgpPeer::BgpPeer(BgpServer *server, RoutingInstance *instance,
           state_machine_(BgpObjectFactory::Create<StateMachine>(this)),
           membership_req_pending_(0),
           defer_close_(false),
+          vpn_tables_registered_(false),
           local_as_(config->local_as()),
           peer_as_(config_->peer_as()),
           remote_bgp_id_(0),
@@ -468,6 +471,9 @@ bool BgpPeer::IsFamilyNegotiated(Address::Family family) {
     case Address::EVPN:
         return MpNlriAllowed(BgpAf::L2Vpn, BgpAf::EVpn);
         break;
+    case Address::ERMVPN:
+        return MpNlriAllowed(BgpAf::IPv4, BgpAf::ErmVpn);
+        break;
     default:
         break;
     }
@@ -501,27 +507,43 @@ uint32_t BgpPeer::bgp_identifier() const {
     return remote_bgp_id_;
 }
 
-// CustomClose
 //
 // Customized close routing for BgpPeers.
 //
 // Reset all stored capabilities information and cancel outstanding timers.
 //
 void BgpPeer::CustomClose() {
+    assert(vpn_tables_registered_);
     ResetCapabilities();
     keepalive_timer_->Cancel();
     end_of_rib_timer_->Cancel();
 }
 
-// Close
 //
-// Close this peer by closing all of it's ribs.
+// Close this peer by closing all of it's RIBs.
+//
+// If we haven't registered to VPN tables, do it now before we kick off
+// the peer close. This ensures that we will clean up all the VPN routes
+// when we do eventually perform the peer close. This handles the corner
+// case where the peer has to be closed before VPN tables are registered.
+// Need to do this since we add VPN routes before we've registered to the
+// VPN tables.
+//
+// Note that registering to VPN tables will bump membership_req_pending_
+// in most normal cases i.e. when at least one VPN family is negotiated.
+// Hence we must register to the VPN tables if needed before deciding if
+// we need to defer peer close.
 //
 void BgpPeer::Close() {
+    if (!vpn_tables_registered_) {
+        RegisterToVpnTables(false);
+    }
+
     if (membership_req_pending_) {
         defer_close_ = true;
         return;
     }
+
     peer_close_->Close();
     BgpPeerInfoData peer_info;
     peer_info.set_name(ToUVEKey());
@@ -585,6 +607,18 @@ bool BgpPeer::AcceptSession(BgpSession *session) {
     return state_machine_->PassiveOpen(session);
 }
 
+//
+// Register to tables for negotiated address families.
+//
+// If the route-target family has been negotiated, defer registration to
+// VPN tables till we receive an End-Of-RIB marker for the route-target
+// NLRI or till the EndOfRibTimer expires.  This ensures that we do not
+// start sending VPN routes to the peer till we know what route targets
+// the peer is interested in.
+//
+// Note that received VPN routes are still processed normally even if we
+// haven't registered this BgpPeer to the VPN table in question.
+//
 void BgpPeer::RegisterAllTables() {
     PeerRibMembershipManager *membership_mgr = server_->membership_mgr();
     RoutingInstance *instance = GetRoutingInstance();
@@ -601,6 +635,7 @@ void BgpPeer::RegisterAllTables() {
         }
     }
 
+    vpn_tables_registered_ = false;
     if (IsFamilyNegotiated(Address::RTARGET)) {
         BgpTable *table = instance->GetTable(Address::RTARGET);
         BGP_LOG_PEER_TABLE(this, SandeshLevel::SYS_DEBUG, BGP_LOG_FLAG_TRACE,
@@ -615,6 +650,7 @@ void BgpPeer::RegisterAllTables() {
     } else {
         RegisterToVpnTables(true);
     }
+
     BgpPeerInfoData peer_info;
     peer_info.set_name(ToUVEKey());
     peer_info.set_send_state("not advertising");
@@ -629,11 +665,12 @@ void BgpPeer::SendOpen(TcpSession *session) {
     openmsg.as_num = server->autonomous_system();
     openmsg.holdtime = state_machine_->GetConfiguredHoldTime();
     openmsg.identifier = local_bgp_id_;
-    static const uint8_t cap_mp[4][4] = {
+    static const uint8_t cap_mp[5][4] = {
         { 0, BgpAf::IPv4,  0, BgpAf::Unicast },
         { 0, BgpAf::IPv4,  0, BgpAf::Vpn },
         { 0, BgpAf::L2Vpn, 0, BgpAf::EVpn },
         { 0, BgpAf::IPv4,  0, BgpAf::RTarget },
+        { 0, BgpAf::IPv4,  0, BgpAf::ErmVpn },
     };
 
     BgpProto::OpenMessage::OptParam *opt_param =
@@ -665,6 +702,13 @@ void BgpPeer::SendOpen(TcpSession *session) {
                 new BgpProto::OpenMessage::Capability(
                         BgpProto::OpenMessage::Capability::MpExtension,
                         cap_mp[3], 4);
+        opt_param->capabilities.push_back(cap);
+    }
+    if (LookupFamily(Address::ERMVPN)) {
+        BgpProto::OpenMessage::Capability *cap =
+                new BgpProto::OpenMessage::Capability(
+                        BgpProto::OpenMessage::Capability::MpExtension,
+                        cap_mp[4], 4);
         opt_param->capabilities.push_back(cap);
     }
 
@@ -861,7 +905,6 @@ void BgpPeer::ProcessUpdate(const BgpProto::Update *msg) {
         }
     }
 
-
     RoutingInstance *instance = GetRoutingInstance();
     if (msg->nlri.size() || msg->withdrawn_routes.size()) {
         InetTable *table =
@@ -1015,6 +1058,31 @@ void BgpPeer::ProcessUpdate(const BgpProto::Update *msg) {
             break;
         }
 
+        case Address::ERMVPN: {
+            ErmVpnTable *table;
+            table = static_cast<ErmVpnTable *>(instance->GetTable(family));
+            assert(table);
+
+            vector<BgpProtoPrefix *>::const_iterator it;
+            for (it = nlri->nlri.begin(); it < nlri->nlri.end(); it++) {
+                if (!ErmVpnPrefix::IsValidForBgp((*it)->type)) {
+                    BGP_LOG_PEER(Message, this, SandeshLevel::SYS_WARN,
+                        BGP_LOG_FLAG_ALL, BGP_PEER_DIR_IN,
+                        "ERMVPN: Unsupported route type " << (*it)->type);
+                    continue;
+                }
+                DBRequest req;
+                req.oper = oper;
+                if (oper == DBRequest::DB_ENTRY_ADD_CHANGE)
+                    req.data.reset(new ErmVpnTable::RequestData(attr, flags,
+                                                              0));
+                req.key.reset(new ErmVpnTable::RequestKey(
+                                  ErmVpnPrefix(**it), this));
+                table->Enqueue(&req);
+            }
+            break;
+        }
+
         default:
             continue;
         }
@@ -1030,10 +1098,14 @@ void BgpPeer::EndOfRibTimerErrorHandler(string error_name,
 
 void BgpPeer::RegisterToVpnTables(bool established) {
     CHECK_CONCURRENCY("bgp::StateMachine", "bgp::RTFilter");
-    if (!IsReady()) return;
+
+    if (vpn_tables_registered_)
+        return;
+    vpn_tables_registered_ = true;
 
     PeerRibMembershipManager *membership_mgr = server_->membership_mgr();
     RoutingInstance *instance = GetRoutingInstance();
+
     if (IsFamilyNegotiated(Address::INETVPN)) {
         BgpTable *table = instance->GetTable(Address::INETVPN);
         BGP_LOG_PEER_TABLE(this, SandeshLevel::SYS_DEBUG, BGP_LOG_FLAG_TRACE,
@@ -1041,6 +1113,18 @@ void BgpPeer::RegisterToVpnTables(bool established) {
         if (table) {
             membership_mgr->Register(this, table, policy_, -1,
                 boost::bind(&BgpPeer::MembershipRequestCallback, this, _1, _2, 
+                            established));
+            membership_req_pending_++;
+        }
+    }
+
+    if (IsFamilyNegotiated(Address::ERMVPN)) {
+        BgpTable *table = instance->GetTable(Address::ERMVPN);
+        BGP_LOG_PEER_TABLE(this, SandeshLevel::SYS_DEBUG, BGP_LOG_FLAG_TRACE,
+                           table, "Register peer with the table");
+        if (table) {
+            membership_mgr->Register(this, table, policy_, -1,
+                boost::bind(&BgpPeer::MembershipRequestCallback, this, _1, _2,
                             established));
             membership_req_pending_++;
         }
@@ -1347,6 +1431,7 @@ void BgpPeer::FillNeighborInfo(std::vector<BgpNeighborResp> &nbr_list) const {
     BgpNeighborResp nbr;
     nbr.set_peer(ToString());
     nbr.set_peer_address(peer_key_.endpoint.address().to_string());
+    nbr.set_deleted(IsDeleted());
     nbr.set_peer_asn(peer_as());
     nbr.set_local_address(server_->ToString());
     nbr.set_local_asn(local_as());
