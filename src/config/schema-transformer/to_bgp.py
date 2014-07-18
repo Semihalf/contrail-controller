@@ -52,8 +52,10 @@ except:
     from ordereddict import OrderedDict
 import jsonpickle
 from pysandesh.connection_info import ConnectionState
-from pysandesh.gen_py.connection_info.ttypes import ConnectionStatus, \
-    ConnectionType
+from pysandesh.gen_py.connection_info.ttypes import ConnectionType,\
+    ConnectionStatus, ConnectivityStatus
+from pysandesh.gen_py.connection_info.constants import \
+    ConnectionStatusNames
 from cfgm_common.uve.cfgm_cpuinfo.ttypes import ConfigProcessStatusUVE, \
     ConfigProcessStatus
 
@@ -3303,7 +3305,14 @@ class SchemaTransformer(object):
                            self._SERVICE_CHAIN_UUID_CF]
         conn_pool = pycassa.ConnectionPool(
             SchemaTransformer._KEYSPACE,
-            server_list=self._args.cassandra_server_list)
+            server_list=self._args.cassandra_server_list,
+            max_overflow=10,
+            use_threadlocal=True,
+            prefill=True,
+            pool_size=10,
+            pool_timeout=30,
+            max_retries=-1,
+            timeout=0.5)
 
         rd_consistency = pycassa.cassandra.ttypes.ConsistencyLevel.QUORUM
         wr_consistency = pycassa.cassandra.ttypes.ConsistencyLevel.QUORUM

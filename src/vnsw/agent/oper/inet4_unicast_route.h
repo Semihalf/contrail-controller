@@ -5,6 +5,10 @@
 #ifndef vnsw_inet4_unicast_route_hpp
 #define vnsw_inet4_unicast_route_hpp
 
+class VlanNhRoute;
+class LocalVmRoute;
+class InetInterfaceRoute;
+
 //////////////////////////////////////////////////////////////////
 //  UNICAST INET4
 /////////////////////////////////////////////////////////////////
@@ -50,6 +54,8 @@ public:
     }
     virtual bool EcmpAddPath(AgentPath *path);
     virtual bool EcmpDeletePath(AgentPath *path);
+    void AppendEcmpPath(Agent *agent, AgentPath *path);
+    void DeleteComponentNH(Agent *agent, AgentPath *path);
 
     AgentPath *AllocateEcmpPath(Agent *agent, const AgentPath *path1,
                                 const AgentPath *path2);
@@ -86,6 +92,7 @@ public:
           }
     };
     bool DBEntrySandesh(Sandesh *sresp, Ip4Address addr, uint8_t plen, bool stale) const;
+    const NextHop* GetLocalNextHop() const;
 
 private:
     friend class Inet4UnicastAgentRouteTable;
@@ -122,7 +129,6 @@ public:
     Inet4UnicastRouteEntry *FindRoute(const Ip4Address &ip) { 
         return FindLPM(ip);
     }
-
     Inet4UnicastRouteEntry *FindResolveRoute(const Ip4Address &ip);
     static Inet4UnicastRouteEntry *FindResolveRoute(const string &vrf_name, 
                                                     const Ip4Address &ip);
@@ -156,7 +162,9 @@ public:
                                         const string &vrf_name,
                                         const Ip4Address &src_addr, 
                                         const Ip4Address &grp_addr,
-                                        const string &vn_name);
+                                        const string &vn_name,
+                                        ComponentNHKeyList
+                                        &component_nh_key_list);
     void AddLocalVmRouteReq(const Peer *peer, const string &vm_vrf,
                             const Ip4Address &addr, uint8_t plen,
                             LocalVmRoute *data);

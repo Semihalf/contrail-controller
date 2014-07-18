@@ -29,9 +29,6 @@
 #include <cmn/agent_cmn.h>
 #include <cmn/agent_param.h>
 #include <vgw/cfg_vgw.h>
-#include <uve/agent_stats_collector.h>
-#include <uve/flow_stats_collector.h>
-
 
 using namespace std;
 using namespace boost::property_tree;
@@ -418,6 +415,15 @@ void AgentParam::ParseHeadlessMode() {
     }
 }
 
+void AgentParam::ParseServiceInstance() {
+    GetValueFromTree<string>(si_netns_command_,
+                             "SERVICE-INSTANCE.netns_command");
+    GetValueFromTree<int>(si_netns_workers_,
+                          "SERVICE-INSTANCE.netns_workers");
+    GetValueFromTree<int>(si_netns_timeout_,
+                          "SERVICE-INSTANCE.netns_timeout");
+}
+
 void AgentParam::ParseCollectorArguments
     (const boost::program_options::variables_map &var_map) {
     GetOptValue< vector<string> >(var_map, collector_server_list_,
@@ -520,6 +526,14 @@ void AgentParam::ParseHeadlessModeArguments
     (const boost::program_options::variables_map &var_map) {
     GetOptValue<bool>(var_map, headless_mode_, "DEFAULT.headless_mode");
 }
+
+void AgentParam::ParseServiceInstanceArguments
+    (const boost::program_options::variables_map &var_map) {
+    GetOptValue<string>(var_map, si_netns_command_, "SERVICE-INSTANCE.netns_command");
+    GetOptValue<int>(var_map, si_netns_workers_, "SERVICE-INSTANCE.netns_workers");
+    GetOptValue<int>(var_map, si_netns_timeout_, "SERVICE-INSTANCE.netns_timeout");
+}
+
 // Initialize hypervisor mode based on system information
 // If "/proc/xen" exists it means we are running in Xen dom0
 void AgentParam::InitFromSystem() {
@@ -560,6 +574,7 @@ void AgentParam::InitFromConfig() {
     ParseMetadataProxy();
     ParseFlows();
     ParseHeadlessMode();
+    ParseServiceInstance();
     cout << "Config file <" << config_file_ << "> parsing completed.\n";
     return;
 }
@@ -578,6 +593,7 @@ void AgentParam::InitFromArguments
     ParseDefaultSectionArguments(var_map);
     ParseMetadataProxyArguments(var_map);
     ParseHeadlessModeArguments(var_map);
+    ParseServiceInstanceArguments(var_map);
     return;
 }
 
@@ -745,6 +761,9 @@ void AgentParam::LogConfig() const {
     LOG(DEBUG, "Linklocal Max Vm Flows      : " << linklocal_vm_flows_);
     LOG(DEBUG, "Flow cache timeout          : " << flow_cache_timeout_);
     LOG(DEBUG, "Headless Mode               : " << headless_mode_);
+    LOG(DEBUG, "Service instance netns cmd  : " << si_netns_command_);
+    LOG(DEBUG, "Service instance workers    : " << si_netns_workers_);
+    LOG(DEBUG, "Service instance timeout    : " << si_netns_timeout_);
     if (mode_ == MODE_KVM) {
     LOG(DEBUG, "Hypervisor mode             : kvm");
         return;
@@ -778,10 +797,11 @@ AgentParam::AgentParam(Agent *agent) :
         flow_cache_timeout_(), config_file_(), program_name_(),
         log_file_(), log_local_(false), log_level_(), log_category_(),
         collector_server_list_(), http_server_port_(), host_name_(),
-        agent_stats_interval_(AgentStatsCollector::AgentStatsInterval), 
-        flow_stats_interval_(FlowStatsCollector::FlowStatsInterval),
+        agent_stats_interval_(AgentStatsInterval),
+        flow_stats_interval_(FlowStatsInterval),
         vmware_physical_port_(""), test_mode_(false), debug_(false), tree_(),
-        headless_mode_(false) {
+        headless_mode_(false), si_netns_command_(), si_netns_workers_(0),
+        si_netns_timeout_(0) {
     vgw_config_table_ = std::auto_ptr<VirtualGatewayConfigTable>
         (new VirtualGatewayConfigTable(agent));
 }

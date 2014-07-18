@@ -34,8 +34,6 @@
 #include "sandesh/common/vns_types.h"
 #include "sandesh/common/vns_constants.h"
 
-#include <services/dns_proto.h>
-
 using namespace std;
 using namespace boost::uuids;
 

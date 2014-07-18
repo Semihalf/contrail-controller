@@ -13,6 +13,7 @@
 #include <uve/agent_stats_sandesh_context.h>
 #include <uve/agent_stats_collector.h>
 #include <pkt/agent_stats.h>
+#include <oper/vrf.h>
 
 AgentStatsSandeshContext::AgentStatsSandeshContext(AgentStatsCollector *col) 
     : collector_(col), marker_id_(-1) {

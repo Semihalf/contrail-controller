@@ -34,7 +34,6 @@ public:
     }
     virtual void Shutdown() {
         CHECK_CONCURRENCY("bgp::Config");
-        server_->SessionShutdown();
     }
     virtual void Destroy() {
         CHECK_CONCURRENCY("bgp::Config");
@@ -81,11 +80,8 @@ bool XmppServer::IsPeerCloseGraceful() {
     return enabled;
 }
 
-void XmppServer::SessionShutdown() {
-    TcpServer::Shutdown();
-}
-
 XmppServer::~XmppServer() {
+    STLDeleteElements(&connection_endpoint_map_);
     TcpServer::ClearSessions();
 }
 
@@ -144,8 +140,8 @@ TcpSession *XmppServer::CreateSession() {
 }
 
 void XmppServer::Shutdown() {
+    TcpServer::Shutdown();
     work_queue_.Shutdown();
-    assert(deleter_.get());
     deleter_->Delete();
 }
 
@@ -158,7 +154,7 @@ size_t XmppServer::ConnectionEventCount() const {
     return connection_event_map_.size();
 }
 
-size_t XmppServer::ConnectionsCount() {
+size_t XmppServer::ConnectionsCount() const {
     return connection_map_.size() + deleted_connection_set_.size();
 }
 
@@ -385,4 +381,19 @@ bool XmppServer::DequeueConnection(XmppConnection *connection) {
     }
 
     return true;
+}
+
+XmppConnectionEndpoint *XmppServer::LocateConnectionEndpoint(
+    Ip4Address address) {
+    XmppConnectionEndpointMap::iterator loc =
+        connection_endpoint_map_.find(address);
+    if (loc != connection_endpoint_map_.end())
+        return loc->second;
+
+    XmppConnectionEndpoint *conn_endpoint = new XmppConnectionEndpoint(address);
+    bool result;
+    tie(loc, result) =
+        connection_endpoint_map_.insert(make_pair(address, conn_endpoint));
+    assert(result);
+    return conn_endpoint;
 }

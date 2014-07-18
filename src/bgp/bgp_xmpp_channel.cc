@@ -1718,6 +1718,7 @@ void BgpXmppChannel::ProcessSubscriptionRequest(
                                  BGP_LOG_FLAG_ALL, BGP_PEER_DIR_NA,
                                  "Received registration req without " <<
                                  "unregister : " << table->name());
+                    continue;
                 }
                 loc->second.instance_id = instance_id;
                 loc->second.pending_req = SUBSCRIBE;
@@ -1771,13 +1772,15 @@ void BgpXmppChannel::ProcessSubscriptionRequest(
 void BgpXmppChannel::ReceiveUpdate(const XmppStanza::XmppMessage *msg) {
     CHECK_CONCURRENCY("xmpp::StateMachine");
 
-    //
-    // Make sure that peer is not set for closure already
-    //
+    // Bail if the connection is being deleted. It's not safe to assert
+    // because the Delete method can be called from the main thread.
+    if (channel_->connection() && channel_->connection()->ShutdownPending())
+        return;
+
+    // Make sure that peer is not set for closure already.
     assert(!defer_peer_close_);
     assert(!peer_->IsDeleted());
-    assert(!channel_->connection() || 
-           !channel_->connection()->ShutdownPending());
+
     if (msg->type == XmppStanza::IQ_STANZA) {
         const XmppStanza::XmppMessageIq *iq =
                    static_cast<const XmppStanza::XmppMessageIq *>(msg);
