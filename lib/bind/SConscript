@@ -6,9 +6,9 @@ env = DefaultEnvironment()
 
 config_opts = '--prefix=' + str(Dir('#/build')) + ' --enable-threads' + ' --enable-fixed-rrset'
 
-#.de.TOFIX Fix this on BSD, there is problem with linkage
-# of GSS KRB5, that is why I have turned GSS off
 if sys.platform.startswith('freebsd'):
+    # TODO(md): There is a known bug with gsskrb5 linking on FreeBSD and libgss
+    # has to be disabled for now.
     config_opts += ' --without-gssapi'
     cmd = ('(cd ' + Dir('.').abspath + '; ' + str(Dir(vpath)) +
           '/configure' + ' ' + config_opts + '; gmake clean; gmake; gmake install)')
