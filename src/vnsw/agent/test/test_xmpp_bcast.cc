@@ -22,31 +22,6 @@
 
 using namespace pugi;
 
-void WaitForIdle2(int wait_seconds = 30) {
-    static const int kTimeoutUsecs = 1000;
-    static int envWaitTime;
-
-    if (!envWaitTime) {
-        if (getenv("WAIT_FOR_IDLE")) {
-            envWaitTime = atoi(getenv("WAIT_FOR_IDLE"));
-        } else {
-            envWaitTime = wait_seconds;
-        }
-    }
-
-    if (envWaitTime > wait_seconds) wait_seconds = envWaitTime;
-
-    TaskScheduler *scheduler = TaskScheduler::GetInstance();
-    for (int i = 0; i < ((wait_seconds * 1000000)/kTimeoutUsecs); i++) {
-        if (scheduler->IsEmpty()) {
-            return;
-        }
-        usleep(kTimeoutUsecs);
-    }
-    EXPECT_TRUE(scheduler->IsEmpty());
-}
-
-
 void RouterIdDepInit(Agent *agent) {
 }
 
@@ -1296,6 +1271,8 @@ TEST_F(AgentXmppUnitTest, Test_Update_Olist_Src_Label) {
     client->CompositeNHWait(13);
 
     //verify sub-nh list count
+    nh = const_cast<NextHop *>(rt->GetActiveNextHop());
+    cnh = static_cast<CompositeNH *>(nh);
     ASSERT_TRUE(cnh->ComponentNHCount() == 3);
     ASSERT_TRUE(obj->GetSourceMPLSLabel() == static_cast<uint>(alloc_label+2));
 
@@ -1617,6 +1594,10 @@ TEST_F(AgentXmppUnitTest, Test_Olist_change_with_same_label) {
     client->MplsWait(12);
 
     //verify sub-nh list count ( 2 local-VMs + 2 members in olist )
+    nh = const_cast<NextHop *>(rt_m->GetActiveNextHop());
+    ASSERT_TRUE(nh != NULL);
+    ASSERT_TRUE(nh->GetType() == NextHop::COMPOSITE);
+    cnh = static_cast<CompositeNH *>(nh);
     ASSERT_TRUE(cnh->ComponentNHCount() == 3);
     ASSERT_TRUE(obj->GetSourceMPLSLabel() == static_cast<uint>(alloc_label+50));
 

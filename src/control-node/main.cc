@@ -108,7 +108,7 @@ static void ShutdownServers(
     WaitForIdle();
 
     // Wait until all XMPP connections are cleaned up.
-    for (cnt = 0; xmpp_server->ConnectionsCount() != 0 && cnt < 15; cnt++) {
+    for (cnt = 0; xmpp_server->ConnectionCount() != 0 && cnt < 15; cnt++) {
         sleep(1);
     }
 
@@ -370,7 +370,7 @@ void ControlNodeShutdown() {
 }
 
 // Get control-node's connectivity status with other servers which are critical
-// to the normnal operation. conenction_info library periodically sends this
+// to the normal operation. conenction_info library periodically sends this
 // information as UVEs to the collector for user visibility and assistance
 // during trouble-shooting.
 static void ControlNodeGetConnectivityStatus(
@@ -424,12 +424,12 @@ int main(int argc, char *argv[]) {
     }
 
     ControlNode::SetProgramName(argv[0]);
-    if (options.log_file() == "<stdout>") {
-        LoggingInit();
-    } else {
-        LoggingInit(options.log_file(), options.log_file_size(),
-                    options.log_files_count());
-    }
+    Module::type module = Module::CONTROL_NODE;
+    string module_name = g_vns_constants.ModuleNames.find(module)->second;
+    LoggingInit(options.log_file(), options.log_file_size(),
+                options.log_files_count(), options.use_syslog(),
+                options.syslog_facility(), module_name);
+
     TaskScheduler::Initialize();
     ControlNode::SetDefaultSchedulingPolicy();
     BgpSandeshContext sandesh_context;
@@ -437,7 +437,7 @@ int main(int argc, char *argv[]) {
     /* If Sandesh initialization is not being done via discovery we need to
      * initialize here. We need to do sandesh initialization here for cases
      * (i) When both Discovery and Collectors are configured.
-     * (ii) When both are not configured (to initilialize introspect)
+     * (ii) When both are not configured (to initialize introspect)
      * (iii) When only collector is configured
      */
     if (!options.discovery_server().empty() &&
@@ -446,12 +446,11 @@ int main(int argc, char *argv[]) {
     }
 
     if (sandesh_generator_init) {
-        Module::type module = Module::CONTROL_NODE;
         NodeType::type node_type = 
             g_vns_constants.Module2NodeType.find(module)->second;
         if (options.collectors_configured()) {
             Sandesh::InitGenerator(
-                    g_vns_constants.ModuleNames.find(module)->second,
+                    module_name,
                     options.hostname(),
                     g_vns_constants.NodeTypeNames.find(node_type)->second,
                     g_vns_constants.INSTANCE_ID_DEFAULT,

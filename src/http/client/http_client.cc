@@ -22,8 +22,16 @@ void HttpClientSession::OnRead(Buffer buffer) {
 }
 
 void HttpClientSession::OnEvent(TcpSession *session, Event event) {
+    if (connection_) {
+        connection_->client()->
+            ProcessEvent(boost::bind(&HttpClientSession::OnEventInternal,
+                         this, TcpSessionPtr(session), event));
+    }
+}
+
+void HttpClientSession::OnEventInternal(TcpSessionPtr session, Event event) {
     if (event_cb_ && !event_cb_.empty()) {
-        event_cb_(static_cast<HttpClientSession *>(session), event);
+        event_cb_(static_cast<HttpClientSession *>(session.get()), event);
     }
 
     if (event == CLOSE) {
@@ -153,7 +161,12 @@ int HttpConnection::HttpPost(const std::string &post_string,
     return 0;
 }
 
-int HttpConnection::HttpDelete(std::string &path, bool header, bool timeout,
+int HttpConnection::HttpDelete(const std::string &path, HttpCb cb) {
+    std::vector<std::string> hdr_options;
+    return HttpDelete(path, false, true, hdr_options, cb);
+}
+
+int HttpConnection::HttpDelete(const std::string &path, bool header, bool timeout,
                                std::vector<std::string> &hdr_options,
                                HttpCb cb) {
     const std::string body;
@@ -163,11 +176,14 @@ int HttpConnection::HttpDelete(std::string &path, bool header, bool timeout,
     return 0;
 }
 
+void HttpConnection::ClearCallback() {
+   cb_ = NULL; 
+}
+
 void HttpConnection::HttpProcessInternal(const std::string body, std::string path,
                                          bool header, bool timeout,
                                          std::vector<std::string> hdr_options,
                                          HttpCb cb, http_method method) {
-
     if (client()->AddConnection(this) == false) {
         // connection already exists
         return;
@@ -187,6 +203,7 @@ void HttpConnection::HttpProcessInternal(const std::string body, std::string pat
 
     std::string url = make_url(path);
     set_url(curl_handle_, url.c_str());
+
     // Add header options to the get request
     for (uint32_t i = 0; i < hdr_options.size(); ++i)
         set_header_options(curl_handle_, hdr_options[i].c_str());
@@ -233,7 +250,8 @@ void HttpConnection::AssignData(const char *ptr, size_t size) {
 
     // callback to client
     boost::system::error_code error;
-    cb_(buf_, error);
+    if (cb_ != NULL)
+        cb_(buf_, error);
 }
 
 const std::string &HttpConnection::GetData() {
@@ -328,6 +346,7 @@ bool HttpClient::AddConnection(HttpConnection *conn) {
 }
 
 void HttpClient::RemoveConnection(HttpConnection *connection) {
+    connection->ClearCallback();
     work_queue_.Enqueue(boost::bind(&HttpClient::RemoveConnectionInternal, 
                                      this, connection));
 }

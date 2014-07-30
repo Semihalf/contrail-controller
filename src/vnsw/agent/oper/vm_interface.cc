@@ -338,7 +338,7 @@ static void BuildVrfAndServiceVlanInfo(Agent *agent,
             }
             data->service_vlan_list_.list_.insert
                 (VmInterface::ServiceVlan(rule.vlan_tag, vrf_node->name(), addr,
-                                          32, smac, dmac, false));
+                                          32, smac, dmac));
         }
         break;
     }
@@ -2211,18 +2211,16 @@ VmInterface::ServiceVlan::ServiceVlan() :
 VmInterface::ServiceVlan::ServiceVlan(const ServiceVlan &rhs) :
     ListEntry(rhs.installed_, rhs.del_pending_), tag_(rhs.tag_),
     vrf_name_(rhs.vrf_name_), addr_(rhs.addr_), plen_(rhs.plen_),
-    smac_(rhs.smac_), dmac_(rhs.dmac_), vrf_(rhs.vrf_), label_(rhs.label_),
-    ecmp_(rhs.ecmp_) {
+    smac_(rhs.smac_), dmac_(rhs.dmac_), vrf_(rhs.vrf_), label_(rhs.label_) {
 }
 
 VmInterface::ServiceVlan::ServiceVlan(uint16_t tag, const std::string &vrf_name,
                                       const Ip4Address &addr, uint8_t plen,
                                       const struct ether_addr &smac,
-                                      const struct ether_addr &dmac,
-                                      bool ecmp) :
+                                      const struct ether_addr &dmac) :
     ListEntry(), tag_(tag), vrf_name_(vrf_name), addr_(addr), plen_(plen),
-    smac_(smac), dmac_(dmac), vrf_(NULL), label_(MplsTable::kInvalidLabel),
-    ecmp_(ecmp) {
+    smac_(smac), dmac_(dmac), vrf_(NULL), label_(MplsTable::kInvalidLabel)
+    {
 }
 
 VmInterface::ServiceVlan::~ServiceVlan() {
@@ -2265,20 +2263,15 @@ void VmInterface::ServiceVlan::Activate(VmInterface *interface,
 }
 
 void VmInterface::ServiceVlan::DeActivate(VmInterface *interface) const {
-    if (del_pending_ && label_ != MplsTable::kInvalidLabel) {
+    if (label_ != MplsTable::kInvalidLabel) {
         VrfAssignTable::DeleteVlanReq(interface->GetUuid(), tag_);
         interface->ServiceVlanRouteDel(*this);
         MplsLabel::Delete(label_);
         label_ = MplsTable::kInvalidLabel;
         VlanNH::Delete(interface->GetUuid(), tag_);
-        return;
     }
-
-    if (installed_ == false)
-        return;
-
-    interface->ServiceVlanRouteDel(*this);
     installed_ = false;
+    return;
 }
 
 void VmInterface::ServiceVlanList::Insert(const ServiceVlan *rhs) {
@@ -2335,8 +2328,8 @@ void VmInterface::ServiceVlanRouteAdd(const ServiceVlan &entry) {
     SecurityGroupList sg_id_list;
     CopySgIdList(&sg_id_list);
     PathPreference path_preference;
-    path_preference.set_ecmp(entry.ecmp_);
-    if (entry.ecmp_) {
+    path_preference.set_ecmp(ecmp());
+    if (ecmp()) {
         path_preference.set_preference(PathPreference::HIGH);
     }
     Inet4UnicastAgentRouteTable::AddVlanNHRoute

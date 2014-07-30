@@ -272,10 +272,7 @@ public:
         intf_cfg_table_ = table;
     }
 
-    DomainConfig *domain_config_table() const {return domain_config_table_;}
-    void set_domain_config_table(DomainConfig *table) {
-        domain_config_table_ = table;
-    }
+    DomainConfig *domain_config_table() const;
 
     IntfMirrorCfgTable *interface_mirror_cfg_table() const {
         return intf_mirror_cfg_table_;
@@ -345,6 +342,10 @@ public:
     }
     void set_controller_ifmap_xmpp_server(const std::string &addr, uint8_t idx) {
         xs_addr_[idx] = addr;
+    }
+    void reset_controller_ifmap_xmpp_server(uint8_t idx) {
+        xs_addr_[idx].clear();
+        xs_port_[idx] = 0;
     }
 
     const uint32_t controller_ifmap_xmpp_port(uint8_t idx) const {
@@ -444,6 +445,10 @@ public:
     const std::string &dns_server(uint8_t idx) const {return dns_addr_[idx];}
     void set_dns_server(const std::string &addr, uint8_t idx) {
         dns_addr_[idx] = addr;
+    }
+    void reset_dns_server(uint8_t idx) {
+        dns_addr_[idx].clear();
+        dns_port_[idx] = 0;
     }
 
     const uint32_t dns_server_port(uint8_t idx) const {return dns_port_[idx];}
@@ -718,9 +723,6 @@ private:
     
     // Config DB Table handles
     CfgIntTable *intf_cfg_table_;
-
-    // DomainConfig handle
-    DomainConfig *domain_config_table_;
 
     Ip4Address router_id_;
     uint32_t prefix_len_;

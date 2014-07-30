@@ -38,18 +38,17 @@ XmppConnection::XmppConnection(TcpServer *server,
       local_endpoint_(config->local_endpoint),
       config_(NULL),
       session_(NULL),
-      state_machine_(XmppObjectFactory::Create<XmppStateMachine>(
-          this, config->ClientOnly())),
       keepalive_timer_(TimerManager::CreateTimer(
                            *server->event_manager()->io_service(),
                            "Xmpp keepalive timer")),
       log_uve_(config->logUVE),
       admin_down_(false), 
+      disable_read_(false),
       from_(config->FromAddr),
       to_(config->ToAddr),
-      mux_(XmppObjectFactory::Create<XmppChannelMux>(this)),
-      keepalive_time_(GetDefaultkeepAliveTime()),
-      disable_read_(false) {
+      state_machine_(XmppObjectFactory::Create<XmppStateMachine>(
+          this, config->ClientOnly())),
+      mux_(XmppObjectFactory::Create<XmppChannelMux>(this)) {
 }
 
 XmppConnection::~XmppConnection() {
@@ -86,13 +85,12 @@ void XmppConnection::Shutdown() {
     ManagedDelete();
 }
 
-bool XmppConnection::ShutdownPending() const {
+bool XmppConnection::IsDeleted() const {
     return deleter()->IsDeleted();
 }
 
 bool XmppConnection::MayDelete() const {
-    size_t count = mux_->ReceiverCount();
-    return (count == 0);
+    return (mux_->ReceiverCount() == 0);
 }
 
 XmppSession *XmppConnection::CreateSession() {
@@ -243,25 +241,6 @@ void XmppConnection::SendKeepAlive() {
     LogKeepAliveSend();
 }
 
-//
-// Get the default keepalive time in seconds
-//
-const int XmppConnection::GetDefaultkeepAliveTime() {
-    static bool init_ = false;
-    static int time_ = keepAliveTime;
-
-    if (!init_) {
-
-        // XXX For testing only - Configure through environment variable
-        char *time_str = getenv("XMPP_KEEPALIVE_SECONDS");
-        if (time_str) {
-            time_ = strtoul(time_str, NULL, 0);
-        }
-        init_ = true;
-    }
-    return time_;
-}
-
 bool XmppConnection::KeepAliveTimerExpired() {
 
     // TODO: check timestamp of last received packet.
@@ -279,13 +258,15 @@ void XmppConnection::KeepaliveTimerErrorHanlder(string error_name,
 }
 
 void XmppConnection::StartKeepAliveTimer() {
-    // TODO use negotiated holdtime.
     tbb::spin_mutex::scoped_lock lock(spin_mutex_);
-    if (!session_) return;
+    if (!session_)
+        return;
 
-    if (!keepalive_time_) return;
+    int holdtime_msecs = state_machine_->hold_time_msecs();
+    if (holdtime_msecs <= 0)
+        return;
 
-    keepalive_timer_->Start(keepalive_time_ * 1000,
+    keepalive_timer_->Start(holdtime_msecs / 3,
         boost::bind(&XmppConnection::KeepAliveTimerExpired, this),
         boost::bind(&XmppConnection::KeepaliveTimerErrorHanlder, this, _1, _2));
 }
@@ -329,7 +310,7 @@ void XmppConnection::ReceiveMsg(XmppSession *session, const string &msg) {
             XMPP_MESSAGE_TRACE(XmppRxStream, 
                   session->remote_endpoint().address().to_string(),
                   session->remote_endpoint().port(), msg.size(), msg);
-        }   
+        }
         IncProtoStats((unsigned int)minfo->type);
         state_machine_->OnMessage(session, minfo);
     } else {
@@ -415,14 +396,21 @@ public:
     virtual void Shutdown() {
         CHECK_CONCURRENCY("bgp::Config");
 
-        // Move to XmppConnectionSet if it was in the XmppConnectionMap.
-        if (server_->RemoveConnection(parent_))
-            server_->DeleteConnection(parent_);
+        // If the connection was rejected as duplicate, it will already be in
+        // the ConnectionSet. Non-duplicate connections need to be moved from
+        // from the ConnectionMap into the ConnectionSet.  We add it to the
+        // ConnectionSet and then remove it from ConnectionMap to ensure that
+        // the XmppServer connection count doesn't temporarily become 0. This
+        // is friendly to tests that wait for the XmppServer connection count
+        // to become 0.
+        if (!parent_->duplicate()) {
+            server_->InsertDeletedConnection(parent_);
+            server_->RemoveConnection(parent_);
+        }
 
-        // TODO: Separate xmps::NOT_READY and xmps:TERMINATE (for GR).
         if (parent_->session() || server_->IsPeerCloseGraceful()) {
             server_->NotifyConnectionEvent(parent_->ChannelMux(),
-                                           xmps::NOT_READY);
+                xmps::NOT_READY);
         }
 
         if (parent_->logUVE()) {
@@ -443,7 +431,7 @@ public:
     }
 
     virtual void Destroy() {
-        parent_->Destroy();
+        delete parent_;
     }
 
 private:
@@ -454,6 +442,7 @@ private:
 XmppServerConnection::XmppServerConnection(XmppServer *server,
     const XmppChannelConfig *config)
     : XmppConnection(server, config), 
+      duplicate_(false),
       deleter_(new DeleteActor(server, this)),
       server_delete_ref_(this, server->deleter()) {
     assert(!config->ClientOnly());
@@ -463,7 +452,10 @@ XmppServerConnection::XmppServerConnection(XmppServer *server,
 }
 
 XmppServerConnection::~XmppServerConnection() {
+    CHECK_CONCURRENCY("bgp::Config");
+
     XMPP_INFO(XmppConnectionDelete, "Server", FromString(), ToString());
+    server()->RemoveDeletedConnection(this);
 }
 
 void XmppServerConnection::ManagedDelete() {
@@ -483,13 +475,12 @@ bool XmppServerConnection::IsClient() const {
 }
 
 LifetimeManager *XmppServerConnection::lifetime_manager() {
-    return static_cast<XmppServer *>(server())->lifetime_manager();
+    return server()->lifetime_manager();
 }
 
-void XmppServerConnection::Destroy() {
-    CHECK_CONCURRENCY("bgp::Config");
-    (static_cast<XmppServer *>(server()))->DestroyConnection(this);
-};
+XmppServer *XmppServerConnection::server() {
+    return static_cast<XmppServer *>(server_);
+}
 
 LifetimeActor *XmppServerConnection::deleter() {
     return deleter_.get();
@@ -542,13 +533,13 @@ public:
     }
 
     virtual bool MayDelete() const {
-        return (client_->ConnectionEventCount() == 0 || parent_->MayDelete());
+        return parent_->MayDelete();
     }
 
     virtual void Shutdown() {
         if (parent_->session()) {
-            (static_cast<XmppClient *>(client_))->
-                NotifyConnectionEvent(parent_->ChannelMux(), xmps::NOT_READY);
+            client_->NotifyConnectionEvent(parent_->ChannelMux(),
+                xmps::NOT_READY);
         }
 
         XmppSession *session = NULL;
@@ -556,14 +547,13 @@ public:
             session = parent_->state_machine()->session();
             parent_->state_machine()->clear_session();
         }
-
         if (session) {
             client_->DeleteSession(session);
         }
     }
 
     virtual void Destroy() {
-        parent_->Destroy();
+        delete parent_;
     }
 
 private:
@@ -571,17 +561,20 @@ private:
     XmppClientConnection *parent_;
 };
 
-XmppClientConnection::XmppClientConnection(TcpServer *server,
+XmppClientConnection::XmppClientConnection(XmppClient *server,
     const XmppChannelConfig *config)
     : XmppConnection(server, config), 
-      deleter_(new DeleteActor(static_cast<XmppClient *>(server), this)),
-      server_delete_ref_(this, static_cast<XmppClient *>(server)->deleter()) {
+      deleter_(new DeleteActor(server, this)),
+      server_delete_ref_(this, server->deleter()) {
     assert(config->ClientOnly());
     XMPP_UTDEBUG(XmppConnectionCreate, "Client", FromString(), ToString());
 }
 
 XmppClientConnection::~XmppClientConnection() {
+    CHECK_CONCURRENCY("bgp::Config");
+
     XMPP_INFO(XmppConnectionDelete, "Client", FromString(), ToString());
+    server()->RemoveConnection(this);
 }
 
 void XmppClientConnection::ManagedDelete() {
@@ -601,7 +594,11 @@ bool XmppClientConnection::IsClient() const {
 }
 
 LifetimeManager *XmppClientConnection::lifetime_manager() {
-    return static_cast<XmppClient *>(server())->lifetime_manager();
+    return server()->lifetime_manager();
+}
+
+XmppClient *XmppClientConnection::server() {
+    return static_cast<XmppClient *>(server_);
 }
 
 LifetimeActor *XmppClientConnection::deleter() {
@@ -611,11 +608,6 @@ LifetimeActor *XmppClientConnection::deleter() {
 const LifetimeActor *XmppClientConnection::deleter() const {
     return deleter_.get();
 }
-
-void XmppClientConnection::Destroy() {
-    CHECK_CONCURRENCY("bgp::Config");
-    (static_cast<XmppClient *>(server()))->RemoveConnection(this);
-};
 
 void XmppClientConnection::set_close_reason(const string &close_reason) {
     close_reason_ = close_reason;

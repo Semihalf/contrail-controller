@@ -75,7 +75,9 @@ struct PktType {
 };
 
 struct AgentHdr {
-    AgentHdr() : ifindex(-1), vrf(-1), cmd(-1), cmd_param(-1), nh(-1) {}
+    AgentHdr() :
+        ifindex(-1), vrf(-1), cmd(-1), cmd_param(-1), nh(-1), flow_index(0),
+        mtu(0) {}
     ~AgentHdr() {}
 
     // Fields from agent_hdr
@@ -84,6 +86,8 @@ struct AgentHdr {
     uint16_t            cmd;
     uint32_t            cmd_param;
     uint16_t            nh;
+    uint32_t            flow_index;
+    uint16_t            mtu;
 };
 
 struct TunnelInfo {
@@ -101,6 +105,7 @@ struct TunnelInfo {
 struct PktInfo {
     uint8_t             *pkt;
     uint16_t            len;
+    uint16_t            max_pkt_len;
 
     uint8_t             *data;
     InterTaskMsg        *ipc;
@@ -141,7 +146,7 @@ struct PktInfo {
         struct icmphdr  *icmp;
     } transp;
 
-    PktInfo(uint8_t *msg, std::size_t msg_size);
+    PktInfo(uint8_t *msg, std::size_t msg_size, std::size_t max_size);
     PktInfo(InterTaskMsg *msg);
     virtual ~PktInfo();
 
@@ -166,6 +171,7 @@ public:
         DNS,
         ICMP,
         DIAG,
+        ICMP_ERROR,
         MAX_MODULES
     };
 
@@ -202,7 +208,7 @@ public:
     void Send(uint8_t *msg, std::size_t len, PktModuleName mod);
 
     // identify pkt type and send to the registered handler
-    void HandleRcvPkt(uint8_t*, std::size_t);  
+    void HandleRcvPkt(uint8_t*, std::size_t, std::size_t);  
     void SendMessage(PktModuleName mod, InterTaskMsg *msg); 
 
     bool IsGwPacket(const Interface *intf, uint32_t dst_ip);

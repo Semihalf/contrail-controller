@@ -133,6 +133,7 @@ public:
     const AclDBEntry *GetMirrorCfgAcl() const {return mirror_cfg_acl_.get();};
     VrfEntry *GetVrf() const {return vrf_.get();};
     const std::vector<VnIpam> &GetVnIpam() const { return ipam_; };
+    const VnIpam *GetIpam(const Ip4Address &ip) const;
     bool GetVnHostRoutes(const std::string &ipam,
                          std::vector<OperDhcpOptions::Subnet> *routes) const;
     bool GetIpamName(const Ip4Address &vm_addr, std::string *ipam_name) const;
@@ -141,6 +142,7 @@ public:
     bool GetIpamVdnsData(const Ip4Address &vm_addr, 
                          autogen::IpamType *ipam_type,
                          autogen::VirtualDnsType *vdns_type) const;
+    std::string GetProject() const;
     int GetVxLanId() const;
     bool Resync(); 
     bool VxLanNetworkIdentifierChanged();
@@ -241,7 +243,7 @@ public:
     typedef boost::function<void(IFMapNode *)> Callback;
     
     DomainConfig() {}
-    virtual ~DomainConfig() {}
+    virtual ~DomainConfig();
     void RegisterIpamCb(Callback cb);
     void RegisterVdnsCb(Callback cb);
     void IpamSync(IFMapNode *node);
