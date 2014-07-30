@@ -380,7 +380,9 @@ void BgpXmppChannel::XmppPeer::Close() {
 
 BgpXmppChannel::BgpXmppChannel(XmppChannel *channel, BgpServer *bgp_server,
         BgpXmppChannelManager *manager)
-    : peer_id_(xmps::BGP), channel_(channel), bgp_server_(bgp_server),
+    : channel_(channel),
+      peer_id_(xmps::BGP),
+      bgp_server_(bgp_server),
       peer_(new XmppPeer(bgp_server, this)),
       peer_close_(new PeerClose(this)),
       peer_stats_(new PeerStats(this)),
@@ -1799,7 +1801,7 @@ void BgpXmppChannel::ReceiveUpdate(const XmppStanza::XmppMessage *msg) {
 
     // Bail if the connection is being deleted. It's not safe to assert
     // because the Delete method can be called from the main thread.
-    if (channel_->connection() && channel_->connection()->ShutdownPending())
+    if (channel_->connection() && channel_->connection()->IsDeleted())
         return;
 
     // Make sure that peer is not set for closure already.
@@ -1902,6 +1904,7 @@ void BgpXmppChannelManager::ASNUpdateCallback(as_t old_asn) {
     BOOST_FOREACH(XmppChannelMap::value_type &i, channel_map_) {
         i.second->ASNUpdateCallback(old_asn);
     }
+    xmpp_server_->ClearAllConnections();
 }
 
 void BgpXmppChannelManager::RoutingInstanceCallback(std::string vrf_name,

@@ -1366,7 +1366,7 @@ CompositeNH::KeyPtr CompositeNH::GetDBRequestKey() const {
 
 void CompositeNH::Delete(const DBRequest* req) {
     component_nh_list_.clear();
-    nh_list_populated_ = true;
+    nh_list_populated_ = false;
 }
 
 void CompositeNH::CreateComponentNH(Agent *agent,
@@ -2170,6 +2170,14 @@ void NextHop::SetNHSandeshData(NhSandeshData &data) const {
     }
 
     data.set_ref_count(GetRefCount());
+}
+
+NextHop *NextHopTable::FindNextHop(size_t index) {
+    NextHop *nh = index_table_.At(index);
+    if (nh && nh->IsDeleted() != true) {
+        return nh;
+    }
+    return NULL;
 }
 
 bool NextHop::DBEntrySandesh(Sandesh *sresp, std::string &name) const {

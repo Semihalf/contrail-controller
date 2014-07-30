@@ -196,14 +196,18 @@ bool FlowEntry::ActionRecompute() {
 
     action = data_.match_p.policy_action | data_.match_p.out_policy_action |
         data_.match_p.sg_action_summary |
-        data_.match_p.mirror_action | data_.match_p.out_mirror_action;
-    action &= ~(1 << TrafficAction::VRF_TRANSLATE);
-    action |= data_.match_p.vrf_assign_acl_action;
+        data_.match_p.mirror_action | data_.match_p.out_mirror_action |
+        data_.match_p.vrf_assign_acl_action;
 
     if (action & (1 << TrafficAction::VRF_TRANSLATE) && 
         data_.match_p.action_info.vrf_translate_action_.ignore_acl() == true) {
-        action = (1 << TrafficAction::VRF_TRANSLATE) |
-                 (1 << TrafficAction::PASS);
+        //In case of multi inline service chain, match condition generated on
+        //each of service instance interface takes higher priority than
+        //network ACL. Match condition on the interface would have ignore acl flag
+        //set to avoid applying two ACL for vrf translation
+        action = data_.match_p.vrf_assign_acl_action |
+            data_.match_p.sg_action_summary | data_.match_p.mirror_action |
+            data_.match_p.out_mirror_action;
     }
 
     // Force short flows to DROP
@@ -1512,6 +1516,12 @@ void FlowTable::Init() {
     return;
 }
 
+void FlowTable::InitDone() {
+    max_vm_flows_ =
+        (agent_->ksync()->flowtable_ksync_obj()->flow_table_entries_count() *
+        (uint32_t) agent_->params()->max_vm_flows()) / 100;
+}
+
 void FlowTable::Shutdown() {
 }
 
@@ -2696,9 +2706,6 @@ FlowTable::FlowTable(Agent *agent) :
     intf_listener_id_(), vn_listener_id_(), vm_listener_id_(),
     vrf_listener_id_(), nh_listener_(NULL),
     route_key_(NULL, Ip4Address(), 32, false) {
-    max_vm_flows_ =
-        (agent->ksync()->flowtable_ksync_obj()->flow_table_entries_count() *
-        (uint32_t) agent->params()->max_vm_flows()) / 100;
 }
 
 FlowTable::~FlowTable() {
@@ -2709,4 +2716,3 @@ FlowTable::~FlowTable() {
     agent_->vrf_table()->Unregister(vrf_listener_id_);
     delete nh_listener_;
 }
-

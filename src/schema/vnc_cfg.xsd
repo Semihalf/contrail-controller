@@ -345,6 +345,15 @@ targetNamespace="http://www.contrailsystems.com/2012/VNC-CONFIG/0">
     </xsd:restriction>
 </xsd:simpleType>
 
+<xsd:simpleType name="FloatingIpDnsNotation" default="dashed-ip-tenant-name">
+    <xsd:restriction base="xsd:string">
+        <xsd:enumeration value="dashed-ip"/>
+        <xsd:enumeration value="dashed-ip-tenant-name"/>
+        <xsd:enumeration value="vm-name"/>
+        <xsd:enumeration value="vm-name-tenant-name"/>
+    </xsd:restriction>
+</xsd:simpleType>
+
 <xsd:complexType name="VirtualDnsType">
     <xsd:all>
         <xsd:element name="domain-name"         type="xsd:string"/>
@@ -352,6 +361,7 @@ targetNamespace="http://www.contrailsystems.com/2012/VNC-CONFIG/0">
         <xsd:element name="record-order"        type="DnsRecordOrderType"/>
         <xsd:element name="default-ttl-seconds" type="xsd:integer"/>
         <xsd:element name="next-virtual-DNS"    type="xsd:string"/>
+        <xsd:element name="floating-ip-record"  type="FloatingIpDnsNotation"/>
     </xsd:all>
 </xsd:complexType>
 
@@ -1026,6 +1036,7 @@ targetNamespace="http://www.contrailsystems.com/2012/VNC-CONFIG/0">
 <xsd:complexType name='ServiceInstanceType'> 
     <xsd:sequence>
         <xsd:element name='auto-policy' type="xsd:boolean" default='false'/>
+        <xsd:element name='availability-zone' type='xsd:string'/>
         <xsd:element name='management-virtual-network' type='xsd:string'/>
         <xsd:element name='left-virtual-network' type='xsd:string'/>
         <xsd:element name='left-ip-address' type='IpAddressType'/>

@@ -94,6 +94,11 @@ class SvcMonitor(object):
     def __init__(self, vnc_lib, args=None):
         self._args = args
 
+        if args.cluster_id:
+            self._keyspace = '%s_%s' %(args.cluster_id, SvcMonitor._KEYSPACE)
+        else:
+            self._keyspace = SvcMonitor._KEYSPACE
+
         # api server and cassandra init
         self._vnc_lib = vnc_lib
         self._cassandra_init()
@@ -1003,9 +1008,9 @@ class SvcMonitor(object):
                 pass
     # end _update_static_routes
 
-    def _get_default_security_group(self, proj_obj):
-        domain_name, proj_name = proj_obj.get_fq_name()
-        sg_fq_name = [domain_name, proj_name, "default"]
+    def _get_default_security_group(self, vn_obj):
+        sg_fq_name = vn_obj.get_fq_name()[:-1]
+        sg_fq_name.append('default')
         sg_obj = None
         try:
             sg_obj = self._vnc_lib.security_group_read(fq_name=sg_fq_name)
@@ -1088,7 +1093,7 @@ class SvcMonitor(object):
         st_props = st_obj.get_service_template_properties()
         if (st_props.service_mode in ['in-network', 'in-network-nat'] and
             proj_name != 'default-project'):
-            sg_obj = self._get_default_security_group(proj_obj)
+            sg_obj = self._get_default_security_group(vn_obj)
             vmi_obj.set_security_group(sg_obj)
         if nic['static-route-enable']:
             rt_obj = self._set_static_routes(nic, vmi_obj, proj_obj, si_obj)
@@ -1110,6 +1115,12 @@ class SvcMonitor(object):
                 "Error: Instance IP not allocated for %s %s"
                 % (vm_name, proj_obj.name))
             return
+        si_props = si_obj.get_service_instance_properties()
+        max_instances = si_props.get_scale_out().get_max_instances()
+        if max_instances > 1:
+            iip_obj.set_instance_ip_mode(u'active-active');
+        else:
+            iip_obj.set_instance_ip_mode(u'active-standby');
         iip_obj.add_virtual_machine_interface(vmi_obj)
         self._vnc_lib.instance_ip_update(iip_obj)
 
@@ -1206,12 +1217,12 @@ class SvcMonitor(object):
 
         if self._args.reset_config:
             try:
-                sys_mgr.drop_keyspace(SvcMonitor._KEYSPACE)
+                sys_mgr.drop_keyspace(self._keyspace)
             except pycassa.cassandra.ttypes.InvalidRequestException as e:
                 print "Warning! " + str(e)
 
         try:
-            sys_mgr.create_keyspace(SvcMonitor._KEYSPACE, SIMPLE_STRATEGY,
+            sys_mgr.create_keyspace(self._keyspace, SIMPLE_STRATEGY,
                                     {'replication_factor': str(num_dbnodes)})
         except pycassa.cassandra.ttypes.InvalidRequestException as e:
             print "Warning! " + str(e)
@@ -1221,11 +1232,11 @@ class SvcMonitor(object):
                            self._SVC_SI_CF]
         for cf in column_families:
             try:
-                sys_mgr.create_column_family(SvcMonitor._KEYSPACE, cf)
+                sys_mgr.create_column_family(self._keyspace, cf)
             except pycassa.cassandra.ttypes.InvalidRequestException as e:
                 print "Warning! " + str(e)
 
-        conn_pool = pycassa.ConnectionPool(SvcMonitor._KEYSPACE,
+        conn_pool = pycassa.ConnectionPool(self._keyspace,
                                            self._args.cassandra_server_list,
                                            max_overflow=10,
                                            use_threadlocal=True,
@@ -1367,6 +1378,7 @@ def parse_args(args_str):
                          --log_file <stdout>
                          --use_syslog
                          --syslog_facility LOG_USER
+                         --cluster_id <testbed-name>
                          [--region_name <name>]
                          [--reset_config]
     '''
@@ -1400,6 +1412,7 @@ def parse_args(args_str):
         'use_syslog': False,
         'syslog_facility': Sandesh._DEFAULT_SYSLOG_FACILITY,
         'region_name': None,
+        'cluster_id': '',
         }
     secopts = {
         'use_certs': False,
@@ -1492,6 +1505,8 @@ def parse_args(args_str):
                         help="Tenant name for keystone admin user")
     parser.add_argument("--region_name",
                         help="Region name for openstack API")
+    parser.add_argument("--cluster_id",
+                        help="Used for database keyspace separation")
     args = parser.parse_args(remaining_argv)
     if type(args.cassandra_server_list) is str:
         args.cassandra_server_list = args.cassandra_server_list.split()
@@ -1548,9 +1563,15 @@ def main(args_str=None):
     if not args_str:
         args_str = ' '.join(sys.argv[1:])
     args = parse_args(args_str)
+    if args.cluster_id:
+        client_pfx = args.cluster_id + '-'
+        zk_path_pfx = args.cluster_id + '/'
+    else:
+        client_pfx = ''
+        zk_path_pfx = ''
 
-    _zookeeper_client = ZookeeperClient("svc-monitor", args.zk_server_ip)
-    _zookeeper_client.master_election("/svc-monitor", os.getpid(),
+    _zookeeper_client = ZookeeperClient(client_pfx+"svc-monitor", args.zk_server_ip)
+    _zookeeper_client.master_election(zk_path_pfx+"/svc-monitor", os.getpid(),
                                   run_svc_monitor, args)
 # end main
 

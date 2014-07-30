@@ -41,12 +41,13 @@ const char *XmppDocumentMock::kPubSubNS =
 class NetworkAgentMock::AgentPeer : public BgpXmppChannel {
 public:
     AgentPeer(NetworkAgentMock *parent, XmppChannel *channel)
-        : BgpXmppChannel(channel, NULL, NULL), parent_(parent) {
+        : BgpXmppChannel(channel), parent_(parent) {
         channel->RegisterReceive(xmps::CONFIG,
             boost::bind(&NetworkAgentMock::AgentPeer::ReceiveConfigUpdate,
                         this, _1));
     }
     virtual ~AgentPeer() {
+        channel_->UnRegisterReceive(xmps::CONFIG);
         set_deleted(true);
         Close();
     }
@@ -560,26 +561,17 @@ NetworkAgentMock::~NetworkAgentMock() {
     tbb::mutex::scoped_lock lock(mutex_);
     down_ = true;
     ClearInstances();
-
-    AgentPeer *peer = peer_.get();
-    peer_.release();
-
-    if (peer) {
-        delete peer;
-    }
+    peer_.reset();
     assert(!client_);
 }
 
 bool NetworkAgentMock::ConnectionDestroyed() const {
-    return (client_->ConnectionsCount() == 0);
+    return (client_->ConnectionCount() == 0);
 }
 
 void NetworkAgentMock::Delete() {
     AgentPeer *peer = peer_.get();
-    peer_.release();
-    if (peer) {
-        delete peer;
-    }
+    peer_.reset();
     client_->Shutdown();
     client_->WaitForEmpty();
     task_util::WaitForIdle();

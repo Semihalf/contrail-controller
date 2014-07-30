@@ -154,6 +154,12 @@ void Agent::SetAgentTaskPolicy() {
     };
     SetTaskPolicyOne("Agent::StatsCollector", stats_collector_exclude_list,
                      sizeof(stats_collector_exclude_list) / sizeof(char *));
+
+    const char *metadata_exclude_list[] = {
+        "http::RequestHandlerTask"
+    };
+    SetTaskPolicyOne("http client", metadata_exclude_list,
+                     sizeof(metadata_exclude_list) / sizeof(char *));
 }
 
 void Agent::CreateLifetimeManager() {
@@ -336,7 +342,7 @@ Agent::Agent() :
     mpls_table_(NULL), acl_table_(NULL), mirror_table_(NULL),
     vrf_assign_table_(NULL), mirror_cfg_table_(NULL),
     intf_mirror_cfg_table_(NULL), intf_cfg_table_(NULL), 
-    domain_config_table_(NULL), router_id_(0), prefix_len_(0), 
+    router_id_(0), prefix_len_(0), 
     gateway_id_(0), xs_cfg_addr_(""), xs_idx_(0), xs_addr_(), xs_port_(),
     xs_stime_(), xs_dns_idx_(0), dns_addr_(), dns_port_(),
     dss_addr_(""), dss_port_(0), dss_xs_instances_(0), label_range_(),
@@ -460,4 +466,8 @@ OperDB *Agent::oper_db() const {
 
 void Agent::set_oper_db(OperDB *oper_db) {
     oper_db_ = oper_db;
+}
+
+DomainConfig *Agent::domain_config_table() const {
+    return oper_db_->domain_config_table();
 }

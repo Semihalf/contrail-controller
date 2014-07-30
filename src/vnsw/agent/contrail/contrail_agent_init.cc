@@ -112,9 +112,9 @@ void ContrailAgentInit::InitPeers() {
 void ContrailAgentInit::InitModules() {
     agent_->cfg()->Init();
     agent_->oper_db()->Init();
-    agent_->ksync()->Init(true);
     agent_->pkt()->Init(true);
     agent_->services()->Init(true);
+    agent_->ksync()->Init(true);
     agent_->uve()->Init();
 }
 
@@ -203,6 +203,7 @@ void ContrailAgentInit::InitDone() {
     }
 
     agent_->cfg()->InitDone();
+    agent_->pkt()->InitDone();
 }
 
 // Start init sequence
@@ -232,11 +233,11 @@ void ContrailAgentInit::Init(AgentParam *param, Agent *agent,
 
 // Trigger inititlization in context of DBTable
 void ContrailAgentInit::Start() {
-    if (params_->log_file() == "") {
-        LoggingInit();
-    } else {
-        LoggingInit(params_->log_file());
-    }
+    Module::type module = Module::VROUTER_AGENT;
+    string module_name = g_vns_constants.ModuleNames.find(module)->second;
+    LoggingInit(params_->log_file(), params_->log_files_count(),
+                params_->log_file_size(), params_->use_syslog(),
+                params_->syslog_facility(), module_name);
 
     params_->LogConfig();
     params_->Validate();

@@ -18,7 +18,6 @@ import bottle
 from neutron.common import constants
 from neutron.common import exceptions
 from neutron.api.v2 import attributes as attr
-from neutron.extensions import allowedaddresspairs as addr_pair
 
 from cfgm_common import exceptions as vnc_exc
 from vnc_api.vnc_api import *
@@ -179,7 +178,8 @@ class DBInterface(object):
     Q_URL_PREFIX = '/extensions/ct'
 
     def __init__(self, admin_name, admin_password, admin_tenant_name,
-                 api_srvr_ip, api_srvr_port, user_info=None):
+                 api_srvr_ip, api_srvr_port, user_info=None,
+                 contrail_extensions_enabled=True):
         self._api_srvr_ip = api_srvr_ip
         self._api_srvr_port = api_srvr_port
 
@@ -203,6 +203,8 @@ class DBInterface(object):
         self._db_cache['vnc_projects'] = {}
         self._db_cache['vnc_instance_ips'] = {}
         self._db_cache['vnc_routers'] = {}
+
+        self._contrail_extensions_enabled = contrail_extensions_enabled
 
         # Retry till a api-server is up
         connected = False
@@ -1579,6 +1581,9 @@ class DBInterface(object):
                     sn_ipam['ipam_fq_name'] = ipam_ref['to']
                     extra_dict['contrail:subnet_ipam'].append(sn_ipam)
 
+        if self._contrail_extensions_enabled:
+            net_q_dict.update(extra_dict)
+
         return net_q_dict
     #end _network_vnc_to_neutron
 
@@ -1600,7 +1605,7 @@ class DBInterface(object):
             alloc_pools = None
 
         dhcp_option_list = None
-        if 'dns_nameservers' in subnet_q:
+        if 'dns_nameservers' in subnet_q and subnet_q['dns_nameservers']:
             dhcp_options=[]
             for dns_server in subnet_q['dns_nameservers']:
                 dhcp_options.append(DhcpOptionType(dhcp_option_name='6',
@@ -1609,7 +1614,7 @@ class DBInterface(object):
                 dhcp_option_list = DhcpOptionsListType(dhcp_options)
 
         host_route_list = None
-        if 'host_routes' in subnet_q:
+        if 'host_routes' in subnet_q and subnet_q['host_routes']:
             host_routes=[]
             for host_route in subnet_q['host_routes']:
                 host_routes.append(RouteType(prefix=host_route['destination'],
@@ -1975,11 +1980,11 @@ class DBInterface(object):
             port_obj.set_id_perms(id_perms)
 
 
-        if (addr_pair.ADDRESS_PAIRS in port_q and
-           port_q[addr_pair.ADDRESS_PAIRS]):
+        if ('allowed_address_pairs' in port_q and
+           port_q['allowed_address_pairs']):
             aaps = AllowedAddressPairs()
             aap_array = []
-            for address_pair in port_q[addr_pair.ADDRESS_PAIRS]:
+            for address_pair in port_q['allowed_address_pairs']:
                 mode = u'active-active';
                 if 'mac_address' not in address_pair:
                     mode = u'active-standby';
@@ -2118,7 +2123,11 @@ class DBInterface(object):
     # network api handlers
     def network_create(self, network_q):
         net_obj = self._network_neutron_to_vnc(network_q, CREATE)
-        net_uuid = self._virtual_network_create(net_obj)
+        try:
+            net_uuid = self._virtual_network_create(net_obj)
+        except RefsExistError:
+            self._raise_contrail_exception(400, exceptions.BadRequest(
+                resource='network', msg='Network Already exists'))
 
         if net_obj.router_external:
             fip_pool_obj = FloatingIpPool('floating-ip-pool', net_obj)
@@ -2172,15 +2181,6 @@ class DBInterface(object):
 
     def network_delete(self, net_id):
         net_obj = self._virtual_network_read(net_id=net_id)
-        fip_pools = net_obj.get_floating_ip_pools()
-        if fip_pools:
-            for fip_pool in fip_pools:
-                try:
-                    pool_id = fip_pool['uuid']
-                    self._floating_ip_pool_delete(fip_pool_id=pool_id)
-                except RefsExistError:
-                    self._raise_contrail_exception(409, exceptions.NetworkInUse(net_id=net_id))
-
         self._virtual_network_delete(net_id=net_id)
         try:
             del self._db_cache['q_networks'][net_id]
@@ -2405,10 +2405,75 @@ class DBInterface(object):
     #end subnet_read
 
     def subnet_update(self, subnet_id, subnet_q):
-        ret_subnet_q = self.subnet_read(subnet_id)
         if 'name' in subnet_q:
-            ret_subnet_q['name'] = subnet_q['name']
-        return ret_subnet_q
+            subnet_q['name'] = subnet_q['name']
+
+        if 'gateway_ip' in subnet_q:
+            if subnet_q['gateway_ip'] != None:
+                exc_info = {'type': 'BadRequest',
+                            'message': "update of gateway is not supported"}
+                bottle.abort(400, json.dumps(exc_info))
+ 
+        if 'allocation_pools' in subnet_q:
+            if subnet_q['allocation_pools'] != None:
+                exc_info = {'type': 'BadRequest',
+                            'message': "update of allocation_pools is not allowed"}
+                bottle.abort(400, json.dumps(exc_info))
+
+        subnet_key = self._subnet_vnc_read_mapping(id=subnet_id)
+        net_id = subnet_key.split()[0]
+        net_obj = self._network_read(net_id)
+        ipam_refs = net_obj.get_network_ipam_refs()
+        subnet_found = False
+        if ipam_refs:
+            for ipam_ref in ipam_refs:
+                subnets = ipam_ref['attr'].get_ipam_subnets()
+                for subnet_vnc in subnets:
+                    if self._subnet_vnc_get_key(subnet_vnc,
+                               net_id) == subnet_key:
+                        subnet_found = True
+                        break
+                if subnet_found:
+                    if 'gateway_ip' in subnet_q:
+                        if subnet_q['gateway_ip'] != None:
+                            subnet_vnc.set_default_gateway(subnet_q['gateway_ip'])
+
+                    if 'enable_dhcp' in subnet_q:
+                        if subnet_q['enable_dhcp'] != None:
+                            subnet_vnc.set_enable_dhcp(subnet_q['enable_dhcp'])
+
+                    if 'dns_nameservers' in subnet_q:
+                        if subnet_q['dns_nameservers'] != None:
+                            dhcp_options=[]
+                            for dns_server in subnet_q['dns_nameservers']:
+                                dhcp_options.append(DhcpOptionType(dhcp_option_name='6',
+                                                                   dhcp_option_value=dns_server))
+                            if dhcp_options:
+                                subnet_vnc.set_dhcp_option_list(DhcpOptionsListType(dhcp_options))
+                            else:
+                                subnet_vnc.set_dhcp_option_list(None)
+
+                    if 'host_routes' in subnet_q:
+                        if subnet_q['host_routes'] != None:
+                            host_routes=[]
+                            for host_route in subnet_q['host_routes']:
+                                host_routes.append(RouteType(prefix=host_route['destination'],
+                                                             next_hop=host_route['nexthop']))
+                            if host_routes:
+                                subnet_vnc.set_host_routes(RouteTableType(host_routes))
+                            else:
+                                subnet_vnc.set_host_routes(None)
+
+                    net_obj._pending_field_updates.add('network_ipam_refs')
+                    self._virtual_network_update(net_obj)
+                    ret_subnet_q = self._subnet_vnc_to_neutron(
+                                        subnet_vnc, net_obj, ipam_ref['to'])
+
+                    self._db_cache['q_subnets'][subnet_id] = ret_subnet_q
+                    return ret_subnet_q
+
+        return {}
+    # end subnet_update
 
     def subnet_delete(self, subnet_id):
         subnet_key = self._subnet_vnc_read_mapping(id=subnet_id)
@@ -2876,7 +2941,7 @@ class DBInterface(object):
         except NoIdError:
             self._raise_contrail_exception(404, RouterNotFound(router_id=rtr_id))
 
-        self._router_set_external_gateway(rtr_id)
+        self._router_clear_external_gateway(rtr_obj)
         self._logical_router_delete(rtr_id=rtr_id)
         try:
             del self._db_cache['q_routers'][rtr_id]
@@ -2902,10 +2967,13 @@ class DBInterface(object):
                 # just read and populate ret_list
                 # prune is skipped because all_rtrs is empty
                 for rtr_id in filters['id']:
-                    rtr_obj = self._logical_router_read(rtr_id)
-                    rtr_info = self._router_vnc_to_neutron(rtr_obj,
-                                                            rtr_repr='LIST')
-                    ret_list.append(rtr_info)
+                    try:
+                        rtr_obj = self._logical_router_read(rtr_id)
+                        rtr_info = self._router_vnc_to_neutron(rtr_obj,
+                                                               rtr_repr='LIST')
+                        ret_list.append(rtr_info)
+                    except NoIdError:
+                        pass
             else:
                 # read all routers in project, and prune below
                 project_ids = [str(uuid.UUID(id)) \
@@ -2920,10 +2988,13 @@ class DBInterface(object):
             # required routers are specified, just read and populate ret_list
             # prune is skipped because all_rtrs is empty
             for rtr_id in filters['id']:
-                rtr_obj = self._logical_router_read(rtr_id)
-                rtr_info = self._router_vnc_to_neutron(rtr_obj,
-                                                        rtr_repr='LIST')
-                ret_list.append(rtr_info)
+                try:
+                    rtr_obj = self._logical_router_read(rtr_id)
+                    rtr_info = self._router_vnc_to_neutron(rtr_obj,
+                                                           rtr_repr='LIST')
+                    ret_list.append(rtr_info)
+                except NoIdError:
+                    pass
         else:
             # read all routers in all projects
             dom_projects = self._project_list_domain(None)
@@ -3595,10 +3666,6 @@ class DBInterface(object):
                 for p_id in project_ids:
                     project_sgs = self._security_group_list_project(p_id)
                     all_sgs.append(project_sgs)
-            elif filters and 'name' in filters:
-                p_id = str(uuid.UUID(context['tenant']))
-                project_sgs = self._security_group_list_project(p_id)
-                all_sgs.append(project_sgs)
             else:  # no filters
                 all_sgs.append(self._security_group_list_project(None))
 
