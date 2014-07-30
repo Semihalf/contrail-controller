@@ -17,5 +17,4 @@ libfilter = env.Library('filter',
                       #'policy.cc',
                       ])
 
-# TODO(md): Temporarily disable tests
-# env.SConscript('test/SConscript', exports='AgentEnv', duplicate = 0)
+env.SConscript('test/SConscript', exports='AgentEnv', duplicate = 0)

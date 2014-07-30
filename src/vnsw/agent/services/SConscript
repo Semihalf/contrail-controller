@@ -36,5 +36,4 @@ libservices = env.Library('agent_services',
                       ])
 env.Requires('metadata_proxy.o', '#build/include/isc')
 
-# TODO(md): temporarily disabled
-#env.SConscript('test/SConscript', exports='AgentEnv', duplicate = 0)
+env.SConscript('test/SConscript', exports='AgentEnv', duplicate = 0)

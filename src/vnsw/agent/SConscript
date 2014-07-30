@@ -262,7 +262,6 @@ AgentEnv.AddMethod(RemoveExceptionFlagFn, 'RemoveExceptionFlag')
 
 Export('AgentEnv')
 
-# TODO(md): temporarily removed test subdirectory.
 ##########################################################################
 # Sub-directories to build
 ##########################################################################
@@ -280,6 +279,7 @@ subdirs = [
     'services',
     'uve',
     'vgw',
+    'test',
 ]
 
 for dir in subdirs:
@@ -362,9 +362,7 @@ def code_coverage(target, source, env):
               ' -t "test coverage" --num-spaces 4 agent_test.info')
 
 
-#.de.TOFIX Disabled tests
-if False:
-#if env['OPT'] == 'coverage':
+if env['OPT'] == 'coverage':
     #import pdb; pdb.set_trace()
     test_coverage = env.Command(Dir('test_coverage'), '', code_coverage)
     env.AlwaysBuild(test_coverage)
@@ -409,9 +407,9 @@ def run_ut(target, source, env):
 
 
 
-#run_ut = env.Command(Dir('run_ut'), '', run_ut)
-#env.AlwaysBuild(run_ut)
-#env.Alias('agent:run_ut', run_ut)
+run_ut = env.Command(Dir('run_ut'), '', run_ut)
+env.AlwaysBuild(run_ut)
+env.Alias('agent:run_ut', run_ut)
 
 # Local Variables:
 # mode: python
