@@ -39,5 +39,4 @@ libservices = env.Library('pkt',
                  exceptions_objs +
                  pkt_srcs)
 
-# TODO(md): temporarily disabled
-#env.SConscript('test/SConscript', exports='AgentEnv', duplicate = 0)
+env.SConscript('test/SConscript', exports='AgentEnv', duplicate = 0)

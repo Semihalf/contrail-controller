@@ -29,5 +29,4 @@ libkstate = env.Library('kstate',
                          'drop_stats_kstate.cc'
                         ])
 
-# TODO(md): temporarily disabled
-#env.SConscript('test/SConscript', exports='AgentEnv', duplicate=0)
+env.SConscript('test/SConscript', exports='AgentEnv', duplicate=0)

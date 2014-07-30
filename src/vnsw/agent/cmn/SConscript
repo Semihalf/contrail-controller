@@ -16,5 +16,4 @@ vnswcmn_sources = ['agent.cc', 'agent_db.cc', 'agent_factory.cc',
 
 vnswcmn = env.Library('vnswcmn', except_objs + vnswcmn_sources)
 
-# TODO(md): temporarily disabled
-#env.SConscript('test/SConscript', exports='AgentEnv', duplicate = 0)
+env.SConscript('test/SConscript', exports='AgentEnv', duplicate = 0)

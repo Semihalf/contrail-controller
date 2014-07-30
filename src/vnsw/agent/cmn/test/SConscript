@@ -4,9 +4,6 @@
 
 # -*- mode: python; -*-
 
-# TODO(md): Temporarily disabled tests
-return
-
 import re
 
 Import('AgentEnv')
