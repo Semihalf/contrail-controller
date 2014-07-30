@@ -10,6 +10,7 @@ from gevent import ssl, monkey
 monkey.patch_all()
 import gevent
 import gevent.event
+from gevent.queue import Queue
 import sys
 import time
 from pprint import pformat
@@ -50,6 +51,7 @@ from pycassa.system_manager import *
 from datetime import datetime
 from pycassa.util import *
 
+import amqp.exceptions
 import kombu
 
 #from cfgm_common import vnc_type_conv
@@ -58,6 +60,9 @@ import cfgm_common.imid
 from cfgm_common.exceptions import *
 from gen.vnc_ifmap_client_gen import *
 from gen.vnc_cassandra_client_gen import *
+from pysandesh.connection_info import ConnectionState
+from pysandesh.gen_py.connection_info.ttypes import ConnectionStatus, \
+    ConnectionType
 
 import logging
 logger = logging.getLogger(__name__)
@@ -86,6 +91,10 @@ class VncIfmapClient(VncIfmapClientGen):
 
         self._db_client_mgr = db_client_mgr
 
+        ConnectionState.update(conn_type = ConnectionType.IFMAP,
+            name = 'IfMap', status = ConnectionStatus.INIT, message = '',
+            server_addrs = ["%s:%s" % (ifmap_srv_ip, ifmap_srv_port)])
+
         # launch mapserver
         if ifmap_srv_loc:
             self._launch_mapserver(ifmap_srv_ip, ifmap_srv_port, ifmap_srv_loc)
@@ -102,6 +111,10 @@ class VncIfmapClient(VncIfmapClientGen):
                 connected = True
             except socket.error as e:
                 time.sleep(3)
+
+        ConnectionState.update(conn_type = ConnectionType.IFMAP,
+            name = 'IfMap', status = ConnectionStatus.UP, message = '',
+            server_addrs = ["%s:%s" % (ifmap_srv_ip, ifmap_srv_port)])
 
         mapclient.set_session_id(newSessionResult(result).get_session_id())
         mapclient.set_publisher_id(newSessionResult(result).get_publisher_id())
@@ -225,6 +238,8 @@ class VncIfmapClient(VncIfmapClientGen):
     # end _delete_id_self_meta
 
     def _publish_id_pair_meta(self, id1, id2, metadata):
+        if 'ERROR' in [id1, id2]:
+            return
         mapclient = self._mapclient
 
         pubreq = PublishRequest(mapclient.get_session_id(),
@@ -400,6 +415,10 @@ class VncCassandraClient(VncCassandraClientGen):
         # 1. Ensure keyspace and schema/CFs exist
         # 2. Read in persisted data and publish to ifmap server
 
+        ConnectionState.update(conn_type = ConnectionType.DATABASE,
+            name = 'Cassandra', status = ConnectionStatus.INIT, message = '',
+            server_addrs = server_list)
+
         uuid_ks_name = VncCassandraClient._UUID_KEYSPACE_NAME
         obj_uuid_cf_info = (VncCassandraClient._OBJ_UUID_CF_NAME, None)
         obj_fq_name_cf_info = (VncCassandraClient._OBJ_FQ_NAME_CF_NAME, None)
@@ -422,10 +441,12 @@ class VncCassandraClient(VncCassandraClientGen):
 
         uuid_pool = pycassa.ConnectionPool(
             uuid_ks_name, server_list, max_overflow=-1,
-            pool_timeout=300, max_retries=100, timeout=300)
+            use_threadlocal=True, prefill=True, pool_size=20, pool_timeout=30,
+            max_retries=-1, timeout=0.5)
         useragent_pool = pycassa.ConnectionPool(
             useragent_ks_name, server_list, max_overflow=-1,
-            pool_timeout=300, max_retries=100, timeout=300)
+            use_threadlocal=True, prefill=True, pool_size=20, pool_timeout=30,
+            max_retries=-1, timeout=0.5)
 
         rd_consistency = pycassa.cassandra.ttypes.ConsistencyLevel.QUORUM
         wr_consistency = pycassa.cassandra.ttypes.ConsistencyLevel.QUORUM
@@ -446,6 +467,10 @@ class VncCassandraClient(VncCassandraClientGen):
             uuid_pool, VncCassandraClient._SUBNET_CF_NAME,
             read_consistency_level = rd_consistency,
             write_consistency_level = wr_consistency)
+
+        ConnectionState.update(conn_type = ConnectionType.DATABASE,
+            name = 'Cassandra', status = ConnectionStatus.UP, message = '',
+            server_addrs = server_list)
 
     # end _cassandra_init
 
@@ -821,13 +846,33 @@ class VncCassandraClient(VncCassandraClientGen):
 
 
 class VncKombuClient(object):
-    def _init_server_conn(self, rabbit_ip, rabbit_user, rabbit_password, rabbit_vhost):
+    def _init_server_conn(self, rabbit_ip, rabbit_port, rabbit_user, rabbit_password, rabbit_vhost,
+                          delete_old_q=False):
+        ConnectionState.update(conn_type = ConnectionType.DATABASE,
+            name = 'RabbitMQ', status = ConnectionStatus.INIT, message = '',
+            server_addrs = ["%s:%s" % (rabbit_ip, rabbit_port)])
+
         while True:
             try:
                 self._conn = kombu.Connection(hostname=rabbit_ip,
+                                              port=rabbit_port,
                                               userid=rabbit_user,
                                               password=rabbit_password,
                                               virtual_host=rabbit_vhost)
+
+                ConnectionState.update(conn_type = ConnectionType.DATABASE,
+                    name = 'RabbitMQ', status = ConnectionStatus.UP,
+                    message = '',
+                    server_addrs = ["%s:%s" % (rabbit_ip, rabbit_port)])
+
+                if delete_old_q:
+                    bound_q = self._update_queue_obj(self._conn.channel())
+                    try:
+                        bound_q.delete()
+                    except amqp.exceptions.ChannelError as e:
+                        logger.error("Unable to delete the old amqp Q: %s" % str(e))
+                        pass
+
                 self._obj_update_q = self._conn.SimpleQueue(self._update_queue_obj)
 
                 old_subscribe_greenlet = self._dbe_oper_subscribe_greenlet
@@ -841,10 +886,11 @@ class VncKombuClient(object):
                 time.sleep(2)
     # end _init_server_conn
 
-    def __init__(self, db_client_mgr, rabbit_ip, ifmap_db, rabbit_user, rabbit_password, rabbit_vhost):
+    def __init__(self, db_client_mgr, rabbit_ip, rabbit_port, ifmap_db, rabbit_user, rabbit_password, rabbit_vhost):
         self._db_client_mgr = db_client_mgr
         self._ifmap_db = ifmap_db
         self._rabbit_ip = rabbit_ip
+        self._rabbit_port = rabbit_port
         self._rabbit_user = rabbit_user
         self._rabbit_password = rabbit_password
         self._rabbit_vhost = rabbit_vhost
@@ -856,24 +902,46 @@ class VncKombuClient(object):
         q_name = 'vnc_config.%s-%s' %(socket.gethostname(), listen_port)
         self._update_queue_obj = kombu.Queue(q_name, obj_upd_exchange)
 
+        self._publish_queue = Queue()
+        self._dbe_publish_greenlet = gevent.spawn(self._dbe_oper_publish)
         self._dbe_oper_subscribe_greenlet = None
         if self._rabbit_vhost == "__NONE__":
             return
-        self._init_server_conn(self._rabbit_ip, self._rabbit_user, self._rabbit_password, self._rabbit_vhost)
+        self._init_server_conn(self._rabbit_ip, self._rabbit_port, self._rabbit_user, self._rabbit_password, self._rabbit_vhost,
+                               delete_old_q=True)
     # end __init__
 
-    def _obj_update_q_put(self, *args, **kwargs):
+    def _obj_update_q_put(self, oper_info):
         if self._rabbit_vhost == "__NONE__":
             return
+        self._publish_queue.put(oper_info)
+    # end _obj_update_q_put
+
+    def _dbe_oper_publish(self):
         while True:
             try:
-                self._obj_update_q.put(*args, **kwargs)
-                break
+                message = self._publish_queue.get()
+                while True:
+                    try:
+                        self._obj_update_q.put(message, serializer='json')
+                        break
+                    except Exception as e:
+                        log_str = "Disconnected from rabbitmq. Reinitializing connection: %s" % str(e)
+                        logger.warn(log_str)
+                        self._db_client_mgr.config_log_error(log_str)
+                        time.sleep(1)
+                        self._init_server_conn(self._rabbit_ip, self._rabbit_port,
+                            self._rabbit_user, self._rabbit_password, self._rabbit_vhost)
             except Exception as e:
-                logger.info("Disconnected from rabbitmq. Reinitializing connection: %s" % str(e))
+                log_str = "Unknown exception in _dbe_oper_publish greenlet" + str(e)
+                logger.error(log_str)
+                self._db_client_mgr.config_log_error(log_str)
                 time.sleep(1)
-                self._init_server_conn(self._rabbit_ip, self._rabbit_user, self._rabbit_password, self._rabbit_vhost)
-    # end _obj_update_q_put
+    # end _dbe_oper_publish
+
+    def dbe_oper_publish_pending(self):
+        return self._publish_queue.qsize()
+    # end dbe_oper_publish_pending
 
     def _dbe_oper_subscribe(self):
         if self._rabbit_vhost == "__NONE__":
@@ -888,7 +956,7 @@ class VncKombuClient(object):
                     message = queue.get()
                 except Exception as e:
                     logger.info("Disconnected from rabbitmq. Reinitializing connection: %s" % str(e))
-                    self._init_server_conn(self._rabbit_ip, self._rabbit_user, self._rabbit_password, self._rabbit_vhost)
+                    self._init_server_conn(self._rabbit_ip, self._rabbit_port, self._rabbit_user, self._rabbit_password, self._rabbit_vhost)
                     # never reached
                     continue
 
@@ -909,7 +977,7 @@ class VncKombuClient(object):
                         message.ack()
                     except Exception as e:
                         logger.info("Disconnected from rabbitmq. Reinitializing connection: %s" % str(e))
-                        self._init_server_conn(self._rabbit_ip, self._rabbit_user, self._rabbit_password, self._rabbit_vhost)
+                        self._init_server_conn(self._rabbit_ip, self._rabbit_port, self._rabbit_user, self._rabbit_password, self._rabbit_vhost)
                         # never reached
 
     #end _dbe_oper_subscribe
@@ -917,7 +985,7 @@ class VncKombuClient(object):
     def dbe_create_publish(self, obj_type, obj_ids, obj_dict):
         oper_info = {'oper': 'CREATE', 'type': obj_type, 'obj_dict': obj_dict}
         oper_info.update(obj_ids)
-        self._obj_update_q_put(oper_info, serializer='json')
+        self._obj_update_q_put(oper_info)
     # end dbe_create_publish
 
     def _dbe_create_notification(self, obj_info):
@@ -937,7 +1005,7 @@ class VncKombuClient(object):
     def dbe_update_publish(self, obj_type, obj_ids):
         oper_info = {'oper': 'UPDATE', 'type': obj_type}
         oper_info.update(obj_ids)
-        self._obj_update_q_put(oper_info, serializer='json')
+        self._obj_update_q_put(oper_info)
     # end dbe_update_publish
 
     def _dbe_update_notification(self, obj_info):
@@ -963,7 +1031,7 @@ class VncKombuClient(object):
     def dbe_delete_publish(self, obj_type, obj_ids, obj_dict):
         oper_info = {'oper': 'DELETE', 'type': obj_type, 'obj_dict': obj_dict}
         oper_info.update(obj_ids)
-        self._obj_update_q_put(oper_info, serializer='json')
+        self._obj_update_q_put(oper_info)
     # end dbe_delete_publish
 
     def _dbe_delete_notification(self, obj_info):
@@ -1004,12 +1072,16 @@ class VncZkClient(object):
         self._subnet_allocators = {}
     # end __init__
 
-    def create_subnet_allocator(self, subnet, first, last):
+    def create_subnet_allocator(self, subnet, subnet_alloc_list,
+                                addr_from_start):
         # TODO handle subnet resizing change, ignore for now
         if subnet not in self._subnet_allocators:
+            if addr_from_start is None:
+                addr_from_start = False
             self._subnet_allocators[subnet] = IndexAllocator(
                 self._zk_client, self._SUBNET_PATH+'/'+subnet+'/',
-                size=last-first, start_idx=first, reverse=True)
+                size=0, start_idx=0, reverse=not addr_from_start,
+                alloc_list=subnet_alloc_list)
     # end create_subnet_allocator
 
     def delete_subnet_allocator(self, subnet):
@@ -1065,7 +1137,7 @@ class VncZkClient(object):
 class VncDbClient(object):
     def __init__(self, api_svr_mgr, ifmap_srv_ip, ifmap_srv_port, uname,
                  passwd, cass_srv_list,
-                 rabbit_server, rabbit_user, rabbit_password, rabbit_vhost, 
+                 rabbit_server, rabbit_port, rabbit_user, rabbit_password, rabbit_vhost,
                  reset_config=False, ifmap_srv_loc=None,
                  zk_server_ip=None):
 
@@ -1095,7 +1167,7 @@ class VncDbClient(object):
         self._cassandra_db = VncCassandraClient(
             self, cass_srv_list, reset_config)
 
-        self._msgbus = VncKombuClient(self, rabbit_server, self._ifmap_db,
+        self._msgbus = VncKombuClient(self, rabbit_server, rabbit_port, self._ifmap_db,
                                       rabbit_user, rabbit_password,
                                       rabbit_vhost)
         self._zk_db = VncZkClient(api_svr_mgr._args.worker_id, zk_server_ip,
@@ -1174,13 +1246,7 @@ class VncDbClient(object):
             (ok, obj_dicts) = method([obj_uuid])
             obj_dict = obj_dicts[0]
 
-            # TODO remove backward compat create mapping in zk
-            try:
-                self._zk_db.create_fq_name_to_uuid_mapping(obj_type,
-                                      obj_dict['fq_name'], obj_uuid)
-            except ResourceExistsError:
-                pass
-
+            # TODO remove backward compat (use RT instead of VN->LR ref)
             if (obj_type == 'virtual_network' and
                 'logical_router_refs' in obj_dict):
                 for router in obj_dict['logical_router_refs']:
@@ -1249,9 +1315,8 @@ class VncDbClient(object):
                 ok = self.set_uuid(obj_type, obj_dict, uuid.UUID(uuid_requested), False)
             else:
                 (ok, obj_uuid) = self._alloc_set_uuid(obj_type, obj_dict)
-        except ResourceExistsError:
-            return (409, '' + pformat(obj_dict['fq_name']) +
-                ' already exists with uuid: ' + obj_dict['uuid'])
+        except ResourceExistsError as e:
+            return (409, str(e))
 
         parent_type = obj_dict.get('parent_type', None)
         method_name = obj_type.replace('-', '_')
@@ -1366,6 +1431,10 @@ class VncDbClient(object):
         pass
     # end dbe_cache_invalidate
 
+    def dbe_oper_publish_pending(self):
+        return self._msgbus.dbe_oper_publish_pending()
+    # end dbe_oper_publish_pending
+
     def useragent_kv_store(self, key, value):
         self._cassandra_db.useragent_kv_store(key, value)
     # end useragent_kv_store
@@ -1386,8 +1455,10 @@ class VncDbClient(object):
         self._zk_db.subnet_free_req(subnet, addr)
     # end subnet_free_req
 
-    def subnet_create_allocator(self, subnet, first, last):
-        self._zk_db.create_subnet_allocator(subnet, first, last)
+    def subnet_create_allocator(self, subnet, subnet_alloc_list,
+                                addr_from_start):
+        self._zk_db.create_subnet_allocator(subnet, subnet_alloc_list,
+                                            addr_from_start)
     # end subnet_create_allocator
 
     def subnet_delete_allocator(self, subnet):
@@ -1461,6 +1532,10 @@ class VncDbClient(object):
         self._api_svr_mgr.config_object_error(
             id, fq_name_str, obj_type, operation, err_str)
     # end config_object_error
+
+    def config_log_error(self, err_str):
+        self._api_svr_mgr.config_log_error(err_str)
+    # end config_log_error
 
     def get_server_port(self):
         return self._api_svr_mgr.get_server_port()

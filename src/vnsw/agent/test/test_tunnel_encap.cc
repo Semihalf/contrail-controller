@@ -65,7 +65,7 @@ public:
     virtual void SetUp() {
         agent = Agent::GetInstance();
         IpamInfo ipam_info[] = {
-            {"1.1.1.0", 24, "1.1.1.200"}
+            {"1.1.1.0", 24, "1.1.1.200", true}
         };
 
         client->Reset();
@@ -114,23 +114,21 @@ public:
 
     void AddResolveRoute(const Ip4Address &server_ip, uint32_t plen) {
         Agent::GetInstance()->
-            GetDefaultInet4UnicastRouteTable()->AddResolveRoute(
-                Agent::GetInstance()->GetDefaultVrf(), server_ip, plen);
+            fabric_inet4_unicast_table()->AddResolveRoute(
+                Agent::GetInstance()->fabric_vrf_name(), server_ip, plen);
         client->WaitForIdle();
     }
 
     void AddRemoteVmRoute(TunnelType::TypeBmap l3_bmap, 
                           TunnelType::TypeBmap l2_bmap) {
-        Agent::GetInstance()->GetDefaultInet4UnicastRouteTable()->
-            AddRemoteVmRouteReq(Agent::GetInstance()->local_peer(), 
-                                vrf_name_, remote_vm_ip_, 32, server1_ip_,
-                                l3_bmap, 1000, vrf_name_,
-                                SecurityGroupList());
+        Inet4TunnelRouteAdd(Agent::GetInstance()->local_peer(), 
+                            vrf_name_, remote_vm_ip_, 32, server1_ip_,
+                            l3_bmap, 1000, vrf_name_,
+                            SecurityGroupList(), PathPreference());
         client->WaitForIdle();
 
-        Layer2AgentRouteTable::AddRemoteVmRouteReq(
-            Agent::GetInstance()->local_peer(), vrf_name_,
-            l2_bmap, server1_ip_, 2000, *remote_vm_mac_, remote_vm_ip_, 32);
+        Layer2TunnelRouteAdd(Agent::GetInstance()->local_peer(), vrf_name_,
+                             l2_bmap, server1_ip_, 2000, *remote_vm_mac_, remote_vm_ip_, 32);
         client->WaitForIdle();
 
         TunnelOlist olist_map;
@@ -146,18 +144,21 @@ public:
                             IpAddress::from_string("0.0.0.0").to_v4(),
                             1112, olist_map);
         AddArp("8.8.8.8", "00:00:08:08:08:08", 
-               Agent::GetInstance()->GetIpFabricItfName().c_str());
+               Agent::GetInstance()->fabric_interface_name().c_str());
         client->WaitForIdle();
     }
 
     void DeleteRemoteVmRoute() {
-        Agent::GetInstance()->GetDefaultInet4UnicastRouteTable()->
+        Agent::GetInstance()->fabric_inet4_unicast_table()->
             DeleteReq(Agent::GetInstance()->local_peer(), vrf_name_,
-                      remote_vm_ip_, 32);
+                      remote_vm_ip_, 32, NULL);
         client->WaitForIdle();
         Layer2AgentRouteTable::DeleteReq(Agent::GetInstance()->local_peer(), 
                                          vrf_name_,
-                                         *remote_vm_mac_);
+                                         *remote_vm_mac_, NULL);
+        client->WaitForIdle();
+        DelArp("8.8.8.8", "00:00:08:08:08:08", 
+               Agent::GetInstance()->fabric_interface_name().c_str());
         client->WaitForIdle();
     }
 
@@ -236,36 +237,25 @@ public:
     void VerifyMulticastRoutes(TunnelType::Type type) {
         Inet4MulticastRouteEntry *mc_rt = MCRouteGet("vrf1", "255.255.255.255");
         ASSERT_TRUE(mc_rt != NULL);
-        CompositeNHKey flood_fabric_key(vrf_name_, 
-                           IpAddress::from_string("255.255.255.255").to_v4(), 
-                           IpAddress::from_string("0.0.0.0").to_v4(), false,
-                           Composite::FABRIC);
-        const CompositeNH *flood_fabric_cnh = 
-            static_cast<CompositeNH *>(Agent::GetInstance()->GetNextHopTable()->
-                                       FindActiveEntry(&flood_fabric_key));
-        ASSERT_TRUE(flood_fabric_cnh != NULL);
-        const ComponentNH *component_nh = 
-            static_cast<const ComponentNH *>(flood_fabric_cnh->
-                                          GetComponentNHList()->Get(0));
-        ASSERT_TRUE(flood_fabric_cnh->ComponentNHCount() == 1);
-        const TunnelNH *tnh = 
-            static_cast<const TunnelNH *>(component_nh->GetNH());
+        const CompositeNH *flood_cnh =
+            static_cast<const CompositeNH *>(mc_rt->GetActiveNextHop());
+        ASSERT_TRUE(flood_cnh != NULL);
+        ASSERT_TRUE(flood_cnh->ComponentNHCount() == 2);
+        const CompositeNH *flood_fabric_cnh =
+            dynamic_cast<const CompositeNH *>(flood_cnh->GetNH(0));
+        const TunnelNH *tnh = dynamic_cast<const TunnelNH *>(
+            flood_fabric_cnh->GetNH(0));
         ASSERT_TRUE(tnh->GetTunnelType().GetType() == type);
 
-        CompositeNHKey subnet_fabric_key(vrf_name_, 
-                           IpAddress::from_string("1.1.1.255").to_v4(), 
-                           IpAddress::from_string("0.0.0.0").to_v4(), false,
-                           Composite::FABRIC);
-        const CompositeNH *subnet_fabric_cnh = 
-            static_cast<const CompositeNH *>(Agent::GetInstance()->
-                                             GetNextHopTable()->
-                                       FindActiveEntry(&subnet_fabric_key));
-        ASSERT_TRUE(subnet_fabric_cnh != NULL);
-        ASSERT_TRUE(subnet_fabric_cnh->ComponentNHCount() == 1);
-        component_nh = 
-            static_cast<const ComponentNH *>(subnet_fabric_cnh->
-                                             GetComponentNHList()->Get(0));
-        tnh = static_cast<const TunnelNH *>(component_nh->GetNH());
+        Ip4Address subnet_broadcast = Ip4Address::from_string("1.1.1.255");
+        Inet4UnicastRouteEntry *uc_rt =
+            RouteGet("vrf1", subnet_broadcast, 32);
+        const CompositeNH *subnet_cnh =
+            static_cast<const CompositeNH *>(mc_rt->GetActiveNextHop());
+        ASSERT_TRUE(subnet_cnh->ComponentNHCount() == 2);
+        const CompositeNH *subnet_fabric_cnh =
+            dynamic_cast<const CompositeNH *>(subnet_cnh->GetNH(0));
+        tnh = dynamic_cast<const TunnelNH *>(subnet_fabric_cnh->GetNH(0));
         ASSERT_TRUE(tnh->GetTunnelType().GetType() == type);
     }
 
@@ -345,5 +335,7 @@ int main(int argc, char **argv) {
     client = TestInit(init_file, ksync_init, true, false);
     int ret = RUN_ALL_TESTS();
     client->WaitForIdle();
+    TestShutdown();
+    delete client;
     return ret;
 }

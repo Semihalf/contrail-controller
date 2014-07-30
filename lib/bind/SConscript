@@ -6,9 +6,9 @@ env = DefaultEnvironment()
 
 config_opts = '--prefix=' + str(Dir('#/build')) + ' --enable-threads' + ' --enable-fixed-rrset'
 
-#.de.TOFIX Fix this on BSD, there is problem with linkage
-# of GSS KRB5, that is why I have turned GSS off
 if sys.platform.startswith('freebsd'):
+    # TODO(md): There is a known bug with gsskrb5 linking on FreeBSD and libgss
+    # has to be disabled for now.
     config_opts += ' --without-gssapi'
     cmd = ('(cd ' + Dir('.').abspath + '; ' + str(Dir(vpath)) +
           '/configure' + ' ' + config_opts + '; gmake clean; gmake; gmake install)')
@@ -22,8 +22,16 @@ products = [ str(File('#/build/lib/librndc' + env['LIBSUFFIX'])),
              str(File('#/build/lib/libisccfg' + env['LIBSUFFIX'])),
              str(File('#/build/lib/libbind9' + env['LIBSUFFIX'])),
              str(File('#/build/lib/libdns' + env['LIBSUFFIX'])),
-             '#build/include/isc']
+             str(Dir('#build/include/isc'))]
+binproducts = [ str(File('#/build/sbin/named')),
+                str(File('#/build/sbin/rndc'))]
+
+confs = [ 'rndc.conf', 'named.conf' ]
 
 bind_cfg = env.Command('config.status', str(Dir(vpath)), cmd)
-env.SideEffect(products, bind_cfg)
+env.SideEffect(products + binproducts, bind_cfg)
+
+env.Alias('lib/bind:bind', bind_cfg)
+env.Alias('install', env.Install(env['INSTALL_BIN'], binproducts))
+env.Alias('install', env.Install(env['INSTALL_CONF'] + '/dns', confs))
 

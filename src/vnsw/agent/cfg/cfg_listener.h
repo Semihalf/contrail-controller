@@ -9,6 +9,7 @@
 
 class IFMapNode;
 class AgentConfig;
+class AgentDBTable;
 
 class CfgDBState : public DBState {
 public:
@@ -18,7 +19,7 @@ public:
 
 class CfgListener {
 public:
-    CfgListener(AgentConfig *cfg) : agent_cfg_(cfg) { }
+    CfgListener(AgentConfig *cfg);
     virtual ~CfgListener() { }
 
     // Data to register a DBTable listener

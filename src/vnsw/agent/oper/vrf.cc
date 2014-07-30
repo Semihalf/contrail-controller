@@ -13,12 +13,14 @@
 #include <vnc_cfg_types.h>
 
 #include <cfg/cfg_init.h>
+#include <cfg/cfg_listener.h>
 #include <route/route.h>
 #include <oper/route_common.h>
 #include <oper/vn.h>
 #include <oper/vrf.h>
 #include <oper/peer.h>
 #include <oper/mirror_table.h>
+#include <oper/agent_route_walker.h>
 #include <controller/controller_init.h>
 #include <controller/controller_vrf_export.h>
 #include <oper/agent_sandesh.h>
@@ -33,7 +35,7 @@ class VrfEntry::DeleteActor : public LifetimeActor {
   public:
     DeleteActor(VrfEntry *vrf) : 
         LifetimeActor((static_cast<VrfTable *>(vrf->get_table()))->
-                      agent()->GetLifetimeManager()), table_(vrf) {
+                      agent()->lifetime_manager()), table_(vrf) {
     }
     virtual ~DeleteActor() { 
     }
@@ -225,7 +227,7 @@ bool VrfEntry::DeleteTimeout() {
 void VrfEntry::StartDeleteTimer() {
     Agent *agent = (static_cast<VrfTable *>(get_table()))->agent();
     delete_timeout_timer_ = TimerManager::CreateTimer(
-                                *(agent->GetEventManager())->io_service(),
+                                *(agent->event_manager())->io_service(),
                                 "VrfDeleteTimer");
     delete_timeout_timer_->Start(kDeleteTimeout, 
                                  boost::bind(&VrfEntry::DeleteTimeout,
@@ -483,11 +485,11 @@ bool VrfTable::IFNodeToReq(IFMapNode *node, DBRequest &req) {
             continue;
         }
 
-        agent()->GetInterfaceTable()->VmInterfaceVrfSync(adj_node);
+        agent()->interface_table()->VmInterfaceVrfSync(adj_node);
     }
 
     // Resync dependent Floating-IP
-    VmInterface::FloatingIpVrfSync(agent()->GetInterfaceTable(), node);
+    VmInterface::FloatingIpVrfSync(agent()->interface_table(), node);
     return false;
 }
 
@@ -496,3 +498,76 @@ void VrfListReq::HandleRequest() const {
     sand->DoSandesh();
 }
 
+class RouteDeleteWalker : public AgentRouteWalker {
+public:
+    RouteDeleteWalker(Agent *agent) : 
+        AgentRouteWalker(agent, AgentRouteWalker::ALL) {
+    }
+
+    ~RouteDeleteWalker() { }
+
+    //Override route notification
+    bool RouteWalkNotify(DBTablePartBase *partition, DBEntryBase *e) {
+        AgentRoute *rt = static_cast<AgentRoute *>(e); 
+        for(Route::PathList::const_iterator it = rt->GetPathList().begin();
+            it != rt->GetPathList().end(); ) {
+            Route::PathList::const_iterator next = ++it;
+            const AgentPath *path =
+                static_cast<const AgentPath *>(it.operator->());
+
+            DBRequest req(DBRequest::DB_ENTRY_DELETE);
+            req.key = e->GetDBRequestKey();
+            AgentRouteKey *key = static_cast<AgentRouteKey *>(req.key.get());
+            key->peer_ = path->peer();
+            (static_cast<AgentRouteTable *>(e->get_table()))->Process(req);
+            it = next;
+        }
+
+        return true;
+    }
+
+    void WalkDone() { }
+};
+
+void VrfTable::DeleteRoutes() {
+    assert(shutdown_walk_ == NULL);
+    RouteDeleteWalker *walker = new RouteDeleteWalker(agent());
+    shutdown_walk_ = walker;
+    walker->WalkDoneCallback
+        (boost::bind(&RouteDeleteWalker::WalkDone, walker));
+    walker->StartVrfWalk();
+}
+
+class VrfDeleteWalker : public AgentRouteWalker {
+public:
+    VrfDeleteWalker(Agent *agent) : 
+        AgentRouteWalker(agent, AgentRouteWalker::ALL) {
+    }
+
+    ~VrfDeleteWalker() { }
+
+    //Override vrf notification
+    bool VrfWalkNotify(DBTablePartBase *partition, DBEntryBase *e) {
+        DBRequest req(DBRequest::DB_ENTRY_DELETE);
+        req.key = e->GetDBRequestKey();
+        (static_cast<VrfTable *>(e->get_table()))->Process(req);
+        return true;
+    }
+
+    //Override route notification
+    bool RouteWalkNotify(DBTablePartBase *partition, DBEntryBase *e) {
+        assert(0);
+    }
+
+    void WalkDone() { }
+
+private:
+};
+
+void VrfTable::Shutdown() {
+    delete shutdown_walk_;
+    VrfDeleteWalker *walker = new VrfDeleteWalker(agent());
+    shutdown_walk_ = walker;
+    walker->WalkDoneCallback (boost::bind(&VrfDeleteWalker::WalkDone, walker));
+    walker->StartVrfWalk();
+}

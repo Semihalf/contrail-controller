@@ -19,7 +19,9 @@
 #include <ksync/ksync_index.h>
 #include <ksync/ksync_entry.h>
 #include <ksync/ksync_object.h>
+#include <ksync/ksync_netlink.h>
 #include <ksync/ksync_sock.h>
+#include <ksync/ksync_netlink.h>
 #include <ksync/ksync_types.h>
 #include <ksync/agent_ksync_types.h>
 #include <ksync/interface_ksync.h>
@@ -57,7 +59,7 @@ KSyncObject *FlowTableKSyncEntry::GetObject() {
 void FlowTableKSyncEntry::SetPcapData(FlowEntryPtr fe, 
                                       std::vector<int8_t> &data) {
     data.clear();
-    uint32_t addr = ksync_obj_->ksync()->agent()->GetRouterId().to_ulong();
+    uint32_t addr = ksync_obj_->ksync()->agent()->router_id().to_ulong();
     data.push_back(FlowEntry::PCAP_CAPTURE_HOST);
     data.push_back(0x4);
     data.push_back(((addr >> 24) & 0xFF));
@@ -113,7 +115,8 @@ int FlowTableKSyncEntry::Encode(sandesh_op::type op, char *buf, int buf_len) {
     req.set_fr_flow_proto(fe_key->protocol);
     req.set_fr_flow_sport(htons(fe_key->src_port));
     req.set_fr_flow_dport(htons(fe_key->dst_port));
-    req.set_fr_flow_vrf(fe_key->vrf);
+    req.set_fr_flow_nh_id(fe_key->nh);
+    req.set_fr_flow_vrf(flow_entry_->data().vrf);
     uint16_t flags = 0;
 
     if (op == sandesh_op::DELETE) {
@@ -178,9 +181,9 @@ int FlowTableKSyncEntry::Encode(sandesh_op::type op, char *buf, int buf_len) {
             }
             req.set_fr_mir_vrf(flow_entry_->data().mirror_vrf); 
             req.set_fr_mir_sip(htonl(ksync_obj_->ksync()->agent()->
-                                     GetRouterId().to_ulong()));
+                                     router_id().to_ulong()));
             req.set_fr_mir_sport(htons(ksync_obj_->ksync()->agent()->
-                                                            GetMirrorPort()));
+                                                            mirror_port()));
             std::vector<int8_t> pcap_data;
             SetPcapData(flow_entry_, pcap_data);
             req.set_fr_pcap_meta_data(pcap_data);
@@ -189,7 +192,8 @@ int FlowTableKSyncEntry::Encode(sandesh_op::type op, char *buf, int buf_len) {
         req.set_fr_ftable_size(0);
         req.set_fr_ecmp_nh_index(flow_entry_->data().component_nh_idx);
 
-        if (flow_entry_->is_flags_set(FlowEntry::EcmpFlow)) {
+        if (flow_entry_->is_flags_set(FlowEntry::EcmpFlow) &&
+            flow_entry_->reverse_flow_entry() != NULL) {
             flags |= VR_RFLOW_VALID; 
             FlowEntry *rev_flow = flow_entry_->reverse_flow_entry();
             req.set_fr_rindex(rev_flow->flow_handle());
@@ -233,7 +237,9 @@ int FlowTableKSyncEntry::Encode(sandesh_op::type op, char *buf, int buf_len) {
         }
 
         if (nh_) {
-            req.set_fr_src_nh_index(nh_->GetIndex());
+            const NHKSyncEntry *ksync_nh =
+                static_cast<const NHKSyncEntry *>(nh_.get());
+            req.set_fr_src_nh_index(ksync_nh->nh_id());
         } else {
             //Set to discard
             req.set_fr_src_nh_index(0);
@@ -417,7 +423,7 @@ void FlowTableKSyncEntry::ErrorHandler(int err, uint32_t seq_no) const {
 FlowTableKSyncObject::FlowTableKSyncObject(KSync *ksync) : 
     KSyncObject(), ksync_(ksync), audit_flow_idx_(0),
     audit_timer_(TimerManager::CreateTimer
-                 (*(ksync_->agent()->GetEventManager())->io_service(),
+                 (*(ksync_->agent()->event_manager())->io_service(),
                   "Flow Audit Timer",
                   TaskScheduler::GetInstance()->GetTaskId
                   ("Agent::StatsCollector"),
@@ -427,7 +433,7 @@ FlowTableKSyncObject::FlowTableKSyncObject(KSync *ksync) :
 FlowTableKSyncObject::FlowTableKSyncObject(KSync *ksync, int max_index) :
     KSyncObject(max_index), ksync_(ksync), audit_flow_idx_(0),
     audit_timer_(TimerManager::CreateTimer
-                 (*(ksync_->agent()->GetEventManager())->io_service(),
+                 (*(ksync_->agent()->event_manager())->io_service(),
                   "Flow Audit Timer",
                   TaskScheduler::GetInstance()->GetTaskId
                   ("Agent::StatsCollector"),
@@ -474,7 +480,7 @@ bool FlowTableKSyncObject::GetFlowKey(uint32_t index, FlowKey &key) {
     if (!kflow) {
         return false;
     }
-    key.vrf = kflow->fe_key.key_vrf_id;
+    key.nh = kflow->fe_key.key_nh_id;
     key.src.ipv4 = ntohl(kflow->fe_key.key_src_ip);
     key.dst.ipv4 = ntohl(kflow->fe_key.key_dest_ip);
     key.src_port = ntohs(kflow->fe_key.key_src_port);
@@ -516,7 +522,7 @@ bool FlowTableKSyncObject::AuditProcess() {
 
         vflow_entry = GetKernelFlowEntry(flow_idx, false);
         if (vflow_entry && vflow_entry->fe_action == VR_FLOW_ACTION_HOLD) {
-            FlowKey key(vflow_entry->fe_key.key_vrf_id, 
+            FlowKey key(vflow_entry->fe_key.key_nh_id,
                         ntohl(vflow_entry->fe_key.key_src_ip), 
                         ntohl(vflow_entry->fe_key.key_dest_ip),
                         vflow_entry->fe_key.key_proto,

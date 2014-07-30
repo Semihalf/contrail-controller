@@ -12,19 +12,20 @@
 #include <boost/system/error_code.hpp>
 #include <boost/scoped_ptr.hpp>
 #include <boost/shared_ptr.hpp>
-#include "xmpp/xmpp_channel.h"
-#include "xmpp_enet_types.h"
-#include "xmpp_unicast_types.h"
+#include <xmpp/xmpp_channel.h>
+#include <xmpp_enet_types.h>
+#include <xmpp_unicast_types.h>
+#include <cmn/agent.h>
 
 class AgentRoute;
 class Peer;
 class BgpPeer;
 class VrfEntry;
 class XmlPugi;
+class PathPreference;
 
 class AgentXmppChannel {
 public:
-    explicit AgentXmppChannel(XmppChannel *channel);
     AgentXmppChannel(Agent *agent, XmppChannel *channel, 
                      const std::string &xmpp_server, 
                      const std::string &label_range, uint8_t xs_idx);
@@ -62,7 +63,8 @@ public:
                                     uint32_t tunnel_bmap,
                                     const SecurityGroupList *sg_list, 
                                     bool add_route, 
-                                    Agent::RouteTableType type);
+                                    Agent::RouteTableType type,
+                                    const PathPreference &path_preference);
     static bool ControllerSendMcastRoute(AgentXmppChannel *peer,
                                          AgentRoute *route, bool add_route);
     static bool ControllerSendV4UnicastRoute(AgentXmppChannel *peer,
@@ -71,7 +73,9 @@ public:
                                              const SecurityGroupList *sg_list,
                                              uint32_t mpls_label,
                                              uint32_t tunnel_bmap,
-                                             bool add_route);
+                                             bool add_route,
+                                             const PathPreference
+                                             &path_preference);
     static bool ControllerSendEvpnRoute(AgentXmppChannel *peer,
                                         AgentRoute *route, 
                                         std::string vn,
@@ -91,13 +95,19 @@ public:
     void CreateBgpPeer();
     void DeCommissionBgpPeer();
 
-    std::string GetXmppServer() { return xmpp_server_; }
+    std::string controller_ifmap_xmpp_server() { return xmpp_server_; }
     uint8_t GetXmppServerIdx() { return xs_idx_; }
     std::string GetMcastLabelRange() { return label_range_; }
 
     Agent *agent() const {return agent_;}
     BgpPeer *bgp_peer_id() const {return bgp_peer_id_.get();}
     std::string GetBgpPeerName() const;
+    void UpdateConnectionInfo(xmps::PeerState state);
+
+    //Unicast peer identifier
+    void increment_unicast_sequence_number() {unicast_sequence_number_++;}
+    uint64_t unicast_sequence_number() const {return unicast_sequence_number_;}
+
    
 protected:
     virtual void WriteReadyCb(const boost::system::error_code &ec);
@@ -120,6 +130,7 @@ private:
     uint8_t xs_idx_;
     boost::shared_ptr<BgpPeer> bgp_peer_id_;
     Agent *agent_;
+    uint64_t unicast_sequence_number_;
 };
 
 #endif // __CONTROLLER_PEER_H__

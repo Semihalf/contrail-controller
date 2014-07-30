@@ -64,7 +64,7 @@ class FakeCF(object):
 
     def get(
         self, key, columns=None, column_start=None, column_finish=None,
-            include_timestamp=False):
+            column_count=0, include_timestamp=False):
         if not key in self._rows:
             raise pycassa.NotFoundException
 
@@ -92,6 +92,19 @@ class FakeCF(object):
 
         return col_dict
     # end get
+
+    def multiget(
+        self, keys, columns=None, column_start=None, column_finish=None,
+            column_count=0, include_timestamp=False):
+        result = {}
+        for key in keys:
+            try:
+                result[key] = copy.deepcopy(self._rows[key])
+            except KeyError:
+                pass
+
+        return result
+    # end multiget
 
     def insert(self, key, col_dict):
         if key not in self._rows:
@@ -493,6 +506,14 @@ class FakeKombu(object):
             FakeKombu._queues[q_name] = self
         # end __init__
 
+        def __call__(self, *args):
+            class BoundQueue(object):
+                def delete(self):
+                    pass
+                # end delete
+            return BoundQueue()
+        # end __call__
+
         def put(self, msg_dict, serializer):
             msg_obj = self.Message(msg_dict)
             self._msg_obj_list.append(msg_obj)
@@ -532,6 +553,10 @@ class FakeKombu(object):
         def __init__(self, *args, **kwargs):
             pass
         # end __init__
+
+        def channel(self):
+            pass
+        # end channel
 # end class FakeKombu
 
 class FakeRedis(object):
@@ -652,6 +677,9 @@ class ZookeeperClientMock(object):
         self._count = 0
         self._values = {}
     # end __init__
+
+    def is_connected(self):
+        return True
 
     def alloc_from(self, path, max_id):
         self._count = self._count + 1

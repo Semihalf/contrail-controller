@@ -230,8 +230,8 @@ XmppDocumentMock::XmppDocumentMock(const std::string &hostname)
 
 pugi::xml_document *XmppDocumentMock::RouteAddXmlDoc(
         const std::string &network, const std::string &prefix, 
-        NextHops nexthops) {
-    return RouteAddDeleteXmlDoc(network, prefix, true, nexthops);
+        NextHops nexthops, int local_pref) {
+    return RouteAddDeleteXmlDoc(network, prefix, true, nexthops, local_pref);
 }
 
 pugi::xml_document *XmppDocumentMock::RouteDeleteXmlDoc(
@@ -304,7 +304,7 @@ pugi::xml_document *XmppDocumentMock::SubUnsubXmlDoc(
 
 pugi::xml_document *XmppDocumentMock::RouteAddDeleteXmlDoc(
         const std::string &network, const std::string &prefix, bool add,
-        NextHops nexthops) {
+        NextHops nexthops, int local_pref) {
     xdoc_->reset();
     xml_node pubsub = PubSubHeader(kNetworkServiceJID);
     xml_node pub = pubsub.append_child("publish");
@@ -318,6 +318,7 @@ pugi::xml_document *XmppDocumentMock::RouteAddDeleteXmlDoc(
     rt_entry.entry.nlri.safi = BgpAf::Unicast;
     rt_entry.entry.nlri.address = prefix;
     rt_entry.entry.security_group_list.security_group.push_back(101);
+    rt_entry.entry.local_preference = local_pref;
 
     if (nexthops.empty()) {
         NextHop nexthop = NextHop(localaddr(), 0);
@@ -569,6 +570,10 @@ NetworkAgentMock::~NetworkAgentMock() {
     assert(!client_);
 }
 
+bool NetworkAgentMock::ConnectionDestroyed() const {
+    return (client_->ConnectionsCount() == 0);
+}
+
 void NetworkAgentMock::Delete() {
     AgentPeer *peer = peer_.get();
     peer_.release();
@@ -576,7 +581,11 @@ void NetworkAgentMock::Delete() {
         delete peer;
     }
     client_->Shutdown();
+    client_->WaitForEmpty();
     task_util::WaitForIdle();
+    for (int idx = 0; idx < 5000 && !ConnectionDestroyed(); ++idx)
+        usleep(1000);
+    assert(ConnectionDestroyed());
     TcpServerManager::DeleteServer(client_);
     client_ = NULL;
 }
@@ -618,17 +627,19 @@ void NetworkAgentMock::SessionDown() {
     tbb::mutex::scoped_lock lock(mutex_);
     down_ = true;
     ClearInstances();
-    peer_.reset(NULL);
-    XmppConfigData *data = new XmppConfigData();
-    client_->ConfigUpdate(data);
+    XmppConnection *connection =
+        client_->FindConnection("network-control@contrailsystems.com");
+    if (connection)
+        connection->SetAdminState(true);
 }
 
 void NetworkAgentMock::SessionUp() {
     tbb::mutex::scoped_lock lock(mutex_);
-    XmppConfigData *data = new XmppConfigData();
-    data->AddXmppChannelConfig(CreateXmppConfig());
-    client_->ConfigUpdate(data);
     down_ = false;
+    XmppConnection *connection =
+        client_->FindConnection("network-control@contrailsystems.com");
+    if (connection)
+        connection->SetAdminState(false);
 }
 
 //
@@ -672,7 +683,8 @@ bool NetworkAgentMock::IsEstablished() {
 }
 
 void NetworkAgentMock::AddRoute(const string &network_name,
-                                const string &prefix, const string nexthop) {
+                                const string &prefix, const string nexthop,
+                                int local_pref) {
     NextHops nexthops;
 
     if (!nexthop.empty()) {
@@ -680,7 +692,8 @@ void NetworkAgentMock::AddRoute(const string &network_name,
     }
 
     AgentPeer *peer = GetAgent();
-    xml_document *xdoc = impl_->RouteAddXmlDoc(network_name, prefix, nexthops);
+    xml_document *xdoc =
+        impl_->RouteAddXmlDoc(network_name, prefix, nexthops, local_pref);
 
     peer->SendDocument(xdoc);
 }
@@ -700,9 +713,11 @@ void NetworkAgentMock::DeleteRoute(const string &network_name,
 }
 
 void NetworkAgentMock::AddRoute(const string &network_name,
-                                const string &prefix, NextHops nexthops) {
+                                const string &prefix, NextHops nexthops,
+                                int local_pref) {
     AgentPeer *peer = GetAgent();
-    xml_document *xdoc = impl_->RouteAddXmlDoc(network_name, prefix, nexthops);
+    xml_document *xdoc =
+        impl_->RouteAddXmlDoc(network_name, prefix, nexthops, local_pref);
 
     peer->SendDocument(xdoc);
 }

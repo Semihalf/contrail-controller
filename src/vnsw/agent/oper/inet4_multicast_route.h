@@ -29,10 +29,10 @@ public:
                            const Ip4Address &addr,
                            bool policy);
     static DBTableBase *CreateTable(DB *db, const std::string &name);
-    static void AddMulticastRoute(const string &vrf_name, 
-                                  const string &vn_name,
+    static void AddMulticastRoute(const string &vn_name, const string &vrf_name,
                                   const Ip4Address &src_addr,
-                                  const Ip4Address &grp_addr);
+                                  const Ip4Address &grp_addr,
+                                  ComponentNHKeyList &component_nh_key_list);
     static void DeleteMulticastRoute(const string &vrf_name, 
                                      const Ip4Address &src_addr,
                                      const Ip4Address &grp_addr); 
@@ -98,7 +98,7 @@ public:
     virtual Agent::RouteTableType GetRouteTableType() {
        return Agent::INET4_MULTICAST;
     }
-    virtual string ToString() const { return ("Inet4MulticastRouteKey"); }
+    virtual string ToString() const;
 
     const Ip4Address &dest_ip_addr() const {return dip_;}
     const Ip4Address &src_ip_addr() const {return sip_;}

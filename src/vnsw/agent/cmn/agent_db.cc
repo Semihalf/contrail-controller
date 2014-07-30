@@ -4,6 +4,7 @@
 
 #include "agent_cmn.h"
 #include "agent_db.h"
+#include <cfg/cfg_init.h>
 
 void AgentDBEntry::SetRefState() const {
     AgentDBTable *table = static_cast<AgentDBTable *>(get_table());
@@ -121,9 +122,42 @@ void AgentDBTable::Input(DBTablePartition *partition, DBClient *client,
     return;
 }
 
+void AgentDBTable::Clear() {
+    Unregister(ref_listener_id_);
+    assert(!HasListeners());
+    DBTablePartition *partition = static_cast<DBTablePartition *>(
+        GetTablePartition(0));
+
+    DBEntryBase *next = NULL;
+    for (DBEntryBase *entry = partition->GetFirst(); entry; entry = next) {
+        next = partition->GetNext(entry);
+        if (entry->IsDeleted()) {
+            continue;
+        }
+        partition->Delete(entry);
+    }
+}
+
 void AgentDBTable::Process(DBRequest &req) {
     CHECK_CONCURRENCY("db::DBTable");
     DBTablePartition *tpart =
         static_cast<DBTablePartition *>(GetTablePartition(req.key.get()));
     tpart->Process(NULL, &req);
+}
+
+
+static bool FlushNotify(DBTablePartBase *partition, DBEntryBase *e) {
+    DBRequest req(DBRequest::DB_ENTRY_DELETE);
+    req.key = e->GetDBRequestKey();
+    (static_cast<AgentDBTable *>(e->get_table()))->Process(req);
+    return true;
+}
+
+static void FlushWalkDone(DBTableBase *table) {
+}
+
+DBTableWalker *AgentDBTable::Flush() {
+    DBTableWalker *walker = new DBTableWalker();
+    walker->WalkTable(this, NULL, FlushNotify, FlushWalkDone);
+    return walker;
 }

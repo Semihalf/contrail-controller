@@ -24,6 +24,10 @@
 using namespace std;
 using namespace autogen;
 
+CfgListener::CfgListener(AgentConfig *cfg) : agent_cfg_(cfg) 
+{ 
+}
+
 //  Config listener module. 
 //
 //  For a IFMapNode notification, there are 2 kinds of listeners
@@ -36,7 +40,7 @@ using namespace autogen;
 //  left and right nodes
 
 void CfgListener::Init() {
-    DBTableBase *link_db = agent_cfg_->agent()->GetDB()->FindTable(IFMAP_AGENT_LINK_DB_NAME);
+    DBTableBase *link_db = agent_cfg_->agent()->db()->FindTable(IFMAP_AGENT_LINK_DB_NAME);
     assert(link_db);
 
     DBTableBase::ListenerId id = 
@@ -52,7 +56,8 @@ void CfgListener::Shutdown() {
     for (CfgListenerIdMap::iterator iter = cfg_listener_id_map_.begin();
          iter != cfg_listener_id_map_.end(); ++iter) {
 
-        DBTableBase *table = iter->first;
+        DBTable *table = static_cast<DBTable *>(iter->first);
+        DBTable::DBStateClear(table, iter->second);
         table->Unregister(iter->second);
     }
 
@@ -210,12 +215,12 @@ void CfgListener::LinkListener(DBTablePartBase *partition, DBEntryBase *dbe) {
     CfgDBState *lstate = NULL;
     CfgDBState *rstate = NULL;
 
-    IFMapNode *lnode = link->LeftNode(agent_cfg_->agent()->GetDB());
+    IFMapNode *lnode = link->LeftNode(agent_cfg_->agent()->db());
     if (lnode) {
         lstate = GetCfgDBState(lnode->table(), lnode, lid);
     }
 
-    IFMapNode *rnode = link->RightNode(agent_cfg_->agent()->GetDB());
+    IFMapNode *rnode = link->RightNode(agent_cfg_->agent()->db());
     if (rnode) {
         rstate = GetCfgDBState(rnode->table(), rnode, rid);
     }
@@ -356,7 +361,7 @@ void CfgListener::Register(std::string type, AgentDBTable *table,
             cfg_listener_map_.insert(make_pair(type, info));
     assert(result.second);
 
-    DBTableBase *cfg_db = IFMapTable::FindTable(agent_cfg_->agent()->GetDB(), type);
+    DBTableBase *cfg_db = IFMapTable::FindTable(agent_cfg_->agent()->db(), type);
     assert(cfg_db);
     DBTableBase::ListenerId id = cfg_db->Register
         (boost::bind(&CfgListener::NodeListener, this, _1, _2));
@@ -372,7 +377,7 @@ void CfgListener::Register(std::string type, NodeListenerCb callback,
             cfg_listener_cb_map_.insert(make_pair(type, info));
     assert(result.second);
 
-    DBTableBase *cfg_db = IFMapTable::FindTable(agent_cfg_->agent()->GetDB(), type);
+    DBTableBase *cfg_db = IFMapTable::FindTable(agent_cfg_->agent()->db(), type);
     assert(cfg_db);
     DBTableBase::ListenerId id = cfg_db->Register
         (boost::bind(&CfgListener::NodeCallback, this, _1, _2));
@@ -385,7 +390,7 @@ void CfgListener::Unregister(std::string type) {
     cfg_listener_map_.erase(type);
     cfg_listener_cb_map_.erase(type);
 
-    DBTableBase *cfg_db = IFMapTable::FindTable(agent_cfg_->agent()->GetDB(), type);
+    DBTableBase *cfg_db = IFMapTable::FindTable(agent_cfg_->agent()->db(), type);
     CfgListenerIdMap::iterator iter = cfg_listener_id_map_.find(cfg_db);
     if (iter != cfg_listener_id_map_.end()) {
         cfg_db->Unregister(iter->second);

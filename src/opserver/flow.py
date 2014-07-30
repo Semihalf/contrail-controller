@@ -14,9 +14,9 @@ import sys
 import argparse
 import json
 import datetime
-import opserver.sandesh.viz.constants as VizConstants
-from opserver.sandesh.viz.ttypes import FlowRecordFields
-from opserver.opserver_util import OpServerUtils
+import sandesh.viz.constants as VizConstants
+from sandesh.viz.ttypes import FlowRecordFields
+from opserver_util import OpServerUtils
 
 class FlowQuerier(object):
 
@@ -46,6 +46,10 @@ class FlowQuerier(object):
             FlowRecordFields.FLOWREC_DIRECTION_ING]
         self._ACTION = VizConstants.FlowRecordNames[
             FlowRecordFields.FLOWREC_ACTION]
+        self._SG_RULE_UUID = VizConstants.FlowRecordNames[
+            FlowRecordFields.FLOWREC_SG_RULE_UUID]
+        self._NW_ACE_UUID = VizConstants.FlowRecordNames[
+            FlowRecordFields.FLOWREC_NW_ACE_UUID]
     # end __init__
 
     # Public functions
@@ -104,29 +108,14 @@ class FlowQuerier(object):
             "--verbose", action="store_true", help="Show internal information")        
         self._args = parser.parse_args()
 
-        # Validate start-time and end-time
-        if self._args.last is not None:
-            self._args.last = '-' + self._args.last
-            self._start_time = OpServerUtils.convert_to_utc_timestamp_usec(
-                self._args.last)
-            self._end_time = OpServerUtils.convert_to_utc_timestamp_usec('now')
-        else:
-            try:
-                if (self._args.start_time.isdigit() and
-                        self._args.end_time.isdigit()):
-                    self._start_time = int(self._args.start_time)
-                    self._end_time = int(self._args.end_time)
-                else:
-                    self._start_time =\
-                        OpServerUtils.convert_to_utc_timestamp_usec(
-                            self._args.start_time)
-                    self._end_time =\
-                        OpServerUtils.convert_to_utc_timestamp_usec(
-                            self._args.end_time)
-            except:
-                print 'Incorrect start-time (%s) or end-time (%s) format' %\
-                    (self._args.start_time, self._args.end_time)
-                return -1
+        try:
+            self._start_time, self._end_time = \
+                OpServerUtils.parse_start_end_time(
+                    start_time = self._args.start_time,
+                    end_time = self._args.end_time,
+                    last = self._args.last)
+        except:
+            return -1
 
         # Validate flow arguments
         if self._args.source_ip is not None and self._args.source_vn is None:
@@ -171,9 +160,7 @@ class FlowQuerier(object):
 
     # Public functions
     def query(self):
-        start_time, end_time = OpServerUtils.get_start_end_time(
-            self._start_time,
-            self._end_time)
+        start_time, end_time = self._start_time, self._end_time
         flow_url = OpServerUtils.opserver_query_url(
             self._args.opserver_ip,
             self._args.opserver_port)
@@ -265,6 +252,8 @@ class FlowQuerier(object):
             self._DIRECTION,
             VizConstants.FLOW_TABLE_AGG_BYTES,
             VizConstants.FLOW_TABLE_AGG_PKTS,
+            self._SG_RULE_UUID,
+            self._NW_ACE_UUID,
         ]
 
         if len(filter) == 0:
@@ -404,13 +393,23 @@ class FlowQuerier(object):
                 agg_pkts = int(flow_dict[VizConstants.FLOW_TABLE_AGG_PKTS])
             else:
                 agg_pkts = 'Agg Packets: NA'
+            # SG rule UUID
+            if self._SG_RULE_UUID in flow_dict:
+                sg_rule_uuid = flow_dict[self._SG_RULE_UUID]
+            else:
+                sg_rule_uuid = None
+            # NW ACE UUID
+            if self._NW_ACE_UUID in flow_dict:
+                nw_ace_uuid = flow_dict[self._NW_ACE_UUID]
+            else:
+                nw_ace_uuid = None
             print '{0}({1}) {2} [{3} -- {4}] {5} '\
                 '{6}:{7}:{8} ---> {9}:{10}:{11} [{12} P ({13} B)]'\
-                ' : {14}'.format(
+                ' : SG:{14} ACL:{15} {16}'.format(
                vrouter, direction, action, setup_ts, teardown_ts,
                protocol, source_vn, source_ip, source_port, destination_vn,
                destination_ip, destination_port, agg_pkts, agg_bytes,
-               flow_uuid)
+               sg_rule_uuid, nw_ace_uuid, flow_uuid)
     # end display
 
 # end class FlowQuerier

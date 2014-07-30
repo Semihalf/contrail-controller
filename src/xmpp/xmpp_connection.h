@@ -10,6 +10,7 @@
 
 #include "base/timer.h"
 #include "base/lifetime.h"
+#include "net/address.h"
 #include "xmpp/xmpp_channel_mux.h"
 #include "xmpp/xmpp_state_machine.h"
 #include "xmpp/xmpp_session.h"
@@ -18,6 +19,7 @@ class LifetimeActor;
 class TcpServer;
 class TcpSession;
 class XmppChannelConfig;
+class XmppConnectionEndpoint;
 class XmppServer;
 class XmppSession;
 
@@ -34,6 +36,7 @@ public:
         uint32_t keepalive;
         uint32_t update;
     };
+
     XmppConnection(TcpServer *server, const XmppChannelConfig *config);
     virtual ~XmppConnection();
 
@@ -88,7 +91,9 @@ public:
     }
     virtual bool IsClient() const = 0;
     virtual void ManagedDelete() = 0;
+    virtual void RetryDelete() = 0;
     virtual LifetimeActor *deleter() = 0;
+    virtual const LifetimeActor *deleter() const = 0;
     virtual LifetimeManager *lifetime_manager() = 0;
     virtual void Destroy() = 0;
     xmsm::XmState GetStateMcState() const;
@@ -105,13 +110,9 @@ public:
         return 0;
     }
 
-    void Initialize() {
-        state_machine_->Initialize();
-    }
-
-    void Clear() {
-        state_machine_->Clear();
-    }
+    void Initialize() { state_machine_->Initialize(); }
+    void Clear() { state_machine_->Clear(); }
+    void SetAdminState(bool down) { state_machine_->SetAdminState(down); }
 
     void Shutdown();
     bool ShutdownPending() const;
@@ -120,15 +121,10 @@ public:
     std::string &GetComputeHostName() { return to_; }
     std::string &GetControllerHostName() { return from_; }
 
-
-    void increment_flap_count();
-    void set_close_reason(const std::string &reason);
-
-    uint32_t flap_count() const {
-        return flap_count_;
-    }
-
-    const std::string last_flap_at() const;
+    virtual void set_close_reason(const std::string &reason) = 0;
+    virtual void increment_flap_count() = 0;
+    virtual uint32_t flap_count() const = 0;
+    virtual const std::string last_flap_at() const = 0;
 
     virtual void WriteReady(const boost::system::error_code &ec);
 
@@ -206,12 +202,9 @@ private:
     std::auto_ptr<XmppChannelMux> mux_; 
     int keepalive_time_;
     std::auto_ptr<XmppStanza::XmppMessage> last_msg_;
-    
+
     ProtoStats stats_[2];
     bool     disable_read_;
-    uint32_t flap_count_;
-    uint64_t last_flap_;
-    std::string close_reason_;
 
     void IncProtoStats(unsigned int type);
     DISALLOW_COPY_AND_ASSIGN(XmppConnection);
@@ -223,14 +216,22 @@ public:
     virtual ~XmppServerConnection();
     virtual bool IsClient() const;
     virtual void ManagedDelete();
+    virtual void RetryDelete();
     virtual LifetimeActor *deleter();
+    virtual const LifetimeActor *deleter() const;
     virtual LifetimeManager *lifetime_manager();
     virtual void Destroy();
+
+    virtual void set_close_reason(const std::string &reason);
+    virtual uint32_t flap_count() const;
+    virtual void increment_flap_count();
+    virtual const std::string last_flap_at() const;
 
 private:
     class DeleteActor;
     boost::scoped_ptr<DeleteActor> deleter_;
     LifetimeRef<XmppServerConnection> server_delete_ref_;
+    XmppConnectionEndpoint *conn_endpoint_;
 };
 
 class XmppClientConnection : public XmppConnection {
@@ -239,14 +240,41 @@ public:
     virtual ~XmppClientConnection();
     virtual bool IsClient() const;
     virtual void ManagedDelete();
+    virtual void RetryDelete();
     virtual LifetimeActor *deleter();
+    virtual const LifetimeActor *deleter() const;
     virtual LifetimeManager *lifetime_manager();
     virtual void Destroy();
+
+    virtual void set_close_reason(const std::string &reason);
+    virtual uint32_t flap_count() const;
+    virtual void increment_flap_count();
+    virtual const std::string last_flap_at() const;
 
 private:
     class DeleteActor;
     boost::scoped_ptr<DeleteActor> deleter_;
     LifetimeRef<XmppClientConnection> server_delete_ref_;
+    std::string close_reason_;
+    uint32_t flap_count_;
+    uint64_t last_flap_;
+};
+
+class XmppConnectionEndpoint {
+public:
+    XmppConnectionEndpoint(Ip4Address address);
+
+    void set_close_reason(const std::string &close_reason);
+    uint32_t flap_count() const;
+    void increment_flap_count();
+    uint64_t last_flap() const;
+    const std::string last_flap_at() const;
+
+private:
+    Ip4Address address_;
+    std::string close_reason_;
+    uint32_t flap_count_;
+    uint64_t last_flap_;
 };
 
 #endif // __XMPP_CHANNEL_H__

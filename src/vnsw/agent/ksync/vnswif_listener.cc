@@ -34,8 +34,7 @@
 #include <base/logging.h>
 #include <base/util.h>
 #include <cmn/agent_cmn.h>
-#include <init/agent_param.h>
-#include <init/agent_init.h>
+#include <cmn/agent_param.h>
 #include <cfg/cfg_init.h>
 #include <oper/route_common.h>
 #include <oper/mirror_table.h>
@@ -505,7 +504,7 @@ int VnswInterfaceListener::RTInitIfAndAddr()
 
 VnswInterfaceListener::VnswInterfaceListener(Agent *agent) : 
     agent_(agent), read_buf_(NULL), sock_fd_(0), 
-    sock_(*(agent->GetEventManager())->io_service()),
+    sock_(*(agent->event_manager())->io_service()),
     intf_listener_id_(DBTableBase::kInvalidId), seqno_(0),
     vhost_intf_up_(false), ll_addr_table_(), revent_queue_(NULL),
     netlink_ll_add_count_(0), netlink_ll_del_count_(0), vhost_update_count_(0) { 
@@ -527,7 +526,7 @@ VnswInterfaceListener::~VnswInterfaceListener() {
  *   4. Registers for netlink messages with ASIO
  ****************************************************************************/
 void VnswInterfaceListener::Init() {
-    intf_listener_id_ = agent_->GetInterfaceTable()->Register
+    intf_listener_id_ = agent_->interface_table()->Register
         (boost::bind(&VnswInterfaceListener::InterfaceNotify, this, _1, _2));
 
     /* Allocate Route Event Workqueue */
@@ -759,7 +758,7 @@ bool VnswInterfaceListener::IsInterfaceActive(const HostInterfaceEntry *entry) {
 }
 
 static void InterfaceResync(Agent *agent, uint32_t id, bool active) {
-    InterfaceTable *table = agent->GetInterfaceTable();
+    InterfaceTable *table = agent->interface_table();
     Interface *interface = table->FindInterface(id);
     if (interface == NULL)
         return;
@@ -877,7 +876,7 @@ void VnswInterfaceListener::HandleInterfaceEvent(const Event *event) {
         if (agent_->isXenMode()) {
             if (string::npos != event->interface_.find(XAPI_INTF_PREFIX)) {
                 agent_->params()->set_xen_ll_name(event->interface_);
-                agent_->init()->InitXenLinkLocalIntf();
+                agent_->InitXenLinkLocalIntf();
             }
         }
     }
@@ -940,17 +939,18 @@ void VnswInterfaceListener::HandleAddressEvent(const Event *event) {
     vhost_update_count_++;
 
     bool dep_init_reqd = false;
-    if (agent_->GetRouterIdConfigured() == false)
+    if (agent_->router_id_configured() == false)
         dep_init_reqd = true;
 
     // Update vhost ip-address and enqueue db request
-    agent_->SetRouterId(event->addr_);
-    agent_->SetPrefixLen(event->plen_);
-    InetInterface::CreateReq(agent_->GetInterfaceTable(),
+    agent_->set_router_id(event->addr_);
+    agent_->set_vhost_prefix_len(event->plen_);
+    InetInterface::CreateReq(agent_->interface_table(),
                              agent_->vhost_interface_name(),
-                             InetInterface::VHOST, agent_->GetDefaultVrf(),
-                             event->addr_, event->plen_, agent_->GetGatewayId(),
-                             agent_->GetDefaultVrf());
+                             InetInterface::VHOST, agent_->fabric_vrf_name(),
+                             event->addr_, event->plen_,
+                             agent_->vhost_default_gateway(),
+                             Agent::NullString(), agent_->fabric_vrf_name());
     if (dep_init_reqd)
         RouterIdDepInit(agent_);
 }

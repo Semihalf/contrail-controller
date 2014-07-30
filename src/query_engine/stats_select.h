@@ -54,9 +54,9 @@ public:
     void MergeFinal(const std::vector<boost::shared_ptr<MapBufT> >& inputs,
         MapBufT& output);
 
-    static QEOpServerProxy::VarType Parse(int sidx, 
+    static QEOpServerProxy::AggOper ParseAgg(
             const std::string& vname,
-            std::string& sfield, QEOpServerProxy::AggOper& agg);
+            std::string& sfield);
 
     static bool Jsonify(const std::map<std::string, StatVal>&, 
             const QEOpServerProxy::AggRowT&, std::string& jstr);
@@ -71,6 +71,7 @@ private:
             const QEOpServerProxy::AggRowT& narows,
             MapBufT& output);
 
+    bool isStatic_;
     bool status_;
 
     AnalyticsQuery * const main_query;

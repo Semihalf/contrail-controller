@@ -10,12 +10,12 @@
 #include <io/event_manager.h>
 #include <ifmap/ifmap_link.h>
 
-#include <vnc_cfg_types.h>
 #include <cmn/agent_cmn.h>
-#include <cmn/agent_stats.h>
+#include <vnc_cfg_types.h>
+#include <agent_types.h>
 
-#include <init/agent_param.h>
-#include <init/agent_init.h>
+#include <cmn/agent_param.h>
+#include <cmn/agent_signal.h>
 #include <cfg/cfg_init.h>
 #include <cfg/cfg_mirror.h>
 #include <cfg/discovery_agent.h>
@@ -25,23 +25,13 @@
 #include <oper/multicast.h>
 #include <oper/nexthop.h>
 #include <oper/mirror_table.h>
+#include <oper/peer.h>
 
-#include <services/services_init.h>
-#include <pkt/pkt_init.h>
-#include <pkt/flow_table.h>
-#include <pkt/pkt_types.h>
-#include <pkt/proto.h>
-#include <pkt/proto_handler.h>
-#include <uve/flow_stats_collector.h>
-#include <uve/agent_uve.h>
-#include <vgw/cfg_vgw.h>
-#include <vgw/vgw.h>
+#include <filter/acl.h>
+
 #include <cmn/agent_factory.h>
-#include <controller/controller_init.h>
 
-#include <diag/diag.h>
-
-const std::string Agent::null_str_ = "";
+const std::string Agent::null_string_ = "";
 const std::string Agent::fabric_vn_name_ = 
     "default-domain:default-project:ip-fabric";
 std::string Agent::fabric_vrf_name_ =
@@ -54,20 +44,24 @@ const uint8_t Agent::vrrp_mac_[] = {0x00, 0x00, 0x5E, 0x00, 0x01, 0x00};
 const std::string Agent::bcast_mac_ = "FF:FF:FF:FF:FF:FF";
 const std::string Agent::config_file_ = "/etc/contrail/contrail-vrouter-agent.conf";
 const std::string Agent::log_file_ = "/var/log/contrail/vrouter.log";
+const std::string Agent::xmpp_dns_server_connection_name_prefix_ = "dns-server:";
+const std::string Agent::xmpp_control_node_connection_name_prefix_ = "control-node:";
 
 Agent *Agent::singleton_;
 
-const string &Agent::GetHostInterfaceName() {
+const string &Agent::GetHostInterfaceName() const {
     // There is single host interface.  Its addressed by type and not name
-    return Agent::null_str_;
+    return Agent::null_string_;
 };
+
+std::string Agent::GetUuidStr(boost::uuids::uuid uuid_val) const {
+    std::ostringstream str;
+    str << uuid_val;
+    return str.str();
+}
 
 const string &Agent::vhost_interface_name() const {
     return vhost_interface_name_;
-};
-
-const string &Agent::GetHostName() {
-    return host_name_;
 };
 
 bool Agent::isXenMode() {
@@ -86,6 +80,15 @@ static void SetTaskPolicyOne(const char *task, const char *exclude_list[],
 }
 
 void Agent::SetAgentTaskPolicy() {
+    /*
+     * TODO(roque): this method should not be called by the agent constructor.
+     */
+    static bool initialized = false;
+    if (initialized) {
+        return;
+    }
+    initialized = true;
+
     const char *db_exclude_list[] = {
         "Agent::FlowHandler",
         "Agent::Services",
@@ -164,9 +167,8 @@ void Agent::ShutdownLifetimeManager() {
 }
 
 // Get configuration from AgentParam into Agent
-void Agent::CopyConfig(AgentParam *params, AgentInit *init) {
+void Agent::CopyConfig(AgentParam *params) {
     params_ = params;
-    init_ = init;
 
     int count = 0;
     int dns_count = 0;
@@ -182,11 +184,13 @@ void Agent::CopyConfig(AgentParam *params, AgentInit *init) {
     }
 
     if (params_->dns_server_1().to_ulong()) {
-        xs_dns_addr_[dns_count++] = params_->dns_server_1().to_string();
+        dns_port_[dns_count] = params_->dns_port_1();
+        dns_addr_[dns_count++] = params_->dns_server_1().to_string();
     }
 
     if (params_->dns_server_2().to_ulong()) {
-        xs_dns_addr_[dns_count++] = params_->dns_server_2().to_string();
+        dns_port_[dns_count] = params_->dns_port_2();
+        dns_addr_[dns_count++] = params_->dns_server_2().to_string();
     }
 
     if (params_->discovery_server().to_ulong()) {
@@ -219,11 +223,11 @@ void Agent::CopyConfig(AgentParam *params, AgentInit *init) {
 }
 
 DiscoveryAgentClient *Agent::discovery_client() const {
-    return cfg_.get()->discovery_client();
+    return cfg_->discovery_client();
 }
 
 CfgListener *Agent::cfg_listener() const { 
-    return cfg_.get()->cfg_listener();
+    return cfg_->cfg_listener();
 }
 
 void Agent::set_cn_mcast_builder(AgentXmppChannel *peer) {
@@ -231,47 +235,85 @@ void Agent::set_cn_mcast_builder(AgentXmppChannel *peer) {
 }
 
 void Agent::InitCollector() {
-    // If discovery server is not specified, init connection to collector
-    // based on configuration
-    if (dss_addr_.empty() == false) {
+    /* If Sandesh initialization is not being done via discovery we need to
+     * initialize here. We need to do sandesh initialization here for cases
+     * (i) When both Discovery and Collectors are configured.
+     * (ii) When both are not configured (to initilialize introspect)
+     * (iii) When only collector is configured
+     */
+    if (!discovery_server().empty() &&
+        params_->collector_server_list().size() == 0) {
         return;
     }
 
+    /* If collector configuration is specified, use that for connection to
+     * collector. If not we still need to invoke InitGenerator to initialize
+     * introspect.
+     */
     Module::type module = Module::VROUTER_AGENT;
     NodeType::type node_type =
         g_vns_constants.Module2NodeType.find(module)->second;
-    Sandesh::InitGenerator(g_vns_constants.ModuleNames.find(module)->second,
-                           params_->host_name(),
-                           g_vns_constants.NodeTypeNames.find(node_type)->second,
-                           g_vns_constants.INSTANCE_ID_DEFAULT,
-                           GetEventManager(),
-                           params_->http_server_port());
-
-    if (params_->collector_port() != 0 && 
-        params_->collector().to_ulong() != 0) {
-        Sandesh::ConnectToCollector(params_->collector().to_string(),
-                                    params_->collector_port());
+    if (params_->collector_server_list().size() != 0) {
+        Sandesh::InitGenerator(g_vns_constants.ModuleNames.find(module)->second,
+                params_->host_name(),
+                g_vns_constants.NodeTypeNames.find(node_type)->second,
+                g_vns_constants.INSTANCE_ID_DEFAULT,
+                event_manager(),
+                params_->http_server_port(), 0,
+                params_->collector_server_list(),
+                NULL);
+    } else {
+        Sandesh::InitGenerator(g_vns_constants.ModuleNames.find(module)->second,
+                params_->host_name(),
+                g_vns_constants.NodeTypeNames.find(node_type)->second,
+                g_vns_constants.INSTANCE_ID_DEFAULT,
+                event_manager(),
+                params_->http_server_port(),
+                NULL);
     }
+
 }
 
-void Agent::CreateDBTables() {
-    if (cfg_.get()) {
-        cfg_.get()->CreateDBTables(db_);
-    }
+static bool interface_exist(string &name) {
+	struct if_nameindex *ifs = NULL;
+	struct if_nameindex *head = NULL;
+	bool ret = false;
+	string tname = "";
 
-    if (oper_db_.get()) {
-        oper_db_.get()->CreateDBTables(db_);
-    }
+	ifs = if_nameindex();
+	if (ifs == NULL) {
+		LOG(INFO, "No interface exists!");
+		return ret;
+	}
+	head = ifs;
+	while (ifs->if_name && ifs->if_index) {
+		tname = ifs->if_name;
+		if (string::npos != tname.find(name)) {
+			ret = true;
+			name = tname;
+			break;
+		}
+		ifs++;
+	}
+	if_freenameindex(head);
+	return ret;
 }
 
-void Agent::CreateDBClients() {
-    if (cfg_.get()) {
-        cfg_.get()->RegisterDBClients(db_);
-    }
+void Agent::InitXenLinkLocalIntf() {
+    if (!params_->isXenMode() || params_->xen_ll_name() == "")
+        return;
 
-    if (oper_db_.get()) {
-        oper_db_.get()->CreateDBClients();
+    string dev_name = params_->xen_ll_name();
+    if(!interface_exist(dev_name)) {
+        LOG(INFO, "Interface " << dev_name << " not found");
+        return;
     }
+    params_->set_xen_ll_name(dev_name);
+
+    InetInterface::Create(intf_table_, params_->xen_ll_name(),
+                          InetInterface::LINK_LOCAL, link_local_vrf_name_,
+                          params_->xen_ll_addr(), params_->xen_ll_plen(),
+                          params_->xen_ll_gw(), NullString(), link_local_vrf_name_);
 }
 
 void Agent::InitPeers() {
@@ -283,30 +325,20 @@ void Agent::InitPeers() {
     vgw_peer_.reset(new Peer(Peer::VGW_PEER, VGW_PEER_NAME));
 }
 
-void Agent::InitModules() {
-    if (cfg_.get()) {
-        cfg_.get()->Init();
-    }
-
-    if (oper_db_.get()) {
-        oper_db_.get()->Init();
-    }
-}
-
 Agent::Agent() :
-    params_(NULL), init_(NULL), event_mgr_(NULL), agent_xmpp_channel_(),
+    params_(NULL), event_mgr_(NULL), agent_xmpp_channel_(),
     ifmap_channel_(), xmpp_client_(), xmpp_init_(), dns_xmpp_channel_(),
     dns_xmpp_client_(), dns_xmpp_init_(), agent_stale_cleaner_(NULL),
     cn_mcast_builder_(NULL), ds_client_(NULL), host_name_(""),
     prog_name_(""), sandesh_port_(0), db_(NULL), intf_table_(NULL),
     nh_table_(NULL), uc_rt_table_(NULL), mc_rt_table_(NULL), vrf_table_(NULL),
-    vm_table_(NULL), vn_table_(NULL), sg_table_(NULL), addr_table_(NULL),
+    vm_table_(NULL), vn_table_(NULL), sg_table_(NULL),
     mpls_table_(NULL), acl_table_(NULL), mirror_table_(NULL),
     vrf_assign_table_(NULL), mirror_cfg_table_(NULL),
     intf_mirror_cfg_table_(NULL), intf_cfg_table_(NULL), 
     domain_config_table_(NULL), router_id_(0), prefix_len_(0), 
     gateway_id_(0), xs_cfg_addr_(""), xs_idx_(0), xs_addr_(), xs_port_(),
-    xs_stime_(), xs_dns_idx_(0), xs_dns_addr_(), xs_dns_port_(),
+    xs_stime_(), xs_dns_idx_(0), dns_addr_(), dns_port_(),
     dss_addr_(""), dss_port_(0), dss_xs_instances_(0), label_range_(),
     ip_fabric_intf_name_(""), vhost_interface_name_(""),
     pkt_interface_name_("pkt0"), cfg_listener_(NULL), arp_proto_(NULL),
@@ -316,7 +348,8 @@ Agent::Agent() :
     mirror_src_udp_port_(0), lifetime_manager_(NULL), 
     ksync_sync_mode_(true), mgmt_ip_(""),
     vxlan_network_identifier_mode_(AUTOMATIC), headless_agent_mode_(false), 
-    debug_(false), test_mode_(false) {
+    connection_state_(NULL), debug_(false), test_mode_(false),
+    init_done_(false) {
 
     assert(singleton_ == NULL);
     singleton_ = this;
@@ -328,9 +361,17 @@ Agent::Agent() :
 
     SetAgentTaskPolicy();
     CreateLifetimeManager();
+
+    agent_signal_.reset(
+        AgentObjectFactory::Create<AgentSignal>(event_mgr_));
 }
 
 Agent::~Agent() {
+    uve_ = NULL;
+
+    agent_signal_->Terminate();
+    agent_signal_.reset();
+
     delete event_mgr_;
     event_mgr_ = NULL;
 
@@ -338,4 +379,85 @@ Agent::~Agent() {
 
     delete db_;
     db_ = NULL;
+    singleton_ = NULL;
+}
+
+AgentConfig *Agent::cfg() const {
+    return cfg_;
+}
+
+void Agent::set_cfg(AgentConfig *cfg) {
+    cfg_ = cfg;
+}
+
+DiagTable *Agent::diag_table() const {
+    return diag_table_;
+}
+
+void Agent::set_diag_table(DiagTable *table) {
+    diag_table_ = table;
+}
+
+AgentStats *Agent::stats() const {
+    return stats_;
+}
+
+void Agent::set_stats(AgentStats *stats) {
+    stats_ = stats;
+}
+
+KSync *Agent::ksync() const {
+    return ksync_;
+}
+
+void Agent::set_ksync(KSync *ksync) {
+    ksync_ = ksync;
+}
+
+AgentUve *Agent::uve() const {
+    return uve_;
+}
+
+void Agent::set_uve(AgentUve *uve) {
+    uve_ = uve;
+}
+
+PktModule *Agent::pkt() const {
+    return pkt_;
+}
+
+void Agent::set_pkt(PktModule *pkt) {
+    pkt_ = pkt;
+}
+
+ServicesModule *Agent::services() const {
+    return services_;
+}
+
+void Agent::set_services(ServicesModule *services) {
+    services_ = services;
+}
+
+VNController *Agent::controller() const {
+    return controller_;
+}
+
+void Agent::set_controller(VNController *val) {
+    controller_ = val;
+}
+
+VirtualGateway *Agent::vgw() const {
+    return vgw_;
+}
+
+void Agent::set_vgw(VirtualGateway *vgw) {
+    vgw_ = vgw;
+}
+
+OperDB *Agent::oper_db() const {
+    return oper_db_;
+}
+
+void Agent::set_oper_db(OperDB *oper_db) {
+    oper_db_ = oper_db;
 }

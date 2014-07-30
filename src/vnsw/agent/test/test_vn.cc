@@ -71,15 +71,15 @@ TEST_F(CfgTest, VnBasic_1) {
     int len = 0;
 
     IpamInfo ipam_info[] = {
-        {"1.2.3.128", 27, "1.2.3.129"},
-        {"7.8.9.0", 24, "7.8.9.12"},
-        {"1.1.1.0", 24, "1.1.1.200"},
+        {"1.2.3.128", 27, "1.2.3.129", true},
+        {"7.8.9.0", 24, "7.8.9.12", true},
+        {"1.1.1.0", 24, "1.1.1.200", true},
     };
 
     IpamInfo ipam_updated_info[] = {
-        {"4.2.3.128", 27, "4.2.3.129"},
-        {"1.1.1.0", 24, "1.1.1.200"},
-        {"3.3.3.0", 24, "3.3.3.12"},
+        {"4.2.3.128", 27, "4.2.3.129", true},
+        {"1.1.1.0", 24, "1.1.1.200", true},
+        {"3.3.3.0", 24, "3.3.3.12", true},
     };
 
     client->WaitForIdle();
@@ -341,7 +341,7 @@ TEST_F(CfgTest, vn_forwarding_mode_changed_1) {
     };
 
     IpamInfo ipam_info[] = {
-        {"1.1.1.0", 24, "1.1.1.200"},
+        {"1.1.1.0", 24, "1.1.1.200", true},
     };
 
     client->Reset();
@@ -381,12 +381,12 @@ TEST_F(CfgTest, vn_forwarding_mode_changed_1) {
     EXPECT_TRUE(flood_rt->GetActiveNextHop()->GetType() == NextHop::COMPOSITE);
     EXPECT_TRUE(subnet_rt->GetActiveNextHop()->GetType() == NextHop::COMPOSITE);
     cnh = ((CompositeNH *) l2_flood_rt->GetActiveNextHop());
-    //Fabric COMP + Interface COMP
-    EXPECT_TRUE(cnh->ComponentNHCount() == 2);
+    //Interface COMP
+    EXPECT_TRUE(cnh->ComponentNHCount() == 1);
     cnh = ((CompositeNH *) flood_rt->GetActiveNextHop());
-    EXPECT_TRUE(cnh->ComponentNHCount() == 2);
+    EXPECT_TRUE(cnh->ComponentNHCount() == 1);
     cnh = ((CompositeNH *) subnet_rt->GetActiveNextHop());
-    EXPECT_TRUE(cnh->ComponentNHCount() == 2);
+    EXPECT_TRUE(cnh->ComponentNHCount() == 1);
 
     //Move to l2 mode
     ModifyForwardingModeVn("vn1", 1, "l2");
@@ -404,8 +404,8 @@ TEST_F(CfgTest, vn_forwarding_mode_changed_1) {
     EXPECT_TRUE(l2_uc_rt->GetActiveNextHop()->GetType() == NextHop::INTERFACE);
     EXPECT_TRUE(l2_flood_rt->GetActiveNextHop()->GetType() == NextHop::COMPOSITE);
     cnh = ((CompositeNH *) l2_flood_rt->GetActiveNextHop());
-    //Fabric COMP + Interface COMP
-    EXPECT_TRUE(cnh->ComponentNHCount() == 2);
+    //Interface COMP
+    EXPECT_TRUE(cnh->ComponentNHCount() == 1);
 
     //Move to l2_l3 mode
     ModifyForwardingModeVn("vn1", 1, "l2_l3");
@@ -426,12 +426,12 @@ TEST_F(CfgTest, vn_forwarding_mode_changed_1) {
     EXPECT_TRUE(flood_rt->GetActiveNextHop()->GetType() == NextHop::COMPOSITE);
     EXPECT_TRUE(subnet_rt->GetActiveNextHop()->GetType() == NextHop::COMPOSITE);
     cnh = ((CompositeNH *) l2_flood_rt->GetActiveNextHop());
-    //Fabric COMP + Interface COMP
-    EXPECT_TRUE(cnh->ComponentNHCount() == 2);
+    //Interface COMP
+    EXPECT_TRUE(cnh->ComponentNHCount() == 1);
     cnh = ((CompositeNH *) flood_rt->GetActiveNextHop());
-    EXPECT_TRUE(cnh->ComponentNHCount() == 2);
+    EXPECT_TRUE(cnh->ComponentNHCount() == 1);
     cnh = ((CompositeNH *) subnet_rt->GetActiveNextHop());
-    EXPECT_TRUE(cnh->ComponentNHCount() == 2);
+    EXPECT_TRUE(cnh->ComponentNHCount() == 1);
 
     client->Reset();
     DelIPAM("vn1"); 
@@ -448,7 +448,7 @@ TEST_F(CfgTest, vn_forwarding_mode_changed_2) {
     };
 
     IpamInfo ipam_info[] = {
-        {"1.1.1.0", 24, "1.1.1.200"},
+        {"1.1.1.0", 24, "1.1.1.200", true},
     };
 
     client->Reset();
@@ -496,8 +496,8 @@ TEST_F(CfgTest, vn_forwarding_mode_changed_2) {
     EXPECT_TRUE(l2_uc_rt->GetActiveNextHop()->GetType() == NextHop::INTERFACE);
     EXPECT_TRUE(l2_flood_rt->GetActiveNextHop()->GetType() == NextHop::COMPOSITE);
     cnh = ((CompositeNH *) l2_flood_rt->GetActiveNextHop());
-    //Fabric COMP + Interface COMP
-    EXPECT_TRUE(cnh->ComponentNHCount() == 2);
+    //Interface COMP nh
+    EXPECT_TRUE(cnh->ComponentNHCount() == 1);
 
     //Move to l2_l3 mode
     ModifyForwardingModeVn("vn1", 1, "l2_l3");
@@ -518,12 +518,12 @@ TEST_F(CfgTest, vn_forwarding_mode_changed_2) {
     EXPECT_TRUE(flood_rt->GetActiveNextHop()->GetType() == NextHop::COMPOSITE);
     EXPECT_TRUE(subnet_rt->GetActiveNextHop()->GetType() == NextHop::COMPOSITE);
     cnh = ((CompositeNH *) l2_flood_rt->GetActiveNextHop());
-    //Fabric COMP + Interface COMP
-    EXPECT_TRUE(cnh->ComponentNHCount() == 2);
+    //Interface COMP
+    EXPECT_TRUE(cnh->ComponentNHCount() == 1);
     cnh = ((CompositeNH *) flood_rt->GetActiveNextHop());
-    EXPECT_TRUE(cnh->ComponentNHCount() == 2);
+    EXPECT_TRUE(cnh->ComponentNHCount() == 1);
     cnh = ((CompositeNH *) subnet_rt->GetActiveNextHop());
-    EXPECT_TRUE(cnh->ComponentNHCount() == 2);
+    EXPECT_TRUE(cnh->ComponentNHCount() == 1);
 
     //Move back to l2
     ModifyForwardingModeVn("vn1", 1, "l2");
@@ -541,8 +541,8 @@ TEST_F(CfgTest, vn_forwarding_mode_changed_2) {
     EXPECT_TRUE(l2_uc_rt->GetActiveNextHop()->GetType() == NextHop::INTERFACE);
     EXPECT_TRUE(l2_flood_rt->GetActiveNextHop()->GetType() == NextHop::COMPOSITE);
     cnh = ((CompositeNH *) l2_flood_rt->GetActiveNextHop());
-    //Fabric COMP + Interface COMP
-    EXPECT_TRUE(cnh->ComponentNHCount() == 2);
+    //Interface COMP
+    EXPECT_TRUE(cnh->ComponentNHCount() == 1);
     client->Reset();
 
     DelIPAM("vn1"); 
@@ -561,11 +561,11 @@ TEST_F(CfgTest, change_in_gateway) {
     };
 
     IpamInfo ipam_info[] = {
-        {"11.1.1.0", 24, "11.1.1.200"},
+        {"11.1.1.0", 24, "11.1.1.200", true},
     };
 
     IpamInfo ipam_info_2[] = {
-        {"11.1.1.0", 24, "11.1.1.100"},
+        {"11.1.1.0", 24, "11.1.1.100", true},
     };
 
     EXPECT_FALSE(VrfFind("vrf1"));
@@ -603,11 +603,11 @@ TEST_F(CfgTest, change_in_gatewaywith_no_vrf) {
     };
 
     IpamInfo ipam_info[] = {
-        {"11.1.1.0", 24, "11.1.1.200"},
+        {"11.1.1.0", 24, "11.1.1.200", true},
     };
 
     IpamInfo ipam_info_2[] = {
-        {"11.1.1.0", 24, "11.1.1.100"},
+        {"11.1.1.0", 24, "11.1.1.100", true},
     };
 
     EXPECT_FALSE(VrfFind("vrf1"));

@@ -51,15 +51,26 @@ void
 Inet4MulticastAgentRouteTable::AddMulticastRoute(const string &vrf_name, 
                                                  const string &vn_name,
                                                  const Ip4Address &src_addr,
-                                                 const Ip4Address &grp_addr) {
+                                                 const Ip4Address &grp_addr,
+                                                 ComponentNHKeyList
+                                                 &component_nh_key_list) {
+    DBRequest nh_req;
+    NextHopKey *nh_key;
+    CompositeNHData *nh_data;
+
+    nh_key = new CompositeNHKey(Composite::L3COMP, true, component_nh_key_list,
+                                vrf_name);
+    nh_req.oper = DBRequest::DB_ENTRY_ADD_CHANGE;
+    nh_req.key.reset(nh_key);
+    nh_data = new CompositeNHData();
+    nh_req.data.reset(nh_data);
+
     DBRequest req;
     req.oper = DBRequest::DB_ENTRY_ADD_CHANGE;
     Inet4MulticastRouteKey *rt_key = new Inet4MulticastRouteKey(vrf_name, 
                                                                 grp_addr, 
                                                                 src_addr);
-    MulticastRoute *data = new MulticastRoute(src_addr, grp_addr, 
-                                              vn_name, vrf_name, 0,
-                                              Composite::L3COMP);
+    MulticastRoute *data = new MulticastRoute(vn_name, 0, nh_req);
     req.key.reset(rt_key);
     req.data.reset(data);
     MulticastTableEnqueue(Agent::GetInstance(), vrf_name, &req);
@@ -81,7 +92,7 @@ Inet4MulticastAgentRouteTable::AddVHostRecvRoute(const string &vm_vrf,
     ReceiveRoute *data = 
         new ReceiveRoute(intf_key, MplsTable::kInvalidLabel,
                          TunnelType::AllType(), policy,
-                         Agent::GetInstance()->GetFabricVnName());
+                         Agent::GetInstance()->fabric_vn_name());
     //data->SetMulticast(true);
     req.data.reset(data);
     MulticastTableEnqueue(Agent::GetInstance(), vm_vrf, &req);
@@ -119,6 +130,15 @@ Inet4MulticastRouteKey::AllocRouteEntry(VrfEntry *vrf, bool is_multicast) const
     Inet4MulticastRouteEntry * entry = new Inet4MulticastRouteEntry(vrf, dip_,
                                                                     sip_);
     return static_cast<AgentRoute *>(entry);
+}
+
+string Inet4MulticastRouteKey::ToString() const {
+    ostringstream str;
+    str << "Group:";
+    str << dip_.to_string();
+    str << " Src:";
+    str << sip_.to_string();
+    return str.str();
 }
 
 string Inet4MulticastRouteEntry::ToString() const {

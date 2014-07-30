@@ -6,11 +6,10 @@
 #define __CONTROLLER_EXPORT_H__
 
 #include <boost/uuid/uuid_io.hpp>
-
 #include <cmn/agent_cmn.h>
-#include <oper/route_common.h>
+#include <cmn/agent.h>
 #include <oper/nexthop.h>
-#include <controller/controller_vrf_export.h>
+#include <oper/agent_path.h>
 
 class AgentPath;
 
@@ -27,6 +26,7 @@ public:
         std::string vn_;
         SecurityGroupList sg_list_;
         TunnelType::Type tunnel_type_;
+        PathPreference path_preference_;
 
         bool Changed(const AgentPath *path) const;
         void Update(const AgentPath *path);

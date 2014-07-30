@@ -26,7 +26,7 @@
 #include "io/event_manager.h"
 
 #include "gendb_if.h"
-
+#include "sandesh/sandesh.h"
 #include "viz_message.h"
 
 class DbHandler {
@@ -50,6 +50,23 @@ public:
         std::string str;
         uint64_t num;
         double dbl;
+        bool operator==(const Var &other) const {
+            if (type!=other.type) return false;
+            switch (type) {
+                case STRING:
+                    if (str!=other.str) return false;
+                    break;
+                case UINT64:
+                    if (num!=other.num) return false;
+                    break;
+                case DOUBLE:
+                    if (dbl!=other.dbl) return false;
+                    break;
+                default:
+                    break; 
+            }
+            return true;
+        }
     };
 
     typedef std::map<std::string, std::string> RuleMap;
@@ -58,7 +75,9 @@ public:
     typedef std::map<std::string, std::pair<Var, AttribMap> > TagMap;
 
     DbHandler(EventManager *evm, GenDb::GenDbIf::DbErrorHandler err_handler,
-            std::string cassandra_ip, unsigned short cassandra_port, int analytics_ttl, std::string name);
+        std::vector<std::string> cassandra_ips,
+        std::vector<int> cassandra_ports, int analytics_ttl,
+        std::string name);
     DbHandler(GenDb::GenDbIf *dbif);
     virtual ~DbHandler();
 
@@ -69,7 +88,7 @@ public:
     bool AllowMessageTableInsert(const SandeshHeader &header);
     bool MessageIndexTableInsert(const std::string& cfname,
         const SandeshHeader& header, const std::string& message_type,
-        const boost::uuids::uuid& unm);
+        const boost::uuids::uuid& unm, const std::string keyword);
     virtual void MessageTableInsert(const VizMsg *vmsgp);
     void MessageTableOnlyInsert(const VizMsg *vmsgp);
 
@@ -77,6 +96,10 @@ public:
 
     void ObjectTableInsert(const std::string &table, const std::string &rowkey,
         uint64_t &timestamp, const boost::uuids::uuid& unm);
+
+    static std::vector<std::string> StatTableSelectStr(
+            const std::string& statName, const std::string& statAttr,
+            const AttribMap & attribs);
 
     void StatTableInsert(uint64_t ts, 
             const std::string& statName,
@@ -93,12 +116,20 @@ public:
 
     void SetDbQueueWaterMarkInfo(Sandesh::QueueWaterMarkInfo &wm);
     void ResetDbQueueWaterMarkInfo();
+    std::string GetHost() const;
+    int GetPort() const;
 
 private:
     bool CreateTables();
     void SetDropLevel(size_t queue_count, SandeshLevel::type level);
     bool Setup(int instance);
     bool Initialize(int instance);
+    bool StatTableWrite(uint32_t t2,
+        const std::string& statName, const std::string& statAttr,
+        const std::pair<std::string,DbHandler::Var>& ptag,
+        const std::pair<std::string,DbHandler::Var>& stag,
+        uint32_t t1, const boost::uuids::uuid& unm,
+        const std::string& jsonline);
 
     boost::scoped_ptr<GenDb::GenDbIf> dbif_;
 
