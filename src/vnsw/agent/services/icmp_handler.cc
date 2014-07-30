@@ -57,14 +57,14 @@ bool IcmpHandler::Run() {
 
 bool IcmpHandler::CheckPacket() {
 #if defined(__linux__)
-    if (pkt_info_->len < (IPC_HDR_LEN + sizeof(ethhdr) + 
+    if (pkt_info_->len < (IPC_HDR_LEN + sizeof(ethhdr) +
                           ntohs(pkt_info_->ip->tot_len)))
         return false;
 
     uint16_t checksum = icmp_->checksum;
     icmp_->checksum = 0;
 #elif defined(__FreeBSD__)
-    if (pkt_info_->len < (IPC_HDR_LEN + sizeof(ether_header) + 
+    if (pkt_info_->len < (IPC_HDR_LEN + sizeof(ether_header) +
                           ntohs(pkt_info_->ip->ip_len)))
         return false;
 
@@ -94,7 +94,7 @@ void IcmpHandler::SendResponse() {
     icmp_->checksum = Csum((uint16_t *)icmp_, icmp_len_, 0);
 
     len += sizeof(iphdr);
-    IpHdr(len, htonl(pkt_info_->ip_daddr), 
+    IpHdr(len, htonl(pkt_info_->ip_daddr),
           htonl(pkt_info_->ip_saddr), IPPROTO_ICMP);
     EthHdr(agent()->vhost_interface()->mac().ether_addr_octet,
            pkt_info_->eth->h_source, IP_PROTOCOL);
@@ -112,7 +112,7 @@ void IcmpHandler::SendResponse() {
     icmp_->icmp_cksum = Csum((uint16_t *)icmp_, icmp_len_, 0);
 
     len += sizeof(ip);
-    IpHdr(len, htonl(pkt_info_->ip_daddr), 
+    IpHdr(len, htonl(pkt_info_->ip_daddr),
           htonl(pkt_info_->ip_saddr), IPPROTO_ICMP);
     EthHdr(agent()->vhost_interface()->mac().octet,
            pkt_info_->eth->ether_shost, IP_PROTOCOL);
