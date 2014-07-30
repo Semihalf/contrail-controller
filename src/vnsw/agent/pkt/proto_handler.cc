@@ -4,6 +4,9 @@
 
 #include "vr_defs.h"
 #if defined(__FreeBSD__)
+#include <sys/types.h>
+#include <net/ethernet.h>
+#include <net/if.h>
 #include <net/if_vlan_var.h>
 #endif
 #include "pkt/proto_handler.h"
@@ -111,8 +114,15 @@ uint16_t ProtoHandler::EthHdr(char *buff, uint8_t len, const unsigned char *src,
 
 void ProtoHandler::EthHdr(const unsigned char *src, const unsigned char *dest,
                           const uint16_t proto) {
+#if defined(__linux__)
     EthHdr((char *)pkt_info_->eth, sizeof(ethhdr), src, dest, proto,
            VmInterface::kInvalidVlanId);
+#elif defined(__FreeBSD__)
+    EthHdr((char *)pkt_info_->eth, sizeof(struct ether_header), src,
+           dest, proto, VmInterface::kInvalidVlanId);
+#else
+#error "Unsupported platform"
+#endif
 }
 
 void ProtoHandler::VlanHdr(uint8_t *ptr, uint16_t tci) {
@@ -163,6 +173,7 @@ uint16_t ProtoHandler::IpHdr(char *buff, uint16_t buf_len, uint16_t len,
     ip->ip_dst.s_addr = dest;
 
     ip->ip_sum = Csum((uint16_t *)ip, ip->ip_hl * 4, 0);
+    return sizeof(struct ip);
 #else
 #error "Unsupported platform"
 #endif
@@ -171,7 +182,14 @@ uint16_t ProtoHandler::IpHdr(char *buff, uint16_t buf_len, uint16_t len,
 void ProtoHandler::IpHdr(uint16_t len, in_addr_t src, in_addr_t dest, 
                          uint8_t protocol) {
 
+#if defined(__linux__)
     IpHdr((char *)pkt_info_->ip, sizeof(iphdr), len, src, dest, protocol);
+#elif defined(__FreeBSD__)
+    IpHdr((char *)pkt_info_->ip, sizeof(struct ip), len, src, dest,
+          protocol);
+#else
+#error "Unsupported platform"
+#endif
 }
 
 uint16_t ProtoHandler::UdpHdr(char *buff, uint16_t buf_len, uint16_t len,
@@ -209,6 +227,7 @@ void ProtoHandler::UdpHdr(uint16_t len, in_addr_t src, uint16_t src_port,
 
 uint16_t ProtoHandler::IcmpHdr(char *buff, uint16_t buf_len, uint8_t type,
                                uint8_t code, uint16_t word1, uint16_t word2) {
+#if defined(__linux__)
     icmphdr *hdr = ((icmphdr *)buff);
     if (buf_len < sizeof(hdr))
         return 0;
@@ -221,11 +240,35 @@ uint16_t ProtoHandler::IcmpHdr(char *buff, uint16_t buf_len, uint8_t type,
     hdr->un.frag.mtu = htons(word2);
     hdr->checksum = 0;
     return sizeof(icmphdr);
+#elif defined(__FreeBSD__)
+    assert(type == ICMP_UNREACH);
+
+    struct icmp *hdr = ((struct icmp *)buff);
+    if (buf_len < sizeof(hdr))
+        return 0;
+
+    bzero(hdr, sizeof(icmp));
+
+    hdr->icmp_type = type;
+    hdr->icmp_code = code;
+    hdr->icmp_nextmtu = htons(word2);
+    hdr->icmp_cksum = 0;
+    return sizeof(struct icmp);
+#else
+#error "Unsupported platform"
+#endif
 }
 
 void ProtoHandler::IcmpChecksum(char *buff, uint16_t buf_len) {
+#if defined(__linux__)
     icmphdr *hdr = ((icmphdr *)buff);
     hdr->checksum = Csum((uint16_t *)buff, buf_len, 0);
+#elif defined(__FreeBSD__)
+    struct icmp *hdr = ((struct icmp *)buff);
+    hdr->icmp_cksum = Csum((uint16_t *)buff, buf_len, 0);
+#else
+#error "Unsupported platform"
+#endif
 }
 
 uint32_t ProtoHandler::Sum(uint16_t *ptr, std::size_t len, uint32_t sum) {
