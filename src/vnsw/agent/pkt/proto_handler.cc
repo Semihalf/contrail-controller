@@ -3,6 +3,9 @@
  */
 
 #include "vr_defs.h"
+#if defined(__FreeBSD__)
+#include <net/if_vlan_var.h>
+#endif
 #include "pkt/proto_handler.h"
 #include "pkt/pkt_init.h"
 
@@ -12,11 +15,11 @@ ProtoHandler::ProtoHandler(Agent *agent, boost::shared_ptr<PktInfo> info,
                            boost::asio::io_service &io)
     : agent_(agent), pkt_info_(info), io_(io) {}
 
-ProtoHandler::~ProtoHandler() { 
+ProtoHandler::~ProtoHandler() {
 }
 
 // send packet to the pkt0 interface
-void ProtoHandler::Send(uint16_t len, uint16_t itf, uint16_t vrf, 
+void ProtoHandler::Send(uint16_t len, uint16_t itf, uint16_t vrf,
                         uint16_t cmd, PktHandler::PktModuleName mod) {
     // update the outer header
 #if defined(__linux__)
@@ -77,16 +80,33 @@ uint16_t ProtoHandler::EthHdr(char *buff, uint8_t len, const unsigned char *src,
     }
 
     *ptr = htons(proto);
-    return encap_len;
 #elif defined(__FreeBSD__)
-    ether_header *eth = pkt_info_->eth;
+    struct ether_header *eth = (struct ether_header *)buff;
+    uint16_t encap_len = sizeof(struct ether_header);
+
+    if (vlan_id != VmInterface::kInvalidVlanId) {
+        encap_len += 4;
+    }
+
+    if (len < encap_len) {
+        return 0;
+    }
 
     memcpy(eth->ether_dhost, dest, ETHER_ADDR_LEN);
     memcpy(eth->ether_shost, src, ETHER_ADDR_LEN);
-    eth->ether_type = htons(proto);
+
+    if (vlan_id != VmInterface::kInvalidVlanId) {
+        struct ether_vlan_header *evl = (struct ether_vlan_header *)buff;
+        evl->evl_encap_proto = htons(ETHERTYPE_VLAN);
+        evl->evl_tag = (vlan_id & 0xFFF);
+        evl->evl_proto = htons(proto);
+    } else {
+        eth->ether_type = htons(proto);
+    }
 #else
 #error "Unsupported platform"
 #endif
+    return encap_len;
 }
 
 void ProtoHandler::EthHdr(const unsigned char *src, const unsigned char *dest,
@@ -126,7 +146,9 @@ uint16_t ProtoHandler::IpHdr(char *buff, uint16_t buf_len, uint16_t len,
     ip->check = Csum((uint16_t *)ip, ip->ihl * 4, 0);
     return sizeof(iphdr);
 #elif defined(__FreeBSD__)
-    ip *ip = pkt_info_->ip;
+    struct ip *ip = (struct ip *)buff;
+    if (buf_len < sizeof(struct ip))
+        return 0;
 
     ip->ip_hl = 5;
     ip->ip_v= 4;
@@ -144,7 +166,6 @@ uint16_t ProtoHandler::IpHdr(char *buff, uint16_t buf_len, uint16_t len,
 #else
 #error "Unsupported platform"
 #endif
-
 }
 
 void ProtoHandler::IpHdr(uint16_t len, in_addr_t src, in_addr_t dest, 
@@ -173,7 +194,7 @@ uint16_t ProtoHandler::UdpHdr(char *buff, uint16_t buf_len, uint16_t len,
 #else
 #error "Unsupported platform"
 #endif
-    
+
 #ifdef VNSW_AGENT_UDP_CSUM
     udp->check = UdpCsum(src, dest, len, udp);
 #endif
