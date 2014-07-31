@@ -2596,8 +2596,7 @@ class DBInterface(object):
         return self._ipam_vnc_to_neutron(ipam_obj)
     #end ipam_read
 
-    def ipam_update(self, ipam_id, ipam):
-        ipam_q = ipam['ipam']
+    def ipam_update(self, ipam_id, ipam_q):
         ipam_q['id'] = ipam_id
         ipam_obj = self._ipam_neutron_to_vnc(ipam_q, UPDATE)
         self._vnc_lib.network_ipam_update(ipam_obj)
@@ -3111,6 +3110,11 @@ class DBInterface(object):
 
             port_id = port['id']
 
+        else:
+            msg = _('Either port or subnet must be specified')
+            exc_info = {'type': 'BadRequest', 'message': msg}
+            bottle.abort(400, json.dumps(exc_info))
+
         self._set_snat_routing_table(router_obj, subnet['network_id'])
         vmi_obj = self._vnc_lib.virtual_machine_interface_read(id=port_id)
         router_obj.add_virtual_machine_interface(vmi_obj)
@@ -3443,6 +3447,7 @@ class DBInterface(object):
             for fip_back_ref in fip_back_refs:
                 self.floatingip_update(fip_back_ref['uuid'], {'port_id': None})
 
+        tenant_id = self._get_obj_tenant_id('port', port_id)
         self._virtual_machine_interface_delete(port_id=port_id)
 
         # delete instance if this was the last port
@@ -3458,9 +3463,7 @@ class DBInterface(object):
 
         # update cache on successful deletion
         try:
-            tenant_id = self._get_obj_tenant_id('port', port_id)
-            self._db_cache['q_tenant_port_count'][tenant_id] = \
-                self._db_cache['q_tenant_port_count'][tenant_id] - 1
+            self._db_cache['q_tenant_port_count'][tenant_id] -= 1
         except KeyError:
             pass
 
