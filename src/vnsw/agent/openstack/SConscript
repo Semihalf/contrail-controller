@@ -26,8 +26,6 @@ libnova_ins_thrift = env.Library('nova_ins_thrift', lib_srcs)
 libnova_ins = env.Library('nova_ins',
                            ['instance_service_server.cc',])
 
-#.de.TOFIX disabling tests
-#subdirs = ['test']
-subdirs = []
+subdirs = ['test']
 for dir in subdirs:
     env.SConscript(dir + '/SConscript', exports='AgentEnv', duplicate=0)
