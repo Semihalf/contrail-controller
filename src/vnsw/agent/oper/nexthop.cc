@@ -155,6 +155,7 @@ void NextHop::FillObjectLog(AgentLogEvent::type event,
     info.set_type(type_str);
     info.set_policy(policy_str);
     info.set_valid(valid_str);
+    info.set_id(id_);
 }
 
 void NextHop::FillObjectLogIntf(const Interface *intf, 
@@ -1176,6 +1177,24 @@ NextHop *CompositeNHKey::AllocEntry() const {
                            component_nh_key_list_, vrf);
 }
 
+void CompositeNHKey::ChangeTunnelType(TunnelType::Type tunnel_type) {
+    ComponentNHKeyList::iterator it = component_nh_key_list_.begin();
+    for (;it != component_nh_key_list_.end(); it++) {
+        if ((*it) == NULL) {
+            continue;
+        }
+        if ((*it)->nh_key()->GetType() == NextHop::TUNNEL) {
+            TunnelNHKey *tunnel_nh_key =
+                static_cast<TunnelNHKey *>((*it)->nh_key()->Clone());
+            tunnel_nh_key->set_tunnel_type(tunnel_type);
+            std::auto_ptr<const NextHopKey> nh_key(tunnel_nh_key);
+            ComponentNHKeyPtr new_tunnel_nh(new ComponentNHKey((*it)->label(),
+                                                               nh_key));
+            (*it) = new_tunnel_nh;
+        }
+    }
+}
+
 bool CompositeNH::Change(const DBRequest* req) {
     if (nh_list_populated_ == true) {
         //Any change in component nh list would result in
@@ -1233,6 +1252,7 @@ void CompositeNH::SendObjectLog(AgentLogEvent::type event) const {
             continue;
         }
         const NextHop *nh = comp_nh->nh();
+        component_nh_info.set_component_nh_id(nh->id());
         switch(nh->GetType()) {
         case TUNNEL: {
             const TunnelNH *tun_nh = static_cast<const TunnelNH *>(nh);
@@ -1266,7 +1286,7 @@ void CompositeNH::SendObjectLog(AgentLogEvent::type event) const {
             const CompositeNH *cnh = static_cast<const CompositeNH *>(nh);
             std::stringstream str;
             str << "Composite; Type: " << cnh->composite_nh_type() <<
-                " comp_nh_count" << cnh->ComponentNHCount();
+                   " comp_nh_count" << cnh->ComponentNHCount();
             component_nh_info.set_type(str.str());
             break;
         }
