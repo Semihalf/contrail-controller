@@ -5,28 +5,13 @@
 #include <assert.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
-#if defined(__linux__)
-#include <linux/netlink.h>
-#include <linux/rtnetlink.h>
-#elif defined(__FreeBSD__)
+#include "vr_os.h"
+
 #include <ifaddrs.h>
-#include <sys/types.h>
-#include <sys/sysctl.h>
-#include <sys/time.h>
-#include <sys/socket.h>
-#include <net/if.h>
-#include <net/if_dl.h>
-#include <net/route.h>
 #include <strings.h>
-/* net/route.h includes net/radix .h that defines Free macro.
-   Definition collides with ksync includes */
-#if defined(Free)
-#undef Free
-#endif
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <errno.h>
-#endif
 #include <net/if.h>
 #include <sys/ioctl.h>
 #include <net/address.h>

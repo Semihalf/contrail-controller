@@ -5,19 +5,7 @@
 #include <boost/asio.hpp>
 #include <boost/bind.hpp>
 
-#if defined(__linux__)
-#include <linux/netlink.h>
-#include <linux/rtnetlink.h>
-#include <linux/genetlink.h>
-#include <linux/if_ether.h>
-#include <netinet/ether.h>
-#elif defined(__FreeBSD__)
-#include <sys/socket.h>
-#include <sys/ioctl.h>
 #include "vr_os.h"
-#endif
-
-#include <net/if.h>
 
 #include <io/event_manager.h>
 #include <db/db_entry.h>

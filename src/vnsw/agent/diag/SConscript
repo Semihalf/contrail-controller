@@ -23,5 +23,4 @@ libdiag = env.Library('diag',
                     'diag_pkt_handler.cc'
                    ])
 
-#.de.TOFIX disabling tests
-#env.SConscript('test/SConscript', exports='AgentEnv', duplicate = 0)
+env.SConscript('test/SConscript', exports='AgentEnv', duplicate = 0)

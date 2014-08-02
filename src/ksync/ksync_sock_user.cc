@@ -2,16 +2,7 @@
  * Copyright (c) 2013 Juniper Networks, Inc. All rights reserved.
  */
 
-#if defined(__linux__)
-#include <asm/types.h>
-#include <sys/socket.h>
-#include <linux/netlink.h>
-#include <linux/rtnetlink.h>
-#include <linux/genetlink.h>
-#include <linux/sockios.h>
-#elif defined(__FreeBSD__)
 #include "vr_os.h"
-#endif
 
 #include <boost/bind.hpp>
 

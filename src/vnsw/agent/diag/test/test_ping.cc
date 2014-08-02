@@ -4,6 +4,7 @@
 
 #include "testing/gunit.h"
 #include <sys/socket.h>
+#include <netinet/in.h>
 #include <netinet/if_ether.h>
 #include <base/logging.h>
 #include <io/event_manager.h>
@@ -90,7 +91,7 @@ public:
         memcpy(buf, msg, length);
 
         // Change the agent header
-        unsigned char mac[ETH_ALEN];
+        unsigned char mac[ETHER_ADDR_LEN];
 #if defined(__linux__)
         ethhdr *eth = (ethhdr *)buf;
         memcpy(mac, eth->h_dest, ETH_ALEN);
@@ -98,9 +99,9 @@ public:
         memcpy(eth->h_source, mac, ETH_ALEN);
 #elif defined(__FreeBSD__)
         ether_header *eth = (ether_header *)buf;
-        memcpy(mac, eth->ether_dhost, ETH_ALEN);
-        memcpy(eth->ether_dhost, eth->ether_shost, ETH_ALEN);
-        memcpy(eth->ether_shost, mac, ETH_ALEN);
+        memcpy(mac, eth->ether_dhost, ETHER_ADDR_LEN);
+        memcpy(eth->ether_dhost, eth->ether_shost, ETHER_ADDR_LEN);
+        memcpy(eth->ether_shost, mac, ETHER_ADDR_LEN);
 #else
 #error "Unsupported platform"
 #endif
@@ -132,8 +133,8 @@ public:
         memcpy(eth->h_source, smac, ETH_ALEN);
 #elif defined(__FreeBSD__)
         eth = (ether_header *) (agent + 1);
-        memcpy(eth->ether_dhost, dmac, ETH_ALEN);
-        memcpy(eth->ether_shost, smac, ETH_ALEN);
+        memcpy(eth->ether_dhost, dmac, ETHER_ADDR_LEN);
+        memcpy(eth->ether_shost, smac, ETHER_ADDR_LEN);
 #else
 #error "Unsupported platform"
 #endif
