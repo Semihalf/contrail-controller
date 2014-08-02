@@ -22,7 +22,7 @@
 
 namespace local = boost::asio::local;
 
-class VnswInterfaceListenerBase {
+class VnswInterfaceListener {
 public:
     static const int kVnswRtmProto = 109;
     static const uint32_t kMaxBufferSize = 4096;
@@ -102,8 +102,8 @@ private:
     typedef std::set<Ip4Address> LinkLocalAddressTable;
 
 public:
-    VnswInterfaceListenerBase(Agent *agent);
-    virtual ~VnswInterfaceListenerBase();
+    VnswInterfaceListener(Agent *agent);
+    virtual ~VnswInterfaceListener();
     
     void Init();
     void Shutdown();
@@ -116,18 +116,40 @@ public:
     uint32_t netlink_ll_add_count() const { return netlink_ll_add_count_; }
     uint32_t netlink_ll_del_count() const { return netlink_ll_del_count_; }
     uint32_t vhost_update_count() const { return vhost_update_count_; }
-protected:
+private:
     friend class TestVnswIf;
     void InterfaceNotify(DBTablePartBase *part, DBEntryBase *e);
 
-    virtual int CreateSocket() = 0;
-    virtual void SyncCurrentState() = 0;
-    virtual bool IsIfUp(const Event *) = 0;
-    virtual void RegisterAsyncHandler() = 0;
-    virtual void UpdateLinkLocalRoute(const Ip4Address &addr, bool del_rt) = 0;
-
+    void CreateSocket();
+    void InitNetlinkScan(uint32_t type, uint32_t seqno);
+#if defined (__linux__)
+    int NlMsgDecode(struct nlmsghdr *nl, std::size_t len, uint32_t seq_no);
+#elif defined(__FreeBSD__)
+    const string RTMTypeToString(int type);
+    unsigned int
+    RTMGetAddresses(const char *in, size_t *size, unsigned int af,
+        struct rt_addresses *rta);
+    Event *
+    RTMProcess(const struct rt_msghdr *rtm, size_t size);
+    Event *
+    RTMProcess(const struct ifa_msghdr *rtm, size_t size);
+    Event *
+    RTMProcess(const struct if_msghdr *rtm, size_t size);
+    int RTMDecode(const struct rt_msghdr_common *rtm, size_t len,
+		uint32_t seq_no);
+    int RTMProcessBuffer(const void *buffer, size_t size);
+    int RTCreateSocket(int fib);
+    int RTInitRoutes(int fib);
+    int RTInitIfAndAddr();
+    int Getfib();
+    void *SysctlDump(int *mib, int mib_len, size_t *ret_len, int *ret_code);
+    int NetmaskLen(int mask);
+#endif
+    void ReadHandler(const boost::system::error_code &, std::size_t length);
+    void RegisterAsyncHandler();
     bool ProcessEvent(Event *re);
 
+    void UpdateLinkLocalRoute(const Ip4Address &addr, bool del_rt);
     void LinkLocalRouteFromLinkLocalEvent(Event *event);
     void LinkLocalRouteFromRouteEvent(Event *event);
     void AddLinkLocalRoutes();
@@ -154,6 +176,9 @@ protected:
     DBTableBase::ListenerId intf_listener_id_;
     int seqno_;
     bool vhost_intf_up_;
+#if defined(__FreeBSD__)
+    int pid_;
+#endif
 
     LinkLocalAddressTable ll_addr_table_;
     HostInterfaceTable host_interface_table_;
@@ -162,17 +187,7 @@ protected:
     uint32_t netlink_ll_del_count_;
     uint32_t vhost_update_count_;
 
-    DISALLOW_COPY_AND_ASSIGN(VnswInterfaceListenerBase);
+    DISALLOW_COPY_AND_ASSIGN(VnswInterfaceListener);
 };
-
-#if defined(__linux__)
-#include <ksync/linux_vnswif_listener.h>
-typedef FreeBSDVnswInterfaceListenerLinux VnswInterfaceListener;
-#elif defined(__FreeBSD__)
-#include <ksync/freebsd_vnswif_listener.h>
-typedef FreeBSDVnswInterfaceListener VnswInterfaceListener;
-#else
-#error "Unsupported platform"
-#endif
 
 #endif
