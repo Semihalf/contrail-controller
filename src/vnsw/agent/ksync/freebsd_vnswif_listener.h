@@ -28,7 +28,7 @@ public:
     FreeBSDVnswInterfaceListener(Agent *agent);
     virtual ~FreeBSDVnswInterfaceListener();
     
-protected:
+private:
     friend class TestVnswIf;
 
     virtual int CreateSocket();

@@ -3,18 +3,18 @@
  */
 
 #include <assert.h>
-#include <sys/socket.h>
-#include <netinet/in.h>
+//#include <sys/socket.h>
+//#include <netinet/in.h>
 #include "vr_os.h"
 
 #include <ifaddrs.h>
-#include <strings.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
-#include <errno.h>
-#include <net/if.h>
-#include <sys/ioctl.h>
-#include <net/address.h>
+//#include <strings.h>
+//#include <netinet/in.h>
+//#include <arpa/inet.h>
+//#include <errno.h>
+//#include <net/if.h>
+//#include <sys/ioctl.h>
+//#include <net/address.h>
 
 #include <base/logging.h>
 #include <base/util.h>
@@ -26,8 +26,6 @@
 #include <ksync/ksync_index.h>
 #include <ksync/interface_ksync.h>
 #include <ksync/vnswif_listener.h>
-
-extern void RouterIdDepInit(Agent *agent);
 
 /* Pointers are ordered in the same way as address flags (RTA_*)
  * from route.h */
