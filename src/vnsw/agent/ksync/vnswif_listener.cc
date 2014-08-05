@@ -34,7 +34,10 @@ VnswInterfaceListenerBase::VnswInterfaceListenerBase(Agent *agent) :
     sock_(*(agent->event_manager())->io_service()),
     intf_listener_id_(DBTableBase::kInvalidId), seqno_(0),
     vhost_intf_up_(false), ll_addr_table_(), revent_queue_(NULL),
+    vhost_update_count_(0) { 
+#if 0
     netlink_ll_add_count_(0), netlink_ll_del_count_(0), vhost_update_count_(0) { 
+#endif
 }
 
 VnswInterfaceListenerBase::~VnswInterfaceListenerBase() {

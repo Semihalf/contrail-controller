@@ -22,8 +22,8 @@
 
 namespace local = boost::asio::local;
 
-class FreeBSDVnswInterfaceListener : public VnswInterfaceListenerBase {
-
+class FreeBSDVnswInterfaceListener : public VnswInterfaceListenerBase 
+{
 public:
     FreeBSDVnswInterfaceListener(Agent *agent);
     virtual ~FreeBSDVnswInterfaceListener();

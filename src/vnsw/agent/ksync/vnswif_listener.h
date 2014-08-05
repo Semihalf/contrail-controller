@@ -98,6 +98,7 @@ private:
         Ip4Address addr_;
     };
 
+protected:
     typedef std::map<string, HostInterfaceEntry *> HostInterfaceTable;
     typedef std::set<Ip4Address> LinkLocalAddressTable;
 
@@ -113,8 +114,10 @@ public:
         return host_interface_table_.size();
     }
     HostInterfaceEntry *GetHostInterfaceEntry(const std::string &name);
+#if 0
     uint32_t netlink_ll_add_count() const { return netlink_ll_add_count_; }
     uint32_t netlink_ll_del_count() const { return netlink_ll_del_count_; }
+#endif
     uint32_t vhost_update_count() const { return vhost_update_count_; }
 protected:
     friend class TestVnswIf;
@@ -158,8 +161,10 @@ protected:
     LinkLocalAddressTable ll_addr_table_;
     HostInterfaceTable host_interface_table_;
     WorkQueue<Event *> *revent_queue_;
+#if 0
     uint32_t netlink_ll_add_count_;
     uint32_t netlink_ll_del_count_;
+#endif
     uint32_t vhost_update_count_;
 
     DISALLOW_COPY_AND_ASSIGN(VnswInterfaceListenerBase);
@@ -167,7 +172,7 @@ protected:
 
 #if defined(__linux__)
 #include <ksync/linux_vnswif_listener.h>
-typedef FreeBSDVnswInterfaceListenerLinux VnswInterfaceListener;
+typedef VnswInterfaceListenerLinux VnswInterfaceListener;
 #elif defined(__FreeBSD__)
 #include <ksync/freebsd_vnswif_listener.h>
 typedef FreeBSDVnswInterfaceListener VnswInterfaceListener;
