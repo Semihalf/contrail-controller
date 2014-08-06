@@ -22,11 +22,11 @@
 
 namespace local = boost::asio::local;
 
-class FreeBSDVnswInterfaceListener : public VnswInterfaceListenerBase 
+class VnswInterfaceListenerFreeBSD : public VnswInterfaceListenerBase 
 {
 public:
-    FreeBSDVnswInterfaceListener(Agent *agent);
-    virtual ~FreeBSDVnswInterfaceListener();
+    VnswInterfaceListenerFreeBSD(Agent *agent);
+    virtual ~VnswInterfaceListenerFreeBSD();
     
 private:
     friend class TestVnswIf;
@@ -60,7 +60,7 @@ private:
     int pid_;
     int fib_;
 
-    DISALLOW_COPY_AND_ASSIGN(FreeBSDVnswInterfaceListener);
+    DISALLOW_COPY_AND_ASSIGN(VnswInterfaceListenerFreeBSD);
 };
 
 #endif

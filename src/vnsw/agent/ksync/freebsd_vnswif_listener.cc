@@ -1,20 +1,16 @@
 /*
  * Copyright (c) 2013 Juniper Networks, Inc. All rights reserved.
  */
-
 #include <assert.h>
-//#include <sys/socket.h>
-//#include <netinet/in.h>
-#include "vr_os.h"
-
+#include <sys/socket.h>
+#include <sys/types.h>
+#include <sys/sysctl.h>
+#include <net/route.h>
+/* FreeBSD #defines Free macro in net/route that brakes compilation. */
+#undef Free
+#include <net/if_dl.h>
 #include <ifaddrs.h>
-//#include <strings.h>
-//#include <netinet/in.h>
-//#include <arpa/inet.h>
-//#include <errno.h>
-//#include <net/if.h>
-//#include <sys/ioctl.h>
-//#include <net/address.h>
+#include <strings.h>
 
 #include <base/logging.h>
 #include <base/util.h>
