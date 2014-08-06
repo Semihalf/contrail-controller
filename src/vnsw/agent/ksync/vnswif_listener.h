@@ -113,20 +113,20 @@ public:
     uint32_t GetHostInterfaceCount() const {
         return host_interface_table_.size();
     }
+
     HostInterfaceEntry *GetHostInterfaceEntry(const std::string &name);
-#if 0
-    uint32_t netlink_ll_add_count() const { return netlink_ll_add_count_; }
-    uint32_t netlink_ll_del_count() const { return netlink_ll_del_count_; }
-#endif
+
     uint32_t vhost_update_count() const { return vhost_update_count_; }
+
 protected:
     friend class TestVnswIf;
     void InterfaceNotify(DBTablePartBase *part, DBEntryBase *e);
 
+// Pure firtuals to be implemented by derivative class
     virtual int CreateSocket() = 0;
     virtual void SyncCurrentState() = 0;
     virtual bool IsIfUp(const Event *) = 0;
-    virtual void RegisterAsyncHandler() = 0;
+    virtual void RegisterAsyncReadHandler() = 0;
     virtual void UpdateLinkLocalRoute(const Ip4Address &addr, bool del_rt) = 0;
 
     bool ProcessEvent(Event *re);

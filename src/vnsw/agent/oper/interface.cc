@@ -3,7 +3,7 @@
  */
 
 #if defined(__linux__)
-#include <netinet/ether.h>
+//#include <netinet/ether.h>
 #endif
 #include <boost/uuid/uuid_io.hpp>
 #include <tbb/mutex.h>

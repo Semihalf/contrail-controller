@@ -214,15 +214,8 @@ uint8_t *PktHandler::ParseAgentHdr(PktInfo *pkt_info) {
     }
 
     // packet comes with (outer) eth header, agent_hdr, actual eth packet
-#if defined(__linux__)
-    pkt_info->eth = (ethhdr *) pkt_info->pkt;
-    uint8_t *pkt = ((uint8_t *)pkt_info->eth) + sizeof(ethhdr);
-#elif defined(__FreeBSD__)
     pkt_info->eth = (ether_header *) pkt_info->pkt;
     uint8_t *pkt = ((uint8_t *)pkt_info->eth) + sizeof(ether_header);
-#else
-#error "Unsupported platform"
-#endif
 
     // Decode agent_hdr
     agent_hdr *agent = (agent_hdr *) pkt;
@@ -255,21 +248,11 @@ void PktHandler::SetOuterIp(PktInfo *pkt_info, uint8_t *pkt) {
 
 uint8_t *PktHandler::ParseIpPacket(PktInfo *pkt_info,
                                    PktType::Type &pkt_type, uint8_t *pkt) {
-#if defined(__linux__)
-    pkt_info->ip = (iphdr *) pkt;
-    pkt_info->ip_saddr = ntohl(pkt_info->ip->saddr);
-    pkt_info->ip_daddr = ntohl(pkt_info->ip->daddr);
-    pkt_info->ip_proto = pkt_info->ip->protocol;
-    pkt += (pkt_info->ip->ihl << 2);
-#elif defined(__FreeBSD__)
     pkt_info->ip = (ip *) pkt;
     pkt_info->ip_saddr = ntohl(pkt_info->ip->ip_src.s_addr);
     pkt_info->ip_daddr = ntohl(pkt_info->ip->ip_dst.s_addr);
     pkt_info->ip_proto = pkt_info->ip->ip_p;
     pkt += (pkt_info->ip->ip_hl << 2);
-#else
-#error "Unsupported platform"
-#endif
 
     switch (pkt_info->ip_proto) {
     case IPPROTO_UDP : {
@@ -311,7 +294,7 @@ uint8_t *PktHandler::ParseIpPacket(PktInfo *pkt_info,
 
     case IPPROTO_ICMP: {
         pkt_type = PktType::ICMP;
-        pkt_info->transp.icmp = (icmphdr *)pkt;
+        pkt_info->transp.icmp = (icmp *)pkt;
 #if defined(__linux__)
         icmphdr *icmp = (icmphdr *)pkt;
 
@@ -371,15 +354,8 @@ int PktHandler::ParseMPLSoUDP(PktInfo *pkt_info, uint8_t *pkt) {
 uint8_t *PktHandler::ParseUserPkt(PktInfo *pkt_info, Interface *intf,
                                   PktType::Type &pkt_type, uint8_t *pkt) {
     // get to the actual packet header
-#if defined(__linux__)
-    pkt_info->eth = (ethhdr *) pkt;
-    pkt_info->ether_type = ntohs(pkt_info->eth->h_proto);
-#elif defined(__FreeBSD__)
     pkt_info->eth = (ether_header *) pkt;
     pkt_info->ether_type = ntohs(pkt_info->eth->ether_type);
-#else
-#error "Unsupported platform"
-#endif
 
     if (pkt_info->ether_type == VLAN_PROTOCOL) {
 #if defined(__linux__)
@@ -569,15 +545,8 @@ PktInfo::~PktInfo() {
 const AgentHdr &PktInfo::GetAgentHdr() const {return agent_hdr;};
 
 void PktInfo::UpdateHeaderPtr() {
-#if defined(__linux__)
-    eth = (struct ethhdr *)(pkt + IPC_HDR_LEN);
-    ip = (struct iphdr *)(eth + 1);
-#elif defined(__FreeBSD__)
     eth = (struct ether_header *)(pkt + IPC_HDR_LEN);
     ip = (struct ip *)(eth + 1);
-#else
-#error "Unsupported platform"
-#endif
     transp.tcp = (struct tcphdr *)(ip + 1);
 }
 
@@ -591,4 +560,3 @@ std::size_t PktInfo::hash() const {
     return seed;
 }
 
-///////////////////////////////////////////////////////////////////////////////

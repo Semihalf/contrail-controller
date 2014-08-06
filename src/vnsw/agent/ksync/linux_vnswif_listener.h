@@ -28,25 +28,25 @@ public:
     VnswInterfaceListenerLinux(Agent *agent);
     virtual ~VnswInterfaceListenerLinux();
     
-    virtual int CreateSocket();
-    virtual void SyncCurrentState();
-    virtual bool IsIfUp(const Event *);
-    virtual void RegisterAsyncHandler();
-    void ReadHandler(const boost::system::error_code &, std::size_t length);
-
-    uint32_t vhost_update_count() const { return vhost_update_count_; }
 private:
     friend class TestVnswIf;
-    void InterfaceNotify(DBTablePartBase *part, DBEntryBase *e);
+
+    int CreateSocket();
+    virtual void SyncCurrentState();
+    virtual bool IsIfUp(const Event *);
+    virtual void RegisterAsyncReadHandler();
+    void ReadHandler(const boost::system::error_code &, std::size_t length);
+    void UpdateLinkLocalRoute(const Ip4Address &addr, bool del_rt);
+
     void InitNetlinkScan(uint32_t type, uint32_t seqno);
     int NlMsgDecode(struct nlmsghdr *nl, std::size_t len, uint32_t seq_no);
     bool ProcessEvent(Event *re);
 
-    void UpdateLinkLocalRoute(const Ip4Address &addr, bool del_rt);
-    void LinkLocalRouteFromLinkLocalEvent(Event *event);
-    void LinkLocalRouteFromRouteEvent(Event *event);
+#if 0
     void AddLinkLocalRoutes();
     void DelLinkLocalRoutes();
+#endif
+
     uint32_t netlink_ll_add_count() const { return netlink_ll_add_count_; }
     uint32_t netlink_ll_del_count() const { return netlink_ll_del_count_; }
 
@@ -56,12 +56,8 @@ private:
     Event *HandleNetlinkIntfMsg(struct nlmsghdr *);
     Event *HandleNetlinkAddrMsg(struct nlmsghdr *);
 
-    LinkLocalAddressTable ll_addr_table_;
-    HostInterfaceTable host_interface_table_;
-    WorkQueue<Event *> *revent_queue_;
     uint32_t netlink_ll_add_count_;
     uint32_t netlink_ll_del_count_;
-    uint32_t vhost_update_count_;
 
     DISALLOW_COPY_AND_ASSIGN(VnswInterfaceListenerLinux);
 };

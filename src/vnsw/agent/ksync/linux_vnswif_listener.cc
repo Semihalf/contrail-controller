@@ -3,18 +3,18 @@
  */
 
 #include <assert.h>
-#include <sys/socket.h>
-#include <netinet/in.h>
+//#include <sys/socket.h>
+//#include <netinet/in.h>
 #include "vr_os.h"
 
 #include <ifaddrs.h>
-#include <strings.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
-#include <errno.h>
-#include <net/if.h>
-#include <sys/ioctl.h>
-#include <net/address.h>
+//#include <strings.h>
+//#include <netinet/in.h>
+//#include <arpa/inet.h>
+//#include <errno.h>
+//#include <net/if.h>
+//#include <sys/ioctl.h>
+//#include <net/address.h>
 
 #include <base/logging.h>
 #include <base/util.h>
@@ -42,21 +42,6 @@ VnswInterfaceListenerLinux::~VnswInterfaceListenerLinux() {
     delete revent_queue_;
 }
 
-
-#if 0
-    /* Fetch Links from kernel syncronously, to allow dump request for routes
-     * to go through fine
-     */
-    InitNetlinkScan(RTM_GETLINK, ++seqno_);
-
-    /* Fetch routes from kernel asyncronously and update the gateway-id */
-    InitNetlinkScan(RTM_GETADDR, ++seqno_);
-
-    /* Fetch routes from kernel asyncronously and update the gateway-id */
-    InitNetlinkScan(RTM_GETROUTE, ++seqno_);
-
-#endif
-
 int VnswInterfaceListenerLinux::CreateSocket() {
     int s = socket(PF_NETLINK, SOCK_DGRAM, NETLINK_ROUTE);
 
@@ -80,6 +65,25 @@ int VnswInterfaceListenerLinux::CreateSocket() {
     return s;
 }
 
+bool VnswInterfaceListenerLinux::IsIfUp(const Event *e)
+{
+    return ((e->flags_ & (IFF_UP | IFF_RUNNING)) == 
+            (IFF_UP | IFF_RUNNING));
+}
+
+void VnswInterfaceListenerLinux::SyncCurrentState()
+{
+    /* Fetch Links from kernel syncronously, to allow dump request for routes
+     * to go through fine
+     */
+    InitNetlinkScan(RTM_GETLINK, ++seqno_);
+
+    /* Fetch routes from kernel asyncronously and update the gateway-id */
+    InitNetlinkScan(RTM_GETADDR, ++seqno_);
+
+    /* Fetch routes from kernel asyncronously and update the gateway-id */
+    InitNetlinkScan(RTM_GETROUTE, ++seqno_);
+}
 
 // Initiate netlink scan based on type and flags
 void 
@@ -123,7 +127,7 @@ VnswInterfaceListenerLinux::InitNetlinkScan(uint32_t type, uint32_t seqno)
 }
 
 
-void VnswInterfaceListenerLinux::RegisterAsyncHandler() {
+void VnswInterfaceListenerLinux::RegisterAsyncReadHandler() {
     read_buf_ = new uint8_t[kMaxBufferSize];
     sock_.async_receive(boost::asio::buffer(read_buf_, kMaxBufferSize), 
         boost::bind(&VnswInterfaceListenerLinux::ReadHandler, this,
@@ -150,7 +154,7 @@ VnswInterfaceListenerLinux::ReadHandler(
         delete [] read_buf_;
         read_buf_ = NULL;
     }
-    RegisterAsyncHandler();
+    RegisterAsyncReadHandler();
 }
 
 

@@ -34,8 +34,9 @@ private:
     virtual int CreateSocket();
     virtual void SyncCurrentState();
     virtual bool IsIfUp(const Event *);
-    virtual void RegisterAsyncHandler();
+    virtual void RegisterAsyncReadHandler();
     void ReadHandler(const boost::system::error_code &, std::size_t length);
+    virtual void UpdateLinkLocalRoute(const Ip4Address &addr, bool del_rt);
 
     const string RTMTypeToString(int type);
     unsigned int
@@ -56,7 +57,6 @@ private:
     int Getfib();
     void *SysctlDump(int *mib, int mib_len, size_t *ret_len, int *ret_code);
     int NetmaskLen(int mask);
-    void UpdateLinkLocalRoute(const Ip4Address &addr, bool del_rt);
 
     int pid_;
     int fib_;

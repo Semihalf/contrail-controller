@@ -5,9 +5,7 @@
 #ifndef vnsw_agent_interface_common_hpp
 #define vnsw_agent_interface_common_hpp
 
-#if defined(__FreeBSD__)
 #include <sys/types.h>
-#endif
 
 #include <vector>
 #include <net/ethernet.h>

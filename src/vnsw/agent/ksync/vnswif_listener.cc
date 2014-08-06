@@ -3,18 +3,18 @@
  */
 
 #include <assert.h>
-#include <sys/socket.h>
-#include <netinet/in.h>
+//#include <sys/socket.h>
+//#include <netinet/in.h>
 #include "vr_os.h"
 
-#include <ifaddrs.h>
-#include <strings.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
-#include <errno.h>
-#include <net/if.h>
-#include <sys/ioctl.h>
-#include <net/address.h>
+//#include <ifaddrs.h>
+//#include <strings.h>
+//#include <netinet/in.h>
+//#include <arpa/inet.h>
+//#include <errno.h>
+//#include <net/if.h>
+//#include <sys/ioctl.h>
+//#include <net/address.h>
 
 #include <base/logging.h>
 #include <base/util.h>
@@ -35,9 +35,6 @@ VnswInterfaceListenerBase::VnswInterfaceListenerBase(Agent *agent) :
     intf_listener_id_(DBTableBase::kInvalidId), seqno_(0),
     vhost_intf_up_(false), ll_addr_table_(), revent_queue_(NULL),
     vhost_update_count_(0) { 
-#if 0
-    netlink_ll_add_count_(0), netlink_ll_del_count_(0), vhost_update_count_(0) { 
-#endif
 }
 
 VnswInterfaceListenerBase::~VnswInterfaceListenerBase() {
@@ -77,7 +74,7 @@ void VnswInterfaceListenerBase::Init() {
 
     SyncCurrentState();
 
-    RegisterAsyncHandler();
+    RegisterAsyncReadHandler();
 }
 
 void VnswInterfaceListenerBase::Shutdown() { 

@@ -11,13 +11,7 @@
 IcmpHandler::IcmpHandler(Agent *agent, boost::shared_ptr<PktInfo> info,
                          boost::asio::io_service &io) 
     : ProtoHandler(agent, info, io), icmp_(pkt_info_->transp.icmp) {
-#if defined(__linux__)
-    icmp_len_ = ntohs(pkt_info_->ip->tot_len) - (pkt_info_->ip->ihl * 4);
-#elif defined(__FreeBSD__)
     icmp_len_ = ntohs(pkt_info_->ip->ip_len) - (pkt_info_->ip->ip_hl * 4);
-#else
-#error "Unsupported platform"
-#endif
 }
 
 IcmpHandler::~IcmpHandler() {
@@ -34,13 +28,7 @@ bool IcmpHandler::Run() {
     if (!vm_itf->ipv4_forwarding()) { 
         return true;
     } 
-#if defined(__linux__)
-    switch (icmp_->type) {
-#elif defined(__FreeBSD__)
     switch (icmp_->icmp_type) {
-#else
-#error "Unsuppored platform"
-#endif
         case ICMP_ECHO:
             if (CheckPacket()) {
                 icmp_proto->IncrStatsGwPing();
@@ -56,23 +44,12 @@ bool IcmpHandler::Run() {
 }
 
 bool IcmpHandler::CheckPacket() {
-#if defined(__linux__)
-    if (pkt_info_->len < (IPC_HDR_LEN + sizeof(ethhdr) +
-                          ntohs(pkt_info_->ip->tot_len)))
-        return false;
-
-    uint16_t checksum = icmp_->checksum;
-    icmp_->checksum = 0;
-#elif defined(__FreeBSD__)
     if (pkt_info_->len < (IPC_HDR_LEN + sizeof(ether_header) +
                           ntohs(pkt_info_->ip->ip_len)))
         return false;
 
     uint16_t checksum = icmp_->icmp_cksum;
     icmp_->icmp_cksum = 0;
-#else
-#error "Unsupported platform"
-#endif
 
     if (checksum == Csum((uint16_t *)icmp_, icmp_len_, 0))
         return true;
@@ -81,25 +58,6 @@ bool IcmpHandler::CheckPacket() {
 }
 
 void IcmpHandler::SendResponse() {
-#if defined(__linux__)
-    unsigned char src_mac[ETH_ALEN];
-    unsigned char dest_mac[ETH_ALEN];
-
-    memcpy(src_mac, pkt_info_->eth->h_dest, ETH_ALEN);
-    memcpy(dest_mac, pkt_info_->eth->h_source, ETH_ALEN);
-
-    // fill in the response
-    uint16_t len = icmp_len_;
-    icmp_->type = ICMP_ECHOREPLY;
-    icmp_->checksum = Csum((uint16_t *)icmp_, icmp_len_, 0);
-
-    len += sizeof(iphdr);
-    IpHdr(len, htonl(pkt_info_->ip_daddr),
-          htonl(pkt_info_->ip_saddr), IPPROTO_ICMP);
-    EthHdr(agent()->vhost_interface()->mac().ether_addr_octet,
-           pkt_info_->eth->h_source, IP_PROTOCOL);
-    len += sizeof(ethhdr);
-#elif defined(__FreeBSD__)
     unsigned char src_mac[ETHER_ADDR_LEN];
     unsigned char dest_mac[ETHER_ADDR_LEN];
 
@@ -114,12 +72,14 @@ void IcmpHandler::SendResponse() {
     len += sizeof(ip);
     IpHdr(len, htonl(pkt_info_->ip_daddr),
           htonl(pkt_info_->ip_saddr), IPPROTO_ICMP);
+#if defined(__linux__)
+    EthHdr(agent()->vhost_interface()->mac().ether_addr_octet,
+           pkt_info_->eth->ether_shost, IP_PROTOCOL);
+#elif defined(__FreeBSD__)
     EthHdr(agent()->vhost_interface()->mac().octet,
            pkt_info_->eth->ether_shost, IP_PROTOCOL);
-    len += sizeof(ether_header);
-#else
-#error "Unsupported platform"
 #endif
+    len += sizeof(ether_header);
 
     Send(len, GetInterfaceIndex(), pkt_info_->vrf,
          AGENT_CMD_SWITCH, PktHandler::ICMP);

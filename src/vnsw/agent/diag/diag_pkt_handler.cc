@@ -20,13 +20,7 @@ void DiagPktHandler::SetReply() {
 }
 
 void DiagPktHandler::SetDiagChkSum() {
-#if defined(__linux__)
-    pkt_info_->ip->check = 0xffff;
-#elif defined(__FreeBSD__)
     pkt_info_->ip->ip_sum = 0xffff;
-#else
-#error "Unsupported platform"
-#endif
 }
 
 void DiagPktHandler::Reply() {
@@ -138,15 +132,14 @@ void DiagPktHandler::SwapL4() {
         TcpHdr(htonl(pkt_info_->ip_daddr), ntohs(tcp->dest), 
                htonl(pkt_info_->ip_saddr), ntohs(tcp->source), 
                false, ntohs(tcp->ack_seq), 
-               ntohs(pkt_info_->ip->tot_len) - sizeof(iphdr));
 #elif defined(__FreeBSD__)
         TcpHdr(htonl(pkt_info_->ip_daddr), ntohs(tcp->th_dport), 
                htonl(pkt_info_->ip_saddr), ntohs(tcp->th_sport), 
                false, ntohs(tcp->th_ack), 
-               ntohs(pkt_info_->ip->ip_len) - sizeof(ip));
 #else
 #error "Unsupported platform"
 #endif
+               ntohs(pkt_info_->ip->ip_len) - sizeof(ip));
     } else if(pkt_info_->ip_proto == IPPROTO_UDP) {
         udphdr *udp = pkt_info_->transp.udp;
 #if defined(__linux__)
@@ -164,27 +157,13 @@ void DiagPktHandler::SwapL4() {
 
 void DiagPktHandler::SwapIpHdr() {
     //IpHdr expects IP address to be in network format
-#if defined(__linux__)
-    iphdr *ip = pkt_info_->ip;
-    IpHdr(ntohs(ip->tot_len), ip->daddr, ip->saddr, ip->protocol);
-#elif defined(__FreeBSD__)
     ip *ip = pkt_info_->ip;
     IpHdr(ntohs(ip->ip_len), ip->ip_dst.s_addr, ip->ip_src.s_addr, ip->ip_p);
-#else
-#error "Unsupported platform"
-#endif
 }
 
 void DiagPktHandler::SwapEthHdr() {
-#if defined(__linux__)
-    ethhdr *eth = pkt_info_->eth;
-    EthHdr(eth->h_dest, eth->h_source, ntohs(eth->h_proto));
-#elif defined(__FreeBSD__)
     ether_header *eth = pkt_info_->eth;
     EthHdr(eth->ether_dhost, eth->ether_shost, ntohs(eth->ether_type));
-#else
-#error "Unsupported platform"
-#endif
 }
 
 void DiagPktHandler::Swap() {

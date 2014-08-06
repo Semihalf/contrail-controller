@@ -7,11 +7,8 @@
 #include <linux/netlink.h>
 #include <linux/rtnetlink.h>
 #include <linux/sockios.h>
-#elif defined(__FreeBSD__)
-#include <sys/types.h>
-#else
-#error "Unsupported platform"
 #endif
+#include <sys/types.h>
 #include <sys/socket.h>
 
 #include <boost/bind.hpp>

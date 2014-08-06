@@ -531,10 +531,10 @@ void FreeBSDVnswInterfaceListener::ReadHandler(const boost::system::error_code &
         delete [] read_buf_;
         read_buf_ = NULL;
     }
-    RegisterAsyncHandler();
+    RegisterAsyncReadHandler();
 }
 
-void FreeBSDVnswInterfaceListener::RegisterAsyncHandler() {
+void FreeBSDVnswInterfaceListener::RegisterAsyncReadHandler() {
     read_buf_ = new uint8_t[kMaxBufferSize];
     sock_.async_receive(boost::asio::buffer(read_buf_, kMaxBufferSize), 
         boost::bind(&FreeBSDVnswInterfaceListener::ReadHandler, this,
@@ -544,10 +544,7 @@ void FreeBSDVnswInterfaceListener::RegisterAsyncHandler() {
 
 void FreeBSDVnswInterfaceListener::UpdateLinkLocalRoute(
     const Ip4Address &addr, bool del_rt) {
-    if (del_rt)
-        netlink_ll_del_count_++;
-    else
-        netlink_ll_add_count_++;
+
     if (agent_->test_mode())
         return;
 
