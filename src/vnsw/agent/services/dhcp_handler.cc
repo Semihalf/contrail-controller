@@ -2,6 +2,7 @@
  * Copyright (c) 2013 Juniper Networks, Inc. All rights reserved.
  */
 
+#include <sys/types.h>
 #include <net/ethernet.h>
 #include "vr_defs.h"
 #include "cmn/agent_cmn.h"

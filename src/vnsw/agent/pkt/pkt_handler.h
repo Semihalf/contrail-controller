@@ -9,6 +9,8 @@
 #include <netinet/in.h>
 #include <netinet/if_ether.h>
 #include <netinet/ip.h>
+#include <netinet/tcp.h>
+#include <netinet/udp.h>
 #include <netinet/ip_icmp.h>
 
 #include <tbb/atomic.h>
@@ -17,7 +19,6 @@
 #include <oper/mirror_table.h>
 #include <oper/nexthop.h>
 #include <pkt/pkt_trace.h>
-#include <bsdinet.h>
 
 #define DHCP_SERVER_PORT 67
 #define DHCP_CLIENT_PORT 68

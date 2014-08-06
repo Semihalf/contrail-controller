@@ -1,8 +1,8 @@
 /*
  * Copyright (c) 2013 Juniper Networks, Inc. All rights reserved.
  */
-#include <netinet/udp.h>
 #include <sys/types.h>
+#include <netinet/udp.h>
 #include "vr_os.h"
 #include "vr_defs.h"
 #include "oper/interface_common.h"
