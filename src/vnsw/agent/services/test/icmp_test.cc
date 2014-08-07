@@ -5,10 +5,9 @@
 #include "testing/gunit.h"
 
 #include <sys/types.h>
-#include <sys/socket.h>
 #include <netinet/in.h>
 #include <netinet/ip.h>
-#include <netinet/if_ether.h>
+#include <net/ethernet.h>
 #include <netinet/ip_icmp.h>
 #include <boost/uuid/string_generator.hpp>
 #include <boost/scoped_array.hpp>
