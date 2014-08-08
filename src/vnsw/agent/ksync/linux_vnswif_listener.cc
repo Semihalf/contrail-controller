@@ -64,12 +64,6 @@ int VnswInterfaceListenerLinux::CreateSocket() {
     return s;
 }
 
-bool VnswInterfaceListenerLinux::IsIfUp(const Event *e)
-{
-    return ((e->flags_ & (IFF_UP | IFF_RUNNING)) == 
-            (IFF_UP | IFF_RUNNING));
-}
-
 void VnswInterfaceListenerLinux::SyncCurrentState()
 {
     /* Fetch Links from kernel syncronously, to allow dump request for routes

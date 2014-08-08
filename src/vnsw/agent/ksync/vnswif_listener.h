@@ -125,7 +125,6 @@ protected:
 // Pure firtuals to be implemented by derivative class
     virtual int CreateSocket() = 0;
     virtual void SyncCurrentState() = 0;
-    virtual bool IsIfUp(const Event *) = 0;
     virtual void RegisterAsyncReadHandler() = 0;
     virtual void UpdateLinkLocalRoute(const Ip4Address &addr, bool del_rt) = 0;
 

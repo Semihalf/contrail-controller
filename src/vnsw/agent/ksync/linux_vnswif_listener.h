@@ -33,7 +33,6 @@ private:
 
     int CreateSocket();
     virtual void SyncCurrentState();
-    virtual bool IsIfUp(const Event *);
     virtual void RegisterAsyncReadHandler();
     void ReadHandler(const boost::system::error_code &, std::size_t length);
     void UpdateLinkLocalRoute(const Ip4Address &addr, bool del_rt);

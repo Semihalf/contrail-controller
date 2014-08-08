@@ -269,7 +269,9 @@ void VnswInterfaceListenerBase::HandleInterfaceEvent(const Event *event) {
         ResetSeen(event->interface_, false);
     } else {
         SetSeen(event->interface_, false);
-        bool up = IsIfUp(event);
+        bool up = 
+            (event->flags_ & (IFF_UP | IFF_RUNNING)) == (IFF_UP | IFF_RUNNING);
+                                    
 
         SetLinkState(event->interface_, up);
 

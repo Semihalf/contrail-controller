@@ -430,12 +430,6 @@ void FreeBSDVnswInterfaceListener::SyncCurrentState()
     RTInitRoutes(fib_);
 }
 
-bool FreeBSDVnswInterfaceListener::IsIfUp(
-    const VnswInterfaceListener::Event *e)
-{
-    return ((e->flags_ & RTF_UP) != 0);
-}
-
 void *FreeBSDVnswInterfaceListener::SysctlDump(int *mib, int mib_len,
     size_t *ret_len, int *ret_code)
 {
