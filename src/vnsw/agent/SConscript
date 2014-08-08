@@ -277,9 +277,9 @@ subdirs = [
     'oper',
     'pkt',
     'services',
+    'test',
     'uve',
     'vgw',
-    'test',
 ]
 
 for dir in subdirs:

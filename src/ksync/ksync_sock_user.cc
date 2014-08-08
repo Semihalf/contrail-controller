@@ -2,8 +2,6 @@
  * Copyright (c) 2013 Juniper Networks, Inc. All rights reserved.
  */
 
-#include "vr_os.h"
-
 #include <boost/bind.hpp>
 
 #include <base/logging.h>
@@ -14,6 +12,8 @@
 
 #include <sandesh/sandesh_types.h>
 #include <sandesh/sandesh.h>
+
+#include <linux/genetlink.h>
 
 #include "ksync_index.h"
 #include "ksync_entry.h"

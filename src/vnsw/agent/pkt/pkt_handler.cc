@@ -203,13 +203,7 @@ uint8_t *PktHandler::ParseAgentHdr(PktInfo *pkt_info) {
     // Format of packet trapped is,
     // OUTER_ETH - AGENT_HDR - PAYLOAD
     // Enusure sanity of the packet
-#if defined(__linux__)
-    if (pkt_info->len < (sizeof(ethhdr) + sizeof(agent_hdr) + sizeof(ethhdr))) {
-#elif defined(__FreeBSD__)
     if (pkt_info->len < (sizeof(ether_header) + sizeof(agent_hdr) + sizeof(ether_header))) {
-#else
-#error "Unsupported platform"
-#endif
         return NULL;
     }
 
@@ -233,17 +227,9 @@ uint8_t *PktHandler::ParseAgentHdr(PktInfo *pkt_info) {
 }
 
 void PktHandler::SetOuterIp(PktInfo *pkt_info, uint8_t *pkt) {
-#if defined(__linux__)
-    iphdr *ip_hdr = (iphdr *)pkt;
-    pkt_info->tunnel.ip_saddr = ntohl(ip_hdr->saddr);
-    pkt_info->tunnel.ip_daddr = ntohl(ip_hdr->daddr);
-#elif defined(__FreeBSD__)
     ip *ip_hdr = (ip *)pkt;
     pkt_info->tunnel.ip_saddr = ntohl(ip_hdr->ip_src.s_addr);
     pkt_info->tunnel.ip_daddr = ntohl(ip_hdr->ip_dst.s_addr);
-#else
-#error "Unsupported platform"
-#endif
 }
 
 uint8_t *PktHandler::ParseIpPacket(PktInfo *pkt_info,
@@ -295,21 +281,11 @@ uint8_t *PktHandler::ParseIpPacket(PktInfo *pkt_info,
     case IPPROTO_ICMP: {
         pkt_type = PktType::ICMP;
         pkt_info->transp.icmp = (icmp *)pkt;
-#if defined(__linux__)
-        icmphdr *icmp = (icmphdr *)pkt;
-
-        pkt_info->dport = htons(icmp->type);
-        if (icmp->type == ICMP_ECHO || icmp->type == ICMP_ECHOREPLY) {
-            pkt_info->sport = htons(icmp->un.echo.id);
-#elif defined(__FreeBSD__)
         struct icmp *icmp = (struct icmp *)pkt;
 
         pkt_info->dport = htons(icmp->icmp_type);
         if (icmp->icmp_type == ICMP_ECHO || icmp->icmp_type == ICMP_ECHOREPLY) {
             pkt_info->sport = htons(icmp->icmp_hun.ih_idseq.icd_id);
-#else
-#error "Unsupported platform"
-#endif
             pkt_info->dport = ICMP_ECHOREPLY;
         } else {
             pkt_info->sport = 0;
@@ -358,21 +334,9 @@ uint8_t *PktHandler::ParseUserPkt(PktInfo *pkt_info, Interface *intf,
     pkt_info->ether_type = ntohs(pkt_info->eth->ether_type);
 
     if (pkt_info->ether_type == VLAN_PROTOCOL) {
-#if defined(__linux__)
-        pkt = ((uint8_t *)pkt_info->eth) + sizeof(ethhdr) + 4;
-#elif defined(__FreeBSD__)
         pkt = ((uint8_t *)pkt_info->eth) + sizeof(ether_header) + 4;
-#else
-#error "Unsupported platform"
-#endif
     } else {
-#if defined(__linux__)
-        pkt = ((uint8_t *)pkt_info->eth) + sizeof(ethhdr);
-#elif defined(__FreeBSD__)
         pkt = ((uint8_t *)pkt_info->eth) + sizeof(ether_header);
-#else
-#error "Unsupported platform"
-#endif
     }
 
     // Parse payload

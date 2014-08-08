@@ -5,8 +5,6 @@
 #include <boost/asio.hpp>
 #include <boost/bind.hpp>
 
-#include "vr_os.h"
-
 #include <io/event_manager.h>
 #include <db/db_entry.h>
 #include <db/db_table.h>

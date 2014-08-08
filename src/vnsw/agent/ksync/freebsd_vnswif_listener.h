@@ -22,12 +22,12 @@
 
 namespace local = boost::asio::local;
 
-class VnswInterfaceListenerFreeBSD : public VnswInterfaceListenerBase 
+class VnswInterfaceListenerFreeBSD : public VnswInterfaceListenerBase
 {
 public:
     VnswInterfaceListenerFreeBSD(Agent *agent);
     virtual ~VnswInterfaceListenerFreeBSD();
-    
+
 private:
     friend class TestVnswIf;
 

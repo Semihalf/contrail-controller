@@ -3,18 +3,6 @@
  */
 
 #include <assert.h>
-//#include <sys/socket.h>
-//#include <netinet/in.h>
-#include "vr_os.h"
-
-//#include <ifaddrs.h>
-//#include <strings.h>
-//#include <netinet/in.h>
-//#include <arpa/inet.h>
-//#include <errno.h>
-//#include <net/if.h>
-//#include <sys/ioctl.h>
-//#include <net/address.h>
 
 #include <base/logging.h>
 #include <base/util.h>
@@ -29,8 +17,8 @@
 
 extern void RouterIdDepInit(Agent *agent);
 
-VnswInterfaceListenerBase::VnswInterfaceListenerBase(Agent *agent) : 
-    agent_(agent), read_buf_(NULL), sock_fd_(-1), 
+VnswInterfaceListenerBase::VnswInterfaceListenerBase(Agent *agent) :
+    agent_(agent), read_buf_(NULL), sock_fd_(-1),
     sock_(*(agent->event_manager())->io_service()),
     intf_listener_id_(DBTableBase::kInvalidId), seqno_(0),
     vhost_intf_up_(false), ll_addr_table_(), revent_queue_(NULL),

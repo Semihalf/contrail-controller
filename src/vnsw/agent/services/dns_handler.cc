@@ -3,7 +3,6 @@
  */
 #include <sys/types.h>
 #include <netinet/udp.h>
-#include "vr_os.h"
 #include "vr_defs.h"
 #include "oper/interface_common.h"
 #include "services/dns_proto.h"

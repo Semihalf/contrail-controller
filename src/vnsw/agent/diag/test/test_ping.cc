@@ -92,19 +92,10 @@ public:
 
         // Change the agent header
         unsigned char mac[ETHER_ADDR_LEN];
-#if defined(__linux__)
-        ethhdr *eth = (ethhdr *)buf;
-        memcpy(mac, eth->h_dest, ETH_ALEN);
-        memcpy(eth->h_dest, eth->h_source, ETH_ALEN);
-        memcpy(eth->h_source, mac, ETH_ALEN);
-#elif defined(__FreeBSD__)
         ether_header *eth = (ether_header *)buf;
         memcpy(mac, eth->ether_dhost, ETHER_ADDR_LEN);
         memcpy(eth->ether_dhost, eth->ether_shost, ETHER_ADDR_LEN);
         memcpy(eth->ether_shost, mac, ETHER_ADDR_LEN);
-#else
-#error "Unsupported platform"
-#endif
 
         agent_hdr *agent = (agent_hdr *)(eth + 1);
         int intf_id = ntohs(agent->hdr_ifindex);
@@ -127,17 +118,9 @@ public:
 
         const unsigned char smac[] = {0x00, 0x25, 0x90, 0xc4, 0x82, 0x2c};
         const unsigned char dmac[] = {0x02, 0xce, 0xa0, 0x6c, 0x96, 0x34};
-#if defined(__linux__)
-        eth = (ethhdr *) (agent + 1);
-        memcpy(eth->h_dest, dmac, ETH_ALEN);
-        memcpy(eth->h_source, smac, ETH_ALEN);
-#elif defined(__FreeBSD__)
         eth = (ether_header *) (agent + 1);
         memcpy(eth->ether_dhost, dmac, ETHER_ADDR_LEN);
         memcpy(eth->ether_shost, smac, ETHER_ADDR_LEN);
-#else
-#error "Unsupported platform"
-#endif
 
         // send the recieved packet back
         tap_->GetTestPktHandler()->TestPktSend(buf, length);

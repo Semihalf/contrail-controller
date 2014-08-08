@@ -3,18 +3,10 @@
  */
 
 #include <assert.h>
-//#include <sys/socket.h>
-//#include <netinet/in.h>
-#include "vr_os.h"
 
+#include <linux/netlink.h>
+#include <linux/rtnetlink.h>
 #include <ifaddrs.h>
-//#include <strings.h>
-//#include <netinet/in.h>
-//#include <arpa/inet.h>
-//#include <errno.h>
-//#include <net/if.h>
-//#include <sys/ioctl.h>
-//#include <net/address.h>
 
 #include <base/logging.h>
 #include <base/util.h>
@@ -29,7 +21,7 @@
 
 extern void RouterIdDepInit(Agent *agent);
 
-VnswInterfaceListenerLinux::VnswInterfaceListenerLinux(Agent *agent) : 
+VnswInterfaceListenerLinux::VnswInterfaceListenerLinux(Agent *agent) :
     VnswInterfaceListenerBase(agent) {
 }
 
@@ -45,7 +37,7 @@ int VnswInterfaceListenerLinux::CreateSocket() {
     int s = socket(PF_NETLINK, SOCK_DGRAM, NETLINK_ROUTE);
 
     if (s < 0) {
-        LOG(ERROR, "Error <" << errno << ": " << strerror(errno) << 
+        LOG(ERROR, "Error <" << errno << ": " << strerror(errno) <<
                 "> creating socket");
         assert(0);
     }
@@ -56,7 +48,7 @@ int VnswInterfaceListenerLinux::CreateSocket() {
     addr.nl_family = AF_NETLINK;
     addr.nl_groups = (RTMGRP_IPV4_ROUTE | RTMGRP_LINK | RTMGRP_IPV4_IFADDR);
     if (bind(s, (struct sockaddr *)&addr, sizeof(addr)) == -1) {
-        LOG(ERROR, "Error <" << errno << ": " << strerror(errno) << 
+        LOG(ERROR, "Error <" << errno << ": " << strerror(errno) <<
                        "> binding to netlink address family");
         assert(0);
     }
@@ -79,8 +71,8 @@ void VnswInterfaceListenerLinux::SyncCurrentState()
 }
 
 // Initiate netlink scan based on type and flags
-void 
-VnswInterfaceListenerLinux::InitNetlinkScan(uint32_t type, uint32_t seqno) 
+void
+VnswInterfaceListenerLinux::InitNetlinkScan(uint32_t type, uint32_t seqno)
 {
     struct nlmsghdr *nlh;
     const uint32_t buf_size = VnswInterfaceListenerLinux::kMaxBufferSize;
@@ -104,9 +96,9 @@ VnswInterfaceListenerLinux::InitNetlinkScan(uint32_t type, uint32_t seqno)
 
     uint8_t read_buf[buf_size];
 
-    /* 
-     * Wait/Read the response for dump request, linux kernel doesn't handle 
-     * dump request if response for previous dump request is not complete. 
+    /*
+     * Wait/Read the response for dump request, linux kernel doesn't handle
+     * dump request if response for previous dump request is not complete.
      */
     int end = 0;
     while (end == 0) {
@@ -122,16 +114,16 @@ VnswInterfaceListenerLinux::InitNetlinkScan(uint32_t type, uint32_t seqno)
 
 void VnswInterfaceListenerLinux::RegisterAsyncReadHandler() {
     read_buf_ = new uint8_t[kMaxBufferSize];
-    sock_.async_receive(boost::asio::buffer(read_buf_, kMaxBufferSize), 
+    sock_.async_receive(boost::asio::buffer(read_buf_, kMaxBufferSize),
         boost::bind(&VnswInterfaceListenerLinux::ReadHandler, this,
-        boost::asio::placeholders::error, 
+        boost::asio::placeholders::error,
         boost::asio::placeholders::bytes_transferred));
 }
 
 
 void
 VnswInterfaceListenerLinux::ReadHandler(
-    const boost::system::error_code &error, std::size_t len) 
+    const boost::system::error_code &error, std::size_t len)
 {
     struct nlmsghdr *nlh;
 
@@ -139,7 +131,7 @@ VnswInterfaceListenerLinux::ReadHandler(
         nlh = (struct nlmsghdr *)read_buf_;
         NlMsgDecode(nlh, len, -1);
     } else {
-        LOG(ERROR, "Error < : " << error.message() << 
+        LOG(ERROR, "Error < : " << error.message() <<
                    "> reading packet on netlink sock");
     }
 
@@ -208,7 +200,7 @@ void VnswInterfaceListenerLinux::UpdateLinkLocalRoute(const Ip4Address &addr,
     sock_.send(boost::asio::buffer(nlh,nlh->nlmsg_len), 0, ec);
     assert(ec.value() == 0);
 }
- 
+
 /****************************************************************************
  * Netlink message handlers
  * Decodes netlink messages and enqueues events to revent_queue_
@@ -242,7 +234,7 @@ VnswInterfaceListenerLinux::HandleNetlinkRouteMsg(struct nlmsghdr *nlh)
 {
     struct rtmsg *rtm = (struct rtmsg *) NLMSG_DATA (nlh);
 
-    if (rtm->rtm_family != AF_INET || rtm->rtm_table != RT_TABLE_MAIN 
+    if (rtm->rtm_family != AF_INET || rtm->rtm_table != RT_TABLE_MAIN
         || rtm->rtm_type != RTN_UNICAST || rtm->rtm_scope != RT_SCOPE_LINK) {
         LOG(DEBUG, "Ignoring Netlink route with family "
             << (uint32_t)rtm->rtm_family
@@ -282,7 +274,7 @@ VnswInterfaceListenerLinux::HandleNetlinkRouteMsg(struct nlmsghdr *nlh)
     if_indextoname(oif, name);
     Ip4Address dst_addr((unsigned long)ntohl(dst_ip));
     Ip4Address gw_addr((unsigned long)ntohl(gw_ip));
-    LOG(DEBUG, "Handle netlink route message " 
+    LOG(DEBUG, "Handle netlink route message "
         << NetlinkTypeToString(nlh->nlmsg_type)
         << " : " << dst_addr.to_string() << "/" << rtm->rtm_dst_len
         << " Interface " << name << " GW " << gw_addr.to_string());
@@ -315,8 +307,8 @@ VnswInterfaceListenerLinux::HandleNetlinkIntfMsg(struct nlmsghdr *nlh){
     }
 
     assert(port_name != NULL);
-    LOG(DEBUG, "Handle netlink interface message " 
-        << NetlinkTypeToString(nlh->nlmsg_type) 
+    LOG(DEBUG, "Handle netlink interface message "
+        << NetlinkTypeToString(nlh->nlmsg_type)
         << " for interface " << port_name);
 
     Event::Type type;
@@ -330,13 +322,13 @@ VnswInterfaceListenerLinux::HandleNetlinkIntfMsg(struct nlmsghdr *nlh){
 
 VnswInterfaceListenerBase::Event *
 VnswInterfaceListenerLinux::HandleNetlinkAddrMsg(struct nlmsghdr *nlh){
-    struct ifaddrmsg *ifa = (struct ifaddrmsg *) NLMSG_DATA (nlh); 
- 
+    struct ifaddrmsg *ifa = (struct ifaddrmsg *) NLMSG_DATA (nlh);
+
     // Get interface name from os-index
     char name[IFNAMSIZ];
     if_indextoname(ifa->ifa_index, name);
 
-    LOG(DEBUG, "Handle netlink address message " 
+    LOG(DEBUG, "Handle netlink address message "
         << NetlinkTypeToString(nlh->nlmsg_type) << " for interface " << name);
 
     uint32_t ipaddr = 0;
@@ -365,8 +357,8 @@ VnswInterfaceListenerLinux::HandleNetlinkAddrMsg(struct nlmsghdr *nlh){
 }
 
 int
-VnswInterfaceListenerLinux::NlMsgDecode(struct nlmsghdr *nl, 
-    std::size_t len, uint32_t seq_no) 
+VnswInterfaceListenerLinux::NlMsgDecode(struct nlmsghdr *nl,
+    std::size_t len, uint32_t seq_no)
 {
     Event *event = NULL;
     struct nlmsghdr *nlh = nl;
@@ -391,7 +383,7 @@ VnswInterfaceListenerLinux::NlMsgDecode(struct nlmsghdr *nl,
             event = HandleNetlinkIntfMsg(nlh);
             break;
         default:
-            LOG(DEBUG, "VnswInterfaceListenerLinux got message : " 
+            LOG(DEBUG, "VnswInterfaceListenerLinux got message : "
                 << NetlinkTypeToString(nlh->nlmsg_type));
             break;
         }

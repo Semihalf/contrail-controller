@@ -99,9 +99,7 @@ service_instance_test = AgentEnv.MakeTestCmd(env, 'service_instance_test',
 flaky_test = env.TestSuite('agent-flaky-test', flaky_agent_suite)
 env.Alias('controller/src/vnsw/agent:flaky_test', flaky_test)
 
-#env.Prepend(LIBS = [ 'base', 'agent_test', 'task_test' ]) 
-env.Prepend(LIBS = [ 'dbtest', 'task_test' ]) 
-#env.Prepend(LIBPATH = [ '../../../base/', '../../../base/test' ])
+env.Prepend(LIBS = [ 'dbtest', 'task_test' ])
 env.Prepend(LIBPATH = [ '../../../db/test', '../../../base/test' ])
 test = env.TestSuite('agent-test', agent_suite)
 env.Alias('agent:agent_test', test)

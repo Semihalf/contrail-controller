@@ -795,7 +795,7 @@ uint16_t DhcpHandler::FillDhcpResponse(unsigned char *dest_mac,
     pkt_info_->eth = (ether_header *)(pkt_info_->pkt + IPC_HDR_LEN);
     EthHdr(agent()->pkt()->pkt_handler()->mac_address(), dest_mac, 
            ETHERTYPE_IP);
-   
+
     uint16_t header_len = sizeof(ether_header);
     
     if (vm_itf_->vlan_id() != VmInterface::kInvalidVlanId) {
