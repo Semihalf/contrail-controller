@@ -131,6 +131,7 @@ protected:
 
     bool ProcessEvent(Event *re);
 
+    void UpdateLinkLocalRouteAndCount(const Ip4Address &addr, bool del_rt);
     void LinkLocalRouteFromLinkLocalEvent(Event *event);
     void LinkLocalRouteFromRouteEvent(Event *event);
     void AddLinkLocalRoutes();
@@ -161,11 +162,15 @@ protected:
     LinkLocalAddressTable ll_addr_table_;
     HostInterfaceTable host_interface_table_;
     WorkQueue<Event *> *revent_queue_;
-#if 0
-    uint32_t netlink_ll_add_count_;
-    uint32_t netlink_ll_del_count_;
-#endif
+
     uint32_t vhost_update_count_;
+    uint32_t ll_add_count_;
+    uint32_t ll_del_count_;
+
+public:
+    uint32_t ll_add_count() const { return ll_add_count_; }
+    uint32_t ll_del_count() const { return ll_del_count_; }
+
 
     DISALLOW_COPY_AND_ASSIGN(VnswInterfaceListenerBase);
 };

@@ -38,26 +38,16 @@ private:
     void ReadHandler(const boost::system::error_code &, std::size_t length);
     void UpdateLinkLocalRoute(const Ip4Address &addr, bool del_rt);
 
+private:
     void InitNetlinkScan(uint32_t type, uint32_t seqno);
     int NlMsgDecode(struct nlmsghdr *nl, std::size_t len, uint32_t seq_no);
     bool ProcessEvent(Event *re);
-
-#if 0
-    void AddLinkLocalRoutes();
-    void DelLinkLocalRoutes();
-#endif
-
-    uint32_t netlink_ll_add_count() const { return netlink_ll_add_count_; }
-    uint32_t netlink_ll_del_count() const { return netlink_ll_del_count_; }
 
     int AddAttr(uint8_t *, int , void *, int );
     string NetlinkTypeToString(uint32_t);
     Event *HandleNetlinkRouteMsg(struct nlmsghdr *);
     Event *HandleNetlinkIntfMsg(struct nlmsghdr *);
     Event *HandleNetlinkAddrMsg(struct nlmsghdr *);
-
-    uint32_t netlink_ll_add_count_;
-    uint32_t netlink_ll_del_count_;
 
     DISALLOW_COPY_AND_ASSIGN(VnswInterfaceListenerLinux);
 };

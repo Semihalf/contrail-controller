@@ -30,8 +30,7 @@
 extern void RouterIdDepInit(Agent *agent);
 
 VnswInterfaceListenerLinux::VnswInterfaceListenerLinux(Agent *agent) : 
-    VnswInterfaceListenerBase(agent), 
-    netlink_ll_add_count_(0), netlink_ll_del_count_(0) {
+    VnswInterfaceListenerBase(agent) {
 }
 
 VnswInterfaceListenerLinux::~VnswInterfaceListenerLinux() {
@@ -181,13 +180,6 @@ void VnswInterfaceListenerLinux::UpdateLinkLocalRoute(const Ip4Address &addr,
     struct nlmsghdr *nlh;
     struct rtmsg *rtm;
     uint32_t ipaddr;
-
-    if (del_rt)
-        netlink_ll_del_count_++;
-    else
-        netlink_ll_add_count_++;
-    if (agent_->test_mode())
-        return;
 
     memset(tx_buf_, 0, kMaxBufferSize);
 

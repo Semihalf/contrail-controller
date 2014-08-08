@@ -34,7 +34,7 @@ VnswInterfaceListenerBase::VnswInterfaceListenerBase(Agent *agent) :
     sock_(*(agent->event_manager())->io_service()),
     intf_listener_id_(DBTableBase::kInvalidId), seqno_(0),
     vhost_intf_up_(false), ll_addr_table_(), revent_queue_(NULL),
-    vhost_update_count_(0) { 
+    vhost_update_count_(0), ll_add_count_(0), ll_del_count_(0) { 
 }
 
 VnswInterfaceListenerBase::~VnswInterfaceListenerBase() {
@@ -356,13 +356,27 @@ void VnswInterfaceListenerBase::HandleAddressEvent(const Event *event) {
         RouterIdDepInit(agent_);
 }
 
+void
+VnswInterfaceListenerBase::UpdateLinkLocalRouteAndCount(
+    const Ip4Address &addr, bool del_rt) 
+{
+    if (del_rt)
+        ll_del_count_++;
+    else
+        ll_add_count_++;
+    if (agent_->test_mode())
+        return;
+
+    UpdateLinkLocalRoute(addr, del_rt);
+}
+
 // Handle link-local route changes resulting from ADD_LL_ROUTE or DEL_LL_ROUTE
 void VnswInterfaceListenerBase::LinkLocalRouteFromLinkLocalEvent(Event *event) {
     if (event->event_ == Event::DEL_LL_ROUTE) {
         ll_addr_table_.erase(event->addr_);
-        UpdateLinkLocalRoute(event->addr_, true); } else {
+        UpdateLinkLocalRouteAndCount(event->addr_, true); } else {
         ll_addr_table_.insert(event->addr_);
-        UpdateLinkLocalRoute(event->addr_, false);
+        UpdateLinkLocalRouteAndCount(event->addr_, false);
     }
 }
 
@@ -378,7 +392,7 @@ void VnswInterfaceListenerBase::LinkLocalRouteFromRouteEvent(Event *event) {
         // after agent restart.
         // Delete the route
         if (event->event_ == Event::ADD_ROUTE) {
-            UpdateLinkLocalRoute(event->addr_, true);
+            UpdateLinkLocalRouteAndCount(event->addr_, true);
         }
         return;
     }
@@ -386,14 +400,14 @@ void VnswInterfaceListenerBase::LinkLocalRouteFromRouteEvent(Event *event) {
     if ((event->event_ == Event::DEL_ROUTE) ||
         (event->event_ == Event::ADD_ROUTE 
          && event->interface_ != agent_->vhost_interface_name())) {
-        UpdateLinkLocalRoute(event->addr_, false);
+        UpdateLinkLocalRouteAndCount(event->addr_, false);
     }
 }
 
 void VnswInterfaceListenerBase::AddLinkLocalRoutes() {
     for (LinkLocalAddressTable::iterator it = ll_addr_table_.begin();
          it != ll_addr_table_.end(); ++it) {
-        UpdateLinkLocalRoute(*it, false);
+        UpdateLinkLocalRouteAndCount(*it, false);
     }
 }
 
