@@ -49,7 +49,7 @@ struct rt_msghdr_common {
 #define RTM_ADDR_MAX ((int)(sizeof(struct rt_addresses)/ \
                       sizeof(struct sockaddr *)))
 
-int FreeBSDVnswInterfaceListener::NetmaskLen(int mask)
+int VnswInterfaceListenerFreeBSD::NetmaskLen(int mask)
 {
     if (mask == 0)
         return 0;
@@ -58,7 +58,7 @@ int FreeBSDVnswInterfaceListener::NetmaskLen(int mask)
 }
 
 unsigned int
-FreeBSDVnswInterfaceListener::RTMGetAddresses(
+VnswInterfaceListenerFreeBSD::RTMGetAddresses(
     const char *in, size_t *size, unsigned int af,
     struct rt_addresses *rta)
 {
@@ -93,7 +93,7 @@ FreeBSDVnswInterfaceListener::RTMGetAddresses(
 
 
 const string
-FreeBSDVnswInterfaceListener::RTMTypeToString(int type)
+VnswInterfaceListenerFreeBSD::RTMTypeToString(int type)
 {
     static const char *types[] = {
         "RTM_ADD",
@@ -125,7 +125,7 @@ FreeBSDVnswInterfaceListener::RTMTypeToString(int type)
 }
 
 VnswInterfaceListener::Event *
-FreeBSDVnswInterfaceListener::RTMProcess(const struct rt_msghdr *rtm,
+VnswInterfaceListenerFreeBSD::RTMProcess(const struct rt_msghdr *rtm,
     size_t size)
 {
     struct rt_addresses rta = { 0 };
@@ -214,7 +214,7 @@ FreeBSDVnswInterfaceListener::RTMProcess(const struct rt_msghdr *rtm,
 }
 
 VnswInterfaceListener::Event *
-FreeBSDVnswInterfaceListener::RTMProcess(const struct ifa_msghdr *rtm,
+VnswInterfaceListenerFreeBSD::RTMProcess(const struct ifa_msghdr *rtm,
     size_t size)
 {
     struct rt_addresses rta = { 0 };
@@ -264,7 +264,7 @@ FreeBSDVnswInterfaceListener::RTMProcess(const struct ifa_msghdr *rtm,
 }
 
 VnswInterfaceListener::Event *
-FreeBSDVnswInterfaceListener::RTMProcess(
+VnswInterfaceListenerFreeBSD::RTMProcess(
     const struct if_msghdr *rtm, size_t size)
 {
     struct rt_addresses rta = { 0 };
@@ -306,7 +306,7 @@ FreeBSDVnswInterfaceListener::RTMProcess(
     return new Event(type, name, rtm->ifm_flags);
 }
 
-int FreeBSDVnswInterfaceListener::RTMDecode(
+int VnswInterfaceListenerFreeBSD::RTMDecode(
     const struct rt_msghdr_common *rtm, size_t len, uint32_t seq_no)
 {
     Event *event = NULL;
@@ -340,7 +340,7 @@ int FreeBSDVnswInterfaceListener::RTMDecode(
     return 0;
 }
 
-int FreeBSDVnswInterfaceListener::RTMProcessBuffer(const void *buffer,
+int VnswInterfaceListenerFreeBSD::RTMProcessBuffer(const void *buffer,
     size_t size)
 {
     struct rt_msghdr_common *p = (struct rt_msghdr_common *)buffer;
@@ -365,7 +365,7 @@ int FreeBSDVnswInterfaceListener::RTMProcessBuffer(const void *buffer,
     return ret;
 }
 
-int FreeBSDVnswInterfaceListener::Getfib()
+int VnswInterfaceListenerFreeBSD::Getfib()
 {
     int fibnum;
     size_t size = sizeof(fibnum);
@@ -387,7 +387,7 @@ int FreeBSDVnswInterfaceListener::Getfib()
     return -2;
 }
 
-int FreeBSDVnswInterfaceListener::CreateSocket()
+int VnswInterfaceListenerFreeBSD::CreateSocket()
 {
     /* Get routing table */
     int fib = Getfib();
@@ -422,7 +422,7 @@ int FreeBSDVnswInterfaceListener::CreateSocket()
     return s;
 }
 
-void FreeBSDVnswInterfaceListener::SyncCurrentState()
+void VnswInterfaceListenerFreeBSD::SyncCurrentState()
 {
     /* Get current system settings */
     RTInitIfAndAddr();
@@ -430,7 +430,7 @@ void FreeBSDVnswInterfaceListener::SyncCurrentState()
     RTInitRoutes(fib_);
 }
 
-void *FreeBSDVnswInterfaceListener::SysctlDump(int *mib, int mib_len,
+void *VnswInterfaceListenerFreeBSD::SysctlDump(int *mib, int mib_len,
     size_t *ret_len, int *ret_code)
 {
     size_t size = 0;
@@ -462,7 +462,7 @@ exit_here:
     return dump_buf;
 }
 
-int FreeBSDVnswInterfaceListener::RTInitRoutes(int fib)
+int VnswInterfaceListenerFreeBSD::RTInitRoutes(int fib)
 {
     int mib[] = { CTL_NET, PF_ROUTE, 0, AF_INET, NET_RT_DUMP, 0, fib};
     int mib_len = sizeof(mib)/sizeof(int);
@@ -487,7 +487,7 @@ int FreeBSDVnswInterfaceListener::RTInitRoutes(int fib)
     return ret;
 }
 
-int FreeBSDVnswInterfaceListener::RTInitIfAndAddr()
+int VnswInterfaceListenerFreeBSD::RTInitIfAndAddr()
 {
     int mib[] = { CTL_NET, PF_ROUTE, 0, AF_INET, NET_RT_IFLIST, 0};
     int mib_len = sizeof(mib)/sizeof(int);
@@ -505,14 +505,14 @@ int FreeBSDVnswInterfaceListener::RTInitIfAndAddr()
     return ret;
 }
 
-FreeBSDVnswInterfaceListener::FreeBSDVnswInterfaceListener(Agent *agent) : 
+VnswInterfaceListenerFreeBSD::VnswInterfaceListenerFreeBSD(Agent *agent) : 
     VnswInterfaceListenerBase(agent), fib_(-1) {
 }
 
-FreeBSDVnswInterfaceListener::~FreeBSDVnswInterfaceListener() {
+VnswInterfaceListenerFreeBSD::~VnswInterfaceListenerFreeBSD() {
 }
 
-void FreeBSDVnswInterfaceListener::ReadHandler(const boost::system::error_code &error,
+void VnswInterfaceListenerFreeBSD::ReadHandler(const boost::system::error_code &error,
                                  std::size_t len) {
     if (error == 0) {
         RTMDecode((struct rt_msghdr_common *)read_buf_, len, -1);
@@ -528,15 +528,15 @@ void FreeBSDVnswInterfaceListener::ReadHandler(const boost::system::error_code &
     RegisterAsyncReadHandler();
 }
 
-void FreeBSDVnswInterfaceListener::RegisterAsyncReadHandler() {
+void VnswInterfaceListenerFreeBSD::RegisterAsyncReadHandler() {
     read_buf_ = new uint8_t[kMaxBufferSize];
     sock_.async_receive(boost::asio::buffer(read_buf_, kMaxBufferSize), 
-        boost::bind(&FreeBSDVnswInterfaceListener::ReadHandler, this,
+        boost::bind(&VnswInterfaceListenerFreeBSD::ReadHandler, this,
         boost::asio::placeholders::error, 
         boost::asio::placeholders::bytes_transferred));
 }
 
-void FreeBSDVnswInterfaceListener::UpdateLinkLocalRoute(
+void VnswInterfaceListenerFreeBSD::UpdateLinkLocalRoute(
     const Ip4Address &addr, bool del_rt) {
 
     if (agent_->test_mode())

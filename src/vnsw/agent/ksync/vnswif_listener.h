@@ -179,7 +179,7 @@ public:
 typedef VnswInterfaceListenerLinux VnswInterfaceListener;
 #elif defined(__FreeBSD__)
 #include <ksync/freebsd_vnswif_listener.h>
-typedef FreeBSDVnswInterfaceListener VnswInterfaceListener;
+typedef VnswInterfaceListenerFreeBSD VnswInterfaceListener;
 #else
 #error "Unsupported platform"
 #endif
