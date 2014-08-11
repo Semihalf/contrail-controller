@@ -35,7 +35,7 @@ bool IcmpErrorHandler::Run() {
 
     VmInterface *vm_itf = dynamic_cast<VmInterface *>
         (agent()->interface_table()->FindInterface(GetInterfaceIndex()));
-    if (vm_itf == NULL || vm_itf->ipv4_forwarding() == false || vm_itf->vn() == NULL) { 
+    if (vm_itf == NULL || vm_itf->ipv4_forwarding() == false || vm_itf->vn() == NULL) {
         proto_->increment_interface_errors();
         return true;
     }

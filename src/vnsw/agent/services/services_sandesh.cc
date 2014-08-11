@@ -17,7 +17,7 @@
 #include <services/services_sandesh.h>
 #include <vr_defs.h>
 
-std::map<uint16_t, std::string> g_ip_protocol_map = 
+std::map<uint16_t, std::string> g_ip_protocol_map =
                     boost::assign::map_list_of<uint16_t, std::string>
                             (1, "icmp")
                             (2, "igmp")
@@ -27,7 +27,7 @@ std::map<uint16_t, std::string> g_ip_protocol_map =
                             (41, "ipv6")
                             (47, "gre");
 
-std::map<uint32_t, std::string> g_dhcp_msg_types = 
+std::map<uint32_t, std::string> g_dhcp_msg_types =
                     boost::assign::map_list_of<uint32_t, std::string>
                             (DHCP_UNKNOWN, "Unknown")
                             (DHCP_DISCOVER, "Discover")
@@ -45,7 +45,7 @@ std::map<uint32_t, std::string> g_dhcp_msg_types =
 
 void ServicesSandesh::MacToString(const unsigned char *mac, std::string &mac_str) {
     char mstr[32];
-    snprintf(mstr, 32, "%02x:%02x:%02x:%02x:%02x:%02x", 
+    snprintf(mstr, 32, "%02x:%02x:%02x:%02x:%02x:%02x",
              mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
     mac_str.assign(mstr);
 }
@@ -119,7 +119,7 @@ void ServicesSandesh::PktStatsSandesh(std::string ctxt, bool more) {
 
 void ServicesSandesh::DhcpStatsSandesh(std::string ctxt, bool more) {
     DhcpStats *dhcp = new DhcpStats();
-    const DhcpProto::DhcpStats &dstats = 
+    const DhcpProto::DhcpStats &dstats =
                 Agent::GetInstance()->GetDhcpProto()->GetStats();
     dhcp->set_dhcp_discover(dstats.discover);
     dhcp->set_dhcp_request(dstats.request);
@@ -198,18 +198,13 @@ void ServicesSandesh::FillPktData(PktTrace::Pkt &pkt, PktData &resp) {
 }
 
 void ServicesSandesh::FillVrouterHdr(PktTrace::Pkt &pkt, VrouterHdr &resp) {
-    boost::array<std::string, MAX_AGENT_HDR_COMMANDS> commands = 
+    boost::array<std::string, MAX_AGENT_HDR_COMMANDS> commands =
            { { "switch", "route", "arp", "l2-protocol", "trap-nexthop",
                "trap-resolve", "trap-flow-miss", "trap-l3-protocol",
                "trap-diag", "trap-ecmp-resolve" } };
     uint8_t *ptr = pkt.pkt;
-#if defined(__linux__)
-    ptr += sizeof(ethhdr);   // skip the outer ethernet header
-#elif defined(__FreeBSD__)
     ptr += sizeof(ether_header);   // skip the outer ethernet header
-#else
-#error "Unsupported platform"
-#endif
+
     agent_hdr *hdr = reinterpret_cast<agent_hdr *>(ptr);
     resp.ifindex = ntohs(hdr->hdr_ifindex);
     resp.vrf = ntohs(hdr->hdr_vrf);
@@ -222,25 +217,13 @@ void ServicesSandesh::FillVrouterHdr(PktTrace::Pkt &pkt, VrouterHdr &resp) {
     resp.nh = ntohl(hdr->hdr_cmd_param_1);
 }
 
-#if defined(__linux__)
-void ServicesSandesh::FillMacHdr(ethhdr *eth, MacHdr &resp) {
-    MacToString(eth->h_dest, resp.dest_mac);
-    MacToString(eth->h_source, resp.src_mac);
-    uint16_t type = ntohs(eth->h_proto);
-    resp.type = (type == 0x800) ? "ip" : 
-                 (type == 0x806) ? "arp" : IntToString(type);
-}
-#elif defined(__FreeBSD__)
 void ServicesSandesh::FillMacHdr(ether_header *eth, MacHdr &resp) {
     MacToString(eth->ether_dhost, resp.dest_mac);
     MacToString(eth->ether_shost, resp.src_mac);
     uint16_t type = ntohs(eth->ether_type);
-    resp.type = (type == ETHERTYPE_IP) ? "ip" : 
+    resp.type = (type == ETHERTYPE_IP) ? "ip" :
                  (type == ETHERTYPE_ARP) ? "arp" : IntToString(type);
 }
-#else
-#error "Unsupported platform"
-#endif
 
 static uint32_t get_val(void *data) {
     union {
@@ -259,7 +242,7 @@ void ServicesSandesh::FillArpHdr(ether_arp *arp, ArpHdr &resp) {
     resp.hw_size = arp->arp_hln;
     resp.prot_size = arp->arp_pln;
     val = ntohs(arp->arp_op);
-    resp.opcode = (val == 1) ? "request" : 
+    resp.opcode = (val == 1) ? "request" :
                   (val == 2) ? "response" : IntToString(val);
     MacToString(arp->arp_sha, resp.sender_mac);
     MacToString(arp->arp_tha, resp.target_mac);
@@ -269,23 +252,6 @@ void ServicesSandesh::FillArpHdr(ether_arp *arp, ArpHdr &resp) {
     resp.target_ip = tpa.to_string();
 }
 
-#if defined(__linux__)
-void ServicesSandesh::FillIpv4Hdr(iphdr *ip, Ipv4Hdr &resp) {
-    resp.vers = ip->version;
-    resp.hdrlen = ip->ihl;
-    resp.tos = ip->tos;
-    resp.len = ntohs(ip->tot_len);
-    resp.id = IntToHexString(ntohs(ip->id));
-    resp.frag = IntToHexString(ntohs(ip->frag_off));
-    resp.ttl = ip->ttl;
-    resp.protocol = IpProtocol(ip->protocol);
-    resp.csum = IntToHexString(ntohs(ip->check));
-    Ip4Address sa(ntohl(ip->saddr));
-    Ip4Address da(ntohl(ip->daddr));
-    resp.src_ip = sa.to_string();
-    resp.dest_ip = da.to_string();
-}
-#elif defined(__FreeBSD__)
 void ServicesSandesh::FillIpv4Hdr(ip *ip, Ipv4Hdr &resp) {
     resp.vers = ip->ip_v;
     resp.hdrlen = ip->ip_hl;
@@ -301,29 +267,14 @@ void ServicesSandesh::FillIpv4Hdr(ip *ip, Ipv4Hdr &resp) {
     resp.src_ip = sa.to_string();
     resp.dest_ip = da.to_string();
 }
-#else
-#error "Unsupported platform"
-#endif
 
-#if defined(__linux__)
-void ServicesSandesh::FillIcmpv4Hdr(icmphdr *icmp, Icmpv4Hdr &resp) {
-    resp.type = (icmp->type == ICMP_ECHO) ? "echo request":
-                 (icmp->type == ICMP_ECHOREPLY) ? "echo reply" : 
-                 IntToString(icmp->type);
-    resp.code = icmp->code;
-    resp.csum = IntToHexString(ntohs(icmp->checksum));
-}
-#elif defined(__FreeBSD__)
 void ServicesSandesh::FillIcmpv4Hdr(icmp *icmp, Icmpv4Hdr &resp) {
     resp.type = (icmp->icmp_type == ICMP_ECHO) ? "echo request":
-                 (icmp->icmp_type == ICMP_ECHOREPLY) ? "echo reply" : 
+                 (icmp->icmp_type == ICMP_ECHOREPLY) ? "echo reply" :
                  IntToString(icmp->icmp_type);
     resp.code = icmp->icmp_code;
     resp.csum = IntToHexString(ntohs(icmp->icmp_cksum));
 }
-#else
-#error "Unsupported platform"
-#endif
 
 
 void ServicesSandesh::FillUdpHdr(udphdr *udp, UdpHdr &resp) {
@@ -342,7 +293,7 @@ void ServicesSandesh::FillUdpHdr(udphdr *udp, UdpHdr &resp) {
 #endif
 }
 
-std::string 
+std::string
 ServicesSandesh::FillOptionString(char *data, int32_t len, std::string msg) {
     std::string str;
     if (len > 0)
@@ -350,14 +301,14 @@ ServicesSandesh::FillOptionString(char *data, int32_t len, std::string msg) {
     return (msg + str + "; ");
 }
 
-std::string 
+std::string
 ServicesSandesh::FillOptionInteger(uint32_t data, std::string msg) {
     std::stringstream str;
     str << msg << data << "; ";
     return str.str();
 }
 
-std::string 
+std::string
 ServicesSandesh::FillOptionIp(uint32_t data, std::string msg) {
     Ip4Address addr(data);
     return msg + addr.to_string() + "; ";
@@ -419,7 +370,7 @@ void ServicesSandesh::FillDhcpOptions(DhcpOptions *opt, std::string &resp,
 
             case DHCP_OPTION_DOMAIN_NAME:
                 if (len >= (2 + opt->len))
-                    resp += FillOptionString((char *)opt->data, opt->len, 
+                    resp += FillOptionString((char *)opt->data, opt->len,
                                              "Domain Name : ");
                 break;
 
@@ -488,7 +439,7 @@ void ServicesSandesh::FillDhcpv4Hdr(dhcphdr *dhcp, Dhcpv4Hdr &resp,
     resp.hops = dhcp->hops;
     resp.xid = IntToHexString(dhcp->xid);
     resp.secs = ntohs(dhcp->secs);
-    resp.flags = 
+    resp.flags =
         (ntohs(dhcp->flags) & DHCP_BCAST_FLAG) ? "broadcast" : "unicast";
     Ip4Address ciaddr(ntohl(dhcp->ciaddr));
     Ip4Address yiaddr(ntohl(dhcp->yiaddr));
@@ -518,7 +469,7 @@ void ServicesSandesh::FillDnsHdr(dnshdr *dns, DnsHdr &resp, int32_t dnslen) {
         resp.flags += "truncated; ";
     if (dns->flags.auth)
         resp.flags += "authoritative answer; ";
-    resp.flags += (!dns->flags.op) ? "query; " : 
+    resp.flags += (!dns->flags.op) ? "query; " :
                   ((dns->flags.op == DNS_OPCODE_UPDATE)? "update; " :
                    "other op; ");
     if (dns->flags.req) {
@@ -549,17 +500,9 @@ void ServicesSandesh::ArpPktTrace(PktTrace::Pkt &pkt, ArpPktSandesh *resp) {
     ArpPkt data;
     FillPktData(pkt, data.info);
     FillVrouterHdr(pkt, data.agent_hdr);
-#if defined(__linux__)
-    uint8_t *ptr = pkt.pkt + sizeof(ethhdr) + sizeof(agent_hdr);
-    FillMacHdr((ethhdr *)ptr, data.mac_hdr);
-    ptr += sizeof(ethhdr);
-#elif defined(__FreeBSD__)
     uint8_t *ptr = pkt.pkt + sizeof(ether_header) + sizeof(agent_hdr);
     FillMacHdr((ether_header *)ptr, data.mac_hdr);
     ptr += sizeof(ether_header);
-#else
-#error "Unsupported platform"
-#endif
     FillArpHdr((ether_arp *)ptr, data.arp_hdr);
     std::vector<ArpPkt> &list =
         const_cast<std::vector<ArpPkt>&>(resp->get_pkt_list());
@@ -570,37 +513,19 @@ void ServicesSandesh::DhcpPktTrace(PktTrace::Pkt &pkt, DhcpPktSandesh *resp) {
     DhcpPkt data;
     FillPktData(pkt, data.info);
     FillVrouterHdr(pkt, data.agent_hdr);
-#if defined(__linux__)
-    uint8_t *ptr = pkt.pkt + sizeof(ethhdr) + sizeof(agent_hdr);
-    FillMacHdr((ethhdr *)ptr, data.mac_hdr);
-    ptr += sizeof(ethhdr);
-    FillIpv4Hdr((iphdr *)ptr, data.ip_hdr);
-    ptr += (data.ip_hdr.hdrlen * 4);
-    FillUdpHdr((udphdr *)ptr, data.udp_hdr); 
-    ptr += sizeof(udphdr);
-    PktHandler *pkt_handler = Agent::GetInstance()->pkt()->pkt_handler();
-    std::size_t trace_size = pkt_handler->PktTraceSize(PktHandler::DHCP);
-    int32_t remaining = std::min(pkt.len, trace_size) - 
-                        (2 * sizeof(ethhdr) + sizeof(agent_hdr) + 
-                         data.ip_hdr.hdrlen * 4 + sizeof(udphdr));
-    FillDhcpv4Hdr((dhcphdr *)ptr, data.dhcp_hdr, remaining);
-#elif defined(__FreeBSD__)
     uint8_t *ptr = pkt.pkt + sizeof(ether_header) + sizeof(agent_hdr);
     FillMacHdr((ether_header*)ptr, data.mac_hdr);
     ptr += sizeof(ether_header);
     FillIpv4Hdr((ip *)ptr, data.ip_hdr);
     ptr += (data.ip_hdr.hdrlen * 4);
-    FillUdpHdr((udphdr *)ptr, data.udp_hdr); 
+    FillUdpHdr((udphdr *)ptr, data.udp_hdr);
     ptr += sizeof(udphdr);
     PktHandler *pkt_handler = Agent::GetInstance()->pkt()->pkt_handler();
     std::size_t trace_size = pkt_handler->PktTraceSize(PktHandler::DHCP);
-    int32_t remaining = std::min(pkt.len, trace_size) - 
-                        (2 * sizeof(ether_header) + sizeof(agent_hdr) + 
+    int32_t remaining = std::min(pkt.len, trace_size) -
+                        (2 * sizeof(ether_header) + sizeof(agent_hdr) +
                          data.ip_hdr.hdrlen * 4 + sizeof(udphdr));
     FillDhcpv4Hdr((dhcphdr *)ptr, data.dhcp_hdr, remaining);
-#else
-#error "Unsupported platform"
-#endif
     std::vector<DhcpPkt> &list =
         const_cast<std::vector<DhcpPkt>&>(resp->get_pkt_list());
     list.push_back(data);
@@ -610,35 +535,18 @@ void ServicesSandesh::DnsPktTrace(PktTrace::Pkt &pkt, DnsPktSandesh *resp) {
     DnsPkt data;
     FillPktData(pkt, data.info);
     FillVrouterHdr(pkt, data.agent_hdr);
-#if defined(__linux__)
-    uint8_t *ptr = pkt.pkt + sizeof(ethhdr) + sizeof(agent_hdr);
-    FillMacHdr((ethhdr *)ptr, data.mac_hdr);
-    ptr += sizeof(ethhdr);
-    FillIpv4Hdr((iphdr *)ptr, data.ip_hdr);
-    ptr += (data.ip_hdr.hdrlen * 4);
-    FillUdpHdr((udphdr *)ptr, data.udp_hdr); 
-    ptr += sizeof(udphdr);
-    PktHandler *pkt_handler = Agent::GetInstance()->pkt()->pkt_handler();
-    std::size_t trace_size = pkt_handler->PktTraceSize(PktHandler::DNS);
-    int32_t remaining = std::min(pkt.len, trace_size) - 
-                        (2 * sizeof(ethhdr) + sizeof(agent_hdr) + 
-                         data.ip_hdr.hdrlen * 4 + sizeof(udphdr));
-#elif defined(__FreeBSD__)
     uint8_t *ptr = pkt.pkt + sizeof(ether_header) + sizeof(agent_hdr);
     FillMacHdr((ether_header *)ptr, data.mac_hdr);
     ptr += sizeof(ether_header);
     FillIpv4Hdr((ip *)ptr, data.ip_hdr);
     ptr += (data.ip_hdr.hdrlen * 4);
-    FillUdpHdr((udphdr *)ptr, data.udp_hdr); 
+    FillUdpHdr((udphdr *)ptr, data.udp_hdr);
     ptr += sizeof(udphdr);
     PktHandler *pkt_handler = Agent::GetInstance()->pkt()->pkt_handler();
     std::size_t trace_size = pkt_handler->PktTraceSize(PktHandler::DNS);
-    int32_t remaining = std::min(pkt.len, trace_size) - 
-                        (2 * sizeof(ether_header) + sizeof(agent_hdr) + 
+    int32_t remaining = std::min(pkt.len, trace_size) -
+                        (2 * sizeof(ether_header) + sizeof(agent_hdr) +
                          data.ip_hdr.hdrlen * 4 + sizeof(udphdr));
-#else
-#error "Unsupported platform"
-#endif
     FillDnsHdr((dnshdr *)ptr, data.dns_hdr, remaining);
     std::vector<DnsPkt> &list =
         const_cast<std::vector<DnsPkt>&>(resp->get_pkt_list());
@@ -649,23 +557,12 @@ void ServicesSandesh::IcmpPktTrace(PktTrace::Pkt &pkt, IcmpPktSandesh *resp) {
     IcmpPkt data;
     FillPktData(pkt, data.info);
     FillVrouterHdr(pkt, data.agent_hdr);
-#if defined(__linux__)
-    uint8_t *ptr = pkt.pkt + sizeof(ethhdr) + sizeof(agent_hdr);
-    FillMacHdr((ethhdr *)ptr, data.mac_hdr);
-    ptr += sizeof(ethhdr);
-    FillIpv4Hdr((iphdr *)ptr, data.ip_hdr);
-    ptr += (data.ip_hdr.hdrlen * 4);
-    FillIcmpv4Hdr((icmphdr *)ptr, data.icmp_hdr); 
-#elif defined(__FreeBSD__)
     uint8_t *ptr = pkt.pkt + sizeof(ether_header) + sizeof(agent_hdr);
     FillMacHdr((ether_header *)ptr, data.mac_hdr);
     ptr += sizeof(ether_header);
     FillIpv4Hdr((ip *)ptr, data.ip_hdr);
     ptr += (data.ip_hdr.hdrlen * 4);
-    FillIcmpv4Hdr((icmp *)ptr, data.icmp_hdr); 
-#else
-#error "Unsupported platform"
-#endif
+    FillIcmpv4Hdr((icmp *)ptr, data.icmp_hdr);
     std::vector<IcmpPkt> &list =
         const_cast<std::vector<IcmpPkt>&>(resp->get_pkt_list());
     list.push_back(data);
@@ -675,25 +572,13 @@ void ServicesSandesh::OtherPktTrace(PktTrace::Pkt &pkt, PktSandesh *resp) {
     PktDump data;
     FillPktData(pkt, data.info);
     FillVrouterHdr(pkt, data.agent_hdr);
-#if defined(__linux__)
-    uint8_t *ptr = pkt.pkt + sizeof(ethhdr) + sizeof(agent_hdr);
-    FillMacHdr((ethhdr *)ptr, data.mac_hdr);
-    ptr += sizeof(ethhdr);
-    PktHandler *pkt_handler = Agent::GetInstance()->pkt()->pkt_handler();
-    std::size_t trace_size = pkt_handler->PktTraceSize(PktHandler::FLOW);
-    int32_t remaining = std::min(pkt.len, trace_size) - 
-                        (2 * sizeof(ethhdr) + sizeof(agent_hdr));
-#elif defined(__FreeBSD__)
     uint8_t *ptr = pkt.pkt + sizeof(ether_header) + sizeof(agent_hdr);
     FillMacHdr((ether_header *)ptr, data.mac_hdr);
     ptr += sizeof(ether_header);
     PktHandler *pkt_handler = Agent::GetInstance()->pkt()->pkt_handler();
     std::size_t trace_size = pkt_handler->PktTraceSize(PktHandler::FLOW);
-    int32_t remaining = std::min(pkt.len, trace_size) - 
+    int32_t remaining = std::min(pkt.len, trace_size) -
                         (2 * sizeof(ether_header) + sizeof(agent_hdr));
-#else
-#error "Unsupported platform"
-#endif
     PktToHexString(ptr, remaining, data.pkt);
     std::vector<PktDump> &list =
         const_cast<std::vector<PktDump>&>(resp->get_pkt_list());
@@ -763,7 +648,7 @@ void ServicesSandesh::MetadataHandleRequest(std::string ctxt, bool more = false)
     MetadataResponse *resp = new MetadataResponse();
     resp->set_metadata_server_port(
           Agent::GetInstance()->metadata_server_port());
-    const MetadataProxy::MetadataStats &stats = 
+    const MetadataProxy::MetadataStats &stats =
           Agent::GetInstance()->services()->metadataproxy()->metadatastats();
     resp->set_metadata_requests(stats.requests);
     resp->set_metadata_responses(stats.responses);
@@ -865,7 +750,7 @@ void PktTraceInfo::HandleRequest() const {
 void ShowDnsEntries::HandleRequest() const {
     AgentDnsEntries *resp = new AgentDnsEntries();
     std::vector<VmDnsSandesh> dns_list;
-    const DnsProto::DnsUpdateSet &dns_update_set = 
+    const DnsProto::DnsUpdateSet &dns_update_set =
                     Agent::GetInstance()->GetDnsProto()->update_set();
     for (DnsProto::DnsUpdateSet::const_iterator it = dns_update_set.begin();
          it != dns_update_set.end(); ++it) {

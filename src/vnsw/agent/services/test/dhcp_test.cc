@@ -3,11 +3,6 @@
  */
 
 #include "testing/gunit.h"
-#if defined(__FreeBSD__)
-#include <sys/types.h>
-#include <sys/socket.h>
-#include <netinet/in.h>
-#endif
 #include <netinet/if_ether.h>
 #include <boost/uuid/string_generator.hpp>
 #include <boost/scoped_array.hpp>
@@ -89,9 +84,9 @@ public:
         }
     }
 
-    uint32_t GetItfCount() { 
+    uint32_t GetItfCount() {
         tbb::mutex::scoped_lock lock(mutex_);
-        return itf_count_; 
+        return itf_count_;
     }
 
     void WaitForItfUpdate(unsigned int expect_count) {
@@ -103,12 +98,12 @@ public:
         }
     }
 
-    std::size_t GetItfId(int index) { 
+    std::size_t GetItfId(int index) {
         tbb::mutex::scoped_lock lock(mutex_);
-        return itf_id_[index]; 
+        return itf_id_[index];
     }
 
-    std::size_t fabric_interface_id() { 
+    std::size_t fabric_interface_id() {
         PhysicalInterfaceKey key(Agent::GetInstance()->params()->eth_port().c_str());
         Interface *intf = static_cast<Interface *>
             (Agent::GetInstance()->interface_table()->FindActiveEntry(&key));
@@ -487,13 +482,13 @@ public:
         EXPECT_EQ(1U, stats.acks);
 
         client->Reset();
-        DelIPAM("vn1", "vdns1"); 
+        DelIPAM("vn1", "vdns1");
         client->WaitForIdle();
-        DelVDNS("vdns1"); 
+        DelVDNS("vdns1");
         client->WaitForIdle();
 
         client->Reset();
-        DeleteVmportEnv(input, 2, 1, 0); 
+        DeleteVmportEnv(input, 2, 1, 0);
         client->WaitForIdle();
 
         Agent::GetInstance()->GetDhcpProto()->ClearStats();
@@ -600,13 +595,13 @@ TEST_F(DhcpTest, DhcpReqTest) {
     all_sandesh->Release();
 
     client->Reset();
-    DelIPAM("vn1", "vdns1"); 
+    DelIPAM("vn1", "vdns1");
     client->WaitForIdle();
-    DelVDNS("vdns1"); 
+    DelVDNS("vdns1");
     client->WaitForIdle();
 
     client->Reset();
-    DeleteVmportEnv(input, 2, 1, 0); 
+    DeleteVmportEnv(input, 2, 1, 0);
     client->WaitForIdle();
 
     Agent::GetInstance()->GetDhcpProto()->ClearStats();
@@ -634,7 +629,7 @@ TEST_F(DhcpTest, DhcpOtherReqTest) {
     EXPECT_EQ(3U, stats.other);
 
     client->Reset();
-    DeleteVmportEnv(input, 1, 1, 0); 
+    DeleteVmportEnv(input, 1, 1, 0);
     client->WaitForIdle();
 
     Agent::GetInstance()->GetDhcpProto()->ClearStats();
@@ -661,7 +656,7 @@ TEST_F(DhcpTest, DhcpOptionTest) {
         {CLIENT_REQ_PREFIX, 24, CLIENT_REQ_GW, true},
     };
     char vdns_attr[] = "<virtual-DNS-data>\n <domain-name>test.domain</domain-name>\n <dynamic-records-from-client>true</dynamic-records-from-client>\n <record-order>fixed</record-order>\n <default-ttl-seconds>120</default-ttl-seconds>\n </virtual-DNS-data>\n";
-    char ipam_attr[] = 
+    char ipam_attr[] =
     "<network-ipam-mgmt>\
         <ipam-dns-method>virtual-dns-server</ipam-dns-method>\
         <ipam-dns-server>\
@@ -712,13 +707,13 @@ TEST_F(DhcpTest, DhcpOptionTest) {
     sand->Release();
 
     client->Reset();
-    DelIPAM("vn1", "vdns1"); 
+    DelIPAM("vn1", "vdns1");
     client->WaitForIdle();
-    DelVDNS("vdns1"); 
+    DelVDNS("vdns1");
     client->WaitForIdle();
 
     client->Reset();
-    DeleteVmportEnv(input, 1, 1, 0); 
+    DeleteVmportEnv(input, 1, 1, 0);
     client->WaitForIdle();
 
     Agent::GetInstance()->GetDhcpProto()->ClearStats();
@@ -760,11 +755,11 @@ TEST_F(DhcpTest, DhcpNakTest) {
     sand->Release();
 
     client->Reset();
-    DelIPAM("vn1"); 
+    DelIPAM("vn1");
     client->WaitForIdle();
 
     client->Reset();
-    DeleteVmportEnv(input, 1, 1, 0); 
+    DeleteVmportEnv(input, 1, 1, 0);
     client->WaitForIdle();
 
     Agent::GetInstance()->GetDhcpProto()->ClearStats();
@@ -824,11 +819,11 @@ TEST_F(DhcpTest, DhcpShortLeaseTest) {
     WaitForItfUpdate(0);
 
     client->Reset();
-    DelIPAM("vn1"); 
+    DelIPAM("vn1");
     client->WaitForIdle();
 
     client->Reset();
-    DeleteVmportEnv(input, 1, 1, 0); 
+    DeleteVmportEnv(input, 1, 1, 0);
     client->WaitForIdle();
 
     Agent::GetInstance()->GetDhcpProto()->ClearStats();
@@ -849,7 +844,7 @@ TEST_F(DhcpTest, DhcpTenantDnsTest) {
     IpamInfo ipam_info[] = {
         {"3.2.5.0", 24, "3.2.5.254", true},
     };
-    char ipam_attr[] = 
+    char ipam_attr[] =
     "<network-ipam-mgmt>\
         <ipam-dns-method>tenant-dns-server</ipam-dns-method>\
         <ipam-dns-server>\
@@ -891,11 +886,11 @@ TEST_F(DhcpTest, DhcpTenantDnsTest) {
     EXPECT_EQ(1U, stats.acks);
 
     client->Reset();
-    DelIPAM("vn1"); 
+    DelIPAM("vn1");
     client->WaitForIdle();
 
     client->Reset();
-    DeleteVmportEnv(input, 1, 1, 0); 
+    DeleteVmportEnv(input, 1, 1, 0);
     client->WaitForIdle();
 
     Agent::GetInstance()->GetDhcpProto()->ClearStats();
@@ -929,7 +924,7 @@ TEST_F(DhcpTest, DhcpFabricPortTest) {
 
     client->Reset();
     DeleteVmportEnv(input, 1, 1, 0, NULL,
-                    Agent::GetInstance()->fabric_vrf_name().c_str()); 
+                    Agent::GetInstance()->fabric_vrf_name().c_str());
     client->WaitForIdle();
 
     Agent::GetInstance()->GetDhcpProto()->ClearStats();
@@ -972,7 +967,7 @@ TEST_F(DhcpTest, DhcpZeroIpTest) {
 
     client->Reset();
     DeleteVmportEnv(input, 1, 1, 0, NULL,
-                    Agent::GetInstance()->fabric_vrf_name().c_str()); 
+                    Agent::GetInstance()->fabric_vrf_name().c_str());
     client->WaitForIdle();
 
     Agent::GetInstance()->GetDhcpProto()->ClearStats();
@@ -997,7 +992,7 @@ TEST_F(DhcpTest, IpamSpecificDhcpOptions) {
         {"1.1.1.0", 24, "1.1.1.200", true},
     };
     char vdns_attr[] = "<virtual-DNS-data>\n <domain-name>test.contrail.juniper.net</domain-name>\n <dynamic-records-from-client>true</dynamic-records-from-client>\n <record-order>fixed</record-order>\n <default-ttl-seconds>120</default-ttl-seconds>\n </virtual-DNS-data>\n";
-    char ipam_attr[] = 
+    char ipam_attr[] =
     "<network-ipam-mgmt>\
         <ipam-dns-method>virtual-dns-server</ipam-dns-method>\
         <ipam-dns-server><virtual-dns-server-name>vdns1</virtual-dns-server-name></ipam-dns-server>\
@@ -1077,13 +1072,13 @@ TEST_F(DhcpTest, IpamSpecificDhcpOptions) {
     new_sand->Release();
 
     client->Reset();
-    DelIPAM("vn1", "vdns1"); 
+    DelIPAM("vn1", "vdns1");
     client->WaitForIdle();
-    DelVDNS("vdns1"); 
+    DelVDNS("vdns1");
     client->WaitForIdle();
 
     client->Reset();
-    DeleteVmportEnv(input, 2, 1, 0); 
+    DeleteVmportEnv(input, 2, 1, 0);
     client->WaitForIdle();
 
     ClearPktTrace();
@@ -1110,7 +1105,7 @@ TEST_F(DhcpTest, SubnetSpecificDhcpOptions) {
         {"1.1.1.0", 24, "1.1.1.200", true},
     };
     char vdns_attr[] = "<virtual-DNS-data>\n <domain-name>test.contrail.juniper.net</domain-name>\n <dynamic-records-from-client>true</dynamic-records-from-client>\n <record-order>fixed</record-order>\n <default-ttl-seconds>120</default-ttl-seconds>\n </virtual-DNS-data>\n";
-    char ipam_attr[] = 
+    char ipam_attr[] =
     "<network-ipam-mgmt>\
         <ipam-dns-method>default-dns-server</ipam-dns-method>\
         <dhcp-option-list>\
@@ -1132,7 +1127,7 @@ TEST_F(DhcpTest, SubnetSpecificDhcpOptions) {
             <route><prefix>4.5.0.0/16</prefix> <next-hop /> <next-hop-type /></route>\
         </host-routes>\
     </network-ipam-mgmt>";
-    char add_subnet_tags[] = 
+    char add_subnet_tags[] =
     "<dhcp-option-list>\
         <dhcp-option>\
             <dhcp-option-name>6</dhcp-option-name>\
@@ -1182,13 +1177,13 @@ TEST_F(DhcpTest, SubnetSpecificDhcpOptions) {
     sand->Release();
 
     client->Reset();
-    DelIPAM("vn1", "vdns1"); 
+    DelIPAM("vn1", "vdns1");
     client->WaitForIdle();
-    DelVDNS("vdns1"); 
+    DelVDNS("vdns1");
     client->WaitForIdle();
 
     client->Reset();
-    DeleteVmportEnv(input, 2, 1, 0); 
+    DeleteVmportEnv(input, 2, 1, 0);
     client->WaitForIdle();
 
     ClearPktTrace();
@@ -1214,7 +1209,7 @@ TEST_F(DhcpTest, PortSpecificDhcpOptions) {
         {"7.8.9.0", 24, "7.8.9.12", true},
         {"1.1.1.0", 24, "1.1.1.200", true},
     };
-    char ipam_attr[] = 
+    char ipam_attr[] =
     "<network-ipam-mgmt>\
         <ipam-dns-method>default-dns-server</ipam-dns-method>\
         <dhcp-option-list>\
@@ -1237,7 +1232,7 @@ TEST_F(DhcpTest, PortSpecificDhcpOptions) {
         </host-routes>\
     </network-ipam-mgmt>";
 
-    char add_subnet_tags[] = 
+    char add_subnet_tags[] =
     "<dhcp-option-list>\
         <dhcp-option>\
             <dhcp-option-name>6</dhcp-option-name>\
@@ -1253,7 +1248,7 @@ TEST_F(DhcpTest, PortSpecificDhcpOptions) {
         </dhcp-option>\
      </dhcp-option-list>";
 
-    char vm_interface_attr[] = 
+    char vm_interface_attr[] =
     "<virtual-machine-interface-dhcp-option-list>\
         <dhcp-option>\
             <dhcp-option-name>6</dhcp-option-name>\
@@ -1305,13 +1300,13 @@ TEST_F(DhcpTest, PortSpecificDhcpOptions) {
     sand->Release();
 
     client->Reset();
-    DelIPAM("vn1", "vdns1"); 
+    DelIPAM("vn1", "vdns1");
     client->WaitForIdle();
-    DelVDNS("vdns1"); 
+    DelVDNS("vdns1");
     client->WaitForIdle();
 
     client->Reset();
-    DeleteVmportEnv(input, 2, 1, 0); 
+    DeleteVmportEnv(input, 2, 1, 0);
     client->WaitForIdle();
 
     ClearPktTrace();

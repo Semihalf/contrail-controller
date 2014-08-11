@@ -3,11 +3,6 @@
  */
 
 #include "testing/gunit.h"
-#if defined(__FreeBSD__)
-#include <sys/types.h>
-#include <sys/socket.h>
-#include <netinet/in.h>
-#endif
 #include <netinet/if_ether.h>
 #include <boost/uuid/string_generator.hpp>
 #include <base/logging.h>

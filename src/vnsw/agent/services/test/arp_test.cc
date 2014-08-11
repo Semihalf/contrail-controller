@@ -3,12 +3,6 @@
  */
 
 #include "testing/gunit.h"
-
-#if defined(__FreeBSD__)
-#include <sys/types.h>
-#include <sys/socket.h>
-#include <netinet/in.h>
-#endif
 #include <netinet/if_ether.h>
 #include <boost/uuid/string_generator.hpp>
 #include <base/logging.h>
@@ -69,37 +63,6 @@ public:
     }
 
     void SendArpReq(short ifindex, short vrf, uint32_t sip, uint32_t tip) {
-#if defined(__linux__)
-        int len = 2 * sizeof(ethhdr) + sizeof(agent_hdr) +
-                  sizeof(ether_arp);
-        uint8_t *ptr(new uint8_t[len]);
-        uint8_t *buf  = ptr;
-        memset(buf, 0, len);
-
-        ethhdr *eth = (ethhdr *)buf;
-        eth->h_dest[5] = 1;
-        eth->h_source[5] = 2;
-        eth->h_proto = htons(0x800);
-
-        agent_hdr *agent = (agent_hdr *)(eth + 1);
-        agent->hdr_ifindex = htons(ifindex);
-        agent->hdr_vrf = htons(vrf);
-        agent->hdr_cmd = htons(AGENT_TRAP_RESOLVE);
-
-        eth = (ethhdr *) (agent + 1);
-        memcpy(eth->h_dest, dest_mac, MAC_LEN);
-        memcpy(eth->h_source, src_mac, MAC_LEN);
-        eth->h_proto = htons(0x806);
-
-        ether_arp *arp = (ether_arp *) (eth + 1);
-        arp->ea_hdr.ar_hrd = htons(ARPHRD_ETHER);
-        arp->ea_hdr.ar_pro = htons(0x800);
-        arp->ea_hdr.ar_hln = 6;
-        arp->ea_hdr.ar_pln = 4;
-        arp->ea_hdr.ar_op = htons(ARPOP_REQUEST);
-        memcpy(arp->arp_sha, src_mac, ETH_ALEN);
-
-#elif defined(__FreeBSD__)
         int len = 2 * sizeof(ether_header) + sizeof(agent_hdr) +
                   sizeof(ether_arp);
         uint8_t *ptr(new uint8_t[len]);
@@ -129,9 +92,6 @@ public:
         arp->ea_hdr.ar_op = htons(ARPOP_REQUEST);
         memcpy(arp->arp_sha, src_mac, ETHER_ADDR_LEN);
 
-#else
-#error "Unsupported platform"
-#endif
         sip = htonl(sip);
         memcpy(arp->arp_spa, &sip, sizeof(in_addr_t));
         tip = htonl(tip);
@@ -144,28 +104,6 @@ public:
     }
 
     void SendArpReply(short ifindex, short vrf, uint32_t sip, uint32_t tip) {
-#if defined(__linux__)
-        int len = 2 * sizeof(ethhdr) + sizeof(agent_hdr) + sizeof(ether_arp);
-        uint8_t *ptr(new uint8_t[len]);
-        uint8_t *buf  = ptr;
-        memset(buf, 0, len);
-
-        ethhdr *eth = (ethhdr *)buf;
-        eth->h_dest[5] = 2;
-        eth->h_source[5] = 1;
-        eth->h_proto = htons(0x800);
-
-        agent_hdr *agent = (agent_hdr *)(eth + 1);
-        agent->hdr_ifindex = htons(ifindex);
-        agent->hdr_vrf = htons(vrf);
-        agent->hdr_cmd = htons(AGENT_TRAP_ARP);
-
-        eth = (ethhdr *) (agent + 1);
-        memcpy(eth->h_dest, src_mac, MAC_LEN);
-        memcpy(eth->h_source, dest_mac, MAC_LEN);
-        eth->h_proto = htons(0x806);
-
-#elif defined(__FreeBSD__)
         int len = 2 * sizeof(ether_header) + sizeof(agent_hdr) + sizeof(ether_arp);
         uint8_t *ptr(new uint8_t[len]);
         uint8_t *buf  = ptr;
@@ -186,9 +124,6 @@ public:
         memcpy(eth->ether_shost, dest_mac, ETHER_ADDR_LEN);
         eth->ether_type = htons(ETHERTYPE_ARP);
 
-#else
-#error "Unsupported platform"
-#endif
         ether_arp *arp = (ether_arp *) (eth + 1);
         arp->ea_hdr.ar_hrd = htons(ARPHRD_ETHER);
         arp->ea_hdr.ar_pro = htons(ETHERTYPE_IP);

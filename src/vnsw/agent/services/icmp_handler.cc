@@ -9,7 +9,7 @@
 #include <services/icmp_proto.h>
 
 IcmpHandler::IcmpHandler(Agent *agent, boost::shared_ptr<PktInfo> info,
-                         boost::asio::io_service &io) 
+                         boost::asio::io_service &io)
     : ProtoHandler(agent, info, io), icmp_(pkt_info_->transp.icmp) {
     icmp_len_ = ntohs(pkt_info_->ip->ip_len) - (pkt_info_->ip->ip_hl * 4);
 }
@@ -25,9 +25,9 @@ bool IcmpHandler::Run() {
         return true;
     }
     VmInterface *vm_itf = static_cast<VmInterface *>(itf);
-    if (!vm_itf->ipv4_forwarding()) { 
+    if (!vm_itf->ipv4_forwarding()) {
         return true;
-    } 
+    }
     switch (icmp_->icmp_type) {
         case ICMP_ECHO:
             if (CheckPacket()) {

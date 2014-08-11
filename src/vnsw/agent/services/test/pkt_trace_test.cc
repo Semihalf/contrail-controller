@@ -4,10 +4,8 @@
 
 #include "testing/gunit.h"
 #include <netinet/in.h>
-#if defined(__FreeBSD__)
 #include <sys/socket.h>
 #include <netinet/ip.h>
-#endif
 #include <netinet/if_ether.h>
 #include <netinet/ip_icmp.h>
 #include <boost/uuid/string_generator.hpp>
@@ -88,14 +86,14 @@ public:
         }
     }
 
-    uint32_t GetItfCount() { 
+    uint32_t GetItfCount() {
         tbb::mutex::scoped_lock lock(mutex_);
-        return itf_count_; 
+        return itf_count_;
     }
 
-    std::size_t GetItfId(int index) { 
+    std::size_t GetItfId(int index) {
         tbb::mutex::scoped_lock lock(mutex_);
-        return itf_id_[index]; 
+        return itf_id_[index];
     }
 
     void CheckSandeshResponse(Sandesh *sandesh, int count) {
@@ -121,52 +119,6 @@ public:
         boost::scoped_array<uint8_t> buf(new uint8_t[len]);
         memset(buf.get(), 0, len);
 
-#if defined(__linux__)
-        ethhdr *eth = (ethhdr *)buf.get();
-        eth->h_dest[5] = 1;
-        eth->h_source[5] = 2;
-        eth->h_proto = htons(0x800);
-
-        agent_hdr *agent = (agent_hdr *)(eth + 1);
-        agent->hdr_ifindex = htons(ifindex);
-        agent->hdr_vrf = htons(0);
-        agent->hdr_cmd = htons(AGENT_TRAP_NEXTHOP);
-
-        eth = (ethhdr *) (agent + 1);
-        memcpy(eth->h_dest, dest_mac, MAC_LEN);
-        memcpy(eth->h_source, src_mac, MAC_LEN);
-        eth->h_proto = htons(0x800);
-
-        iphdr *ip = (iphdr *) (eth + 1);
-        ip->ihl = 5;
-        ip->version = 4;
-        ip->tos = 0;
-        ip->id = 0;
-        ip->frag_off = 0;
-        ip->ttl = 16;
-        ip->protocol = IPPROTO_ICMP;
-        ip->check = 0;
-        ip->saddr = 0;
-        ip->daddr = htonl(dest_ip);
-
-        icmphdr *icmp = (icmphdr *) (ip + 1);
-        if (error == TYPE_ERROR)
-            icmp->type = ICMP_ECHOREPLY;
-        else
-            icmp->type = ICMP_ECHO;
-        icmp->code = 0;
-        icmp->checksum = 0;
-        icmp->un.echo.id = 0x1234;
-        icmp->un.echo.sequence = icmp_seq_++;
-        if (error == CHECKSUM_ERROR)
-            icmp->checksum = 0;
-        else
-            icmp->checksum = IpUtils::IPChecksum((uint16_t *)icmp, 64);
-        len = 64;
-
-        ip->tot_len = htons(len + sizeof(iphdr));
-        len += sizeof(iphdr) + sizeof(ethhdr) + IPC_HDR_LEN;
-#elif defined(__FreeBSD__)
         ether_header *eth = (ether_header *)buf.get();
         eth->ether_dhost[5] = 1;
         eth->ether_shost[5] = 2;
@@ -211,9 +163,6 @@ public:
 
         ip->ip_len = htons(len + sizeof(ip));
         len += sizeof(ip) + sizeof(ether_header) + IPC_HDR_LEN;
-#else
-#error "Unsupported platform"
-#endif
         TestTapInterface *tap = (TestTapInterface *)
             (Agent::GetInstance()->pkt()->pkt_handler()->tap_interface());
         tap->GetTestPktHandler()->TestPktSend(buf.get(), len);
@@ -249,10 +198,10 @@ TEST_F(PktTraceTest, TraceTest) {
         {"7.8.9.0", 24, "7.8.9.12", true},
     };
 
-    CreateVmportEnv(input, 2, 0); 
+    CreateVmportEnv(input, 2, 0);
     client->WaitForIdle();
     client->Reset();
-    AddIPAM("vn1", ipam_info, 2); 
+    AddIPAM("vn1", ipam_info, 2);
     client->WaitForIdle();
 
     ClearAllInfo *clear_req1 = new ClearAllInfo();

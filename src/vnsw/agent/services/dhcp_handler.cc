@@ -33,7 +33,7 @@ bool DhcpHandler::Run() {
        default:
             return HandleVmRequest();
     }
-}    
+}
 
 bool DhcpHandler::HandleVmRequest() {
     dhcp_ = (dhcphdr *) pkt_info_->data;
@@ -100,7 +100,7 @@ bool DhcpHandler::HandleVmRequest() {
 
         case DHCP_DECLINE:
             dhcp_proto->IncrStatsDecline();
-            DHCP_TRACE(Error, "DHCP Client declined the offer : vrf = " << 
+            DHCP_TRACE(Error, "DHCP Client declined the offer : vrf = " <<
                        pkt_info_->vrf << " ifindex = " << GetInterfaceIndex());
             return true;
 
@@ -123,8 +123,8 @@ bool DhcpHandler::HandleVmRequest() {
         UpdateDnsServer();
         SendDhcpResponse();
         Ip4Address ip(config_.ip_addr);
-        DHCP_TRACE(Trace, "DHCP response sent; message = " << 
-                   ServicesSandesh::DhcpMsgType(out_msg_type_) << 
+        DHCP_TRACE(Trace, "DHCP response sent; message = " <<
+                   ServicesSandesh::DhcpMsgType(out_msg_type_) <<
                    "; ip = " << ip.to_string());
     }
 
@@ -163,7 +163,7 @@ bool DhcpHandler::HandleDhcpFromFabric() {
 // read DHCP options in the incoming packet
 bool DhcpHandler::ReadOptions(int16_t opt_rem_len) {
     // verify magic cookie
-    if ((opt_rem_len < 4) || 
+    if ((opt_rem_len < 4) ||
         memcmp(dhcp_->options, DHCP_OPTIONS_COOKIE, 4)) {
         agent()->GetDhcpProto()->IncrStatsErrors();
         DHCP_TRACE(Error, "DHCP options cookie missing; vrf = " <<
@@ -238,7 +238,7 @@ bool DhcpHandler::FindLeaseData() {
     config_.client_name_ = vm_itf_->vm_name();
     if (vm_itf_->ipv4_active()) {
         if (vm_itf_->fabric_port()) {
-            Inet4UnicastRouteEntry *rt = 
+            Inet4UnicastRouteEntry *rt =
                 Inet4UnicastAgentRouteTable::FindResolveRoute(
                              vm_itf_->vrf()->GetName(), ip);
             if (rt) {
@@ -286,7 +286,7 @@ void DhcpHandler::UpdateDnsServer() {
     if (config_.lease_time != (uint32_t) -1)
         return;
 
-    if (!vm_itf_->vn() || 
+    if (!vm_itf_->vn() ||
         !vm_itf_->vn()->GetIpamData(vm_itf_->ip_addr(), &ipam_name_,
                                     &ipam_type_)) {
         DHCP_TRACE(Trace, "Ipam data not found; VM = " << vm_itf_->name());
@@ -300,9 +300,9 @@ void DhcpHandler::UpdateDnsServer() {
 
     if (config_.domain_name_.size() &&
         config_.domain_name_ != vdns_type_.domain_name) {
-        DHCP_TRACE(Trace, "Client domain " << config_.domain_name_ << 
-                   " doesnt match with configured domain " << 
-                   vdns_type_.domain_name << "; Client name = " << 
+        DHCP_TRACE(Trace, "Client domain " << config_.domain_name_ <<
+                   " doesnt match with configured domain " <<
+                   vdns_type_.domain_name << "; Client name = " <<
                    config_.client_name_);
     }
     std::size_t pos;
@@ -310,7 +310,7 @@ void DhcpHandler::UpdateDnsServer() {
         ((pos = config_.client_name_.find('.', 0)) != std::string::npos) &&
         (config_.client_name_.substr(pos + 1) != vdns_type_.domain_name)) {
         DHCP_TRACE(Trace, "Client domain doesnt match with configured domain "
-                   << vdns_type_.domain_name << "; Client name = " 
+                   << vdns_type_.domain_name << "; Client name = "
                    << config_.client_name_);
         config_.client_name_.replace(config_.client_name_.begin() + pos + 1,
                                      config_.client_name_.end(),
@@ -377,7 +377,7 @@ bool DhcpHandler::CreateRelayPacket() {
     pkt_info_->pkt = new uint8_t[DHCP_PKT_SIZE];
     memset(pkt_info_->pkt, 0, DHCP_PKT_SIZE);
     pkt_info_->vrf = in_pkt_info.vrf;
-    pkt_info_->eth = (ether_header *)(pkt_info_->pkt + sizeof(ether_header) + 
+    pkt_info_->eth = (ether_header *)(pkt_info_->pkt + sizeof(ether_header) +
             sizeof(agent_hdr));
     pkt_info_->ip = (ip *)(pkt_info_->eth + 1);
     pkt_info_->transp.udp = (udphdr *)(pkt_info_->ip + 1);
@@ -574,7 +574,7 @@ uint16_t DhcpHandler::AddConfigDhcpOptions(uint16_t opt_len,
                 } else {
                     Ip4Address ip(config_.ip_addr);
                     DHCP_TRACE(Error, "Invalid DHCP option " <<
-                               option_type << " for VM " << 
+                               option_type << " for VM " <<
                                ip.to_string() << "; has to be IP address");
                 }
                 break;
@@ -585,9 +585,9 @@ uint16_t DhcpHandler::AddConfigDhcpOptions(uint16_t opt_len,
                 if (!domain_name_added && options[i].dhcp_option_value.size()) {
                     domain_name_added = true;
                     DhcpOptions *opt = GetNextOptionPtr(opt_len);
-                    opt->WriteData(option_type, 
-                                   options[i].dhcp_option_value.size(), 
-                                   options[i].dhcp_option_value.c_str(), 
+                    opt->WriteData(option_type,
+                                   options[i].dhcp_option_value.size(),
+                                   options[i].dhcp_option_value.c_str(),
                                    opt_len);
                 }
                 break;
@@ -705,7 +705,7 @@ uint16_t DhcpHandler::DhcpHdr(in_addr_t yiaddr, in_addr_t siaddr) {
 
     if (out_msg_type_ == DHCP_NAK) {
         opt = GetNextOptionPtr(opt_len);
-        opt->WriteData(DHCP_OPTION_MESSAGE, nak_msg_.size(), 
+        opt->WriteData(DHCP_OPTION_MESSAGE, nak_msg_.size(),
                        nak_msg_.data(), opt_len);
     }
     else {
@@ -755,11 +755,11 @@ uint16_t DhcpHandler::DhcpHdr(in_addr_t yiaddr, in_addr_t siaddr) {
             for (unsigned int i = 0; i < ipam_type_.ipam_dns_server.
                  tenant_dns_server_address.ip_address.size(); ++i) {
                 boost::system::error_code ec;
-                uint32_t ip = 
+                uint32_t ip =
                     Ip4Address::from_string(ipam_type_.ipam_dns_server.
                     tenant_dns_server_address.ip_address[i], ec).to_ulong();
                 if (ec.value()) {
-                    DHCP_TRACE(Trace, "Invalid DNS server address : " << 
+                    DHCP_TRACE(Trace, "Invalid DNS server address : " <<
                                boost::system::system_error(ec).what());
                     continue;
                 }
@@ -793,11 +793,11 @@ uint16_t DhcpHandler::FillDhcpResponse(unsigned char *dest_mac,
                                        in_addr_t siaddr, in_addr_t yiaddr) {
 
     pkt_info_->eth = (ether_header *)(pkt_info_->pkt + IPC_HDR_LEN);
-    EthHdr(agent()->pkt()->pkt_handler()->mac_address(), dest_mac, 
+    EthHdr(agent()->pkt()->pkt_handler()->mac_address(), dest_mac,
            ETHERTYPE_IP);
 
     uint16_t header_len = sizeof(ether_header);
-    
+
     if (vm_itf_->vlan_id() != VmInterface::kInvalidVlanId) {
         // cfi and priority are zero
         VlanHdr(pkt_info_->pkt + IPC_HDR_LEN + 12, vm_itf_->vlan_id());
@@ -813,7 +813,7 @@ uint16_t DhcpHandler::FillDhcpResponse(unsigned char *dest_mac,
     UdpHdr(len, src_ip, DHCP_SERVER_PORT, dest_ip, DHCP_CLIENT_PORT);
 
     len += sizeof(ip);
-    
+
     IpHdr(len, src_ip, dest_ip, IPPROTO_UDP);
 
     return len + header_len;
@@ -826,7 +826,7 @@ void DhcpHandler::SendDhcpResponse() {
     in_addr_t dest_ip = 0xFFFFFFFF;
     in_addr_t yiaddr = htonl(config_.ip_addr);
     in_addr_t siaddr = src_ip;
-    unsigned char dest_mac[ETHER_ADDR_LEN] = { 0xFF, 0xFF, 0xFF, 0xFF, 
+    unsigned char dest_mac[ETHER_ADDR_LEN] = { 0xFF, 0xFF, 0xFF, 0xFF,
                                                0xFF, 0xFF };
 
     // If requested IP address is not available, send NAK
@@ -837,18 +837,18 @@ void DhcpHandler::SendDhcpResponse() {
         siaddr = 0;
     }
 
-    // send a unicast response when responding to INFORM 
+    // send a unicast response when responding to INFORM
     // or when incoming giaddr is zero and ciaddr is set
     // or when incoming bcast flag is not set (with giaddr & ciaddr being zero)
     if ((msg_type_ == DHCP_INFORM) ||
-        (!dhcp_->giaddr && (dhcp_->ciaddr || 
+        (!dhcp_->giaddr && (dhcp_->ciaddr ||
                             !(request_.flags & DHCP_BCAST_FLAG)))) {
         dest_ip = yiaddr;
         memcpy(dest_mac, dhcp_->chaddr, ETHER_ADDR_LEN);
         if (msg_type_ == DHCP_INFORM)
             yiaddr = 0;
     }
-        
+
     UpdateStats();
 
     uint16_t len = FillDhcpResponse(dest_mac, src_ip, dest_ip, siaddr, yiaddr);
@@ -859,6 +859,6 @@ void DhcpHandler::SendDhcpResponse() {
 void DhcpHandler::UpdateStats() {
     DhcpProto *dhcp_proto = agent()->GetDhcpProto();
     (out_msg_type_ == DHCP_OFFER) ? dhcp_proto->IncrStatsOffers() :
-        ((out_msg_type_ == DHCP_ACK) ? dhcp_proto->IncrStatsAcks() : 
+        ((out_msg_type_ == DHCP_ACK) ? dhcp_proto->IncrStatsAcks() :
                                        dhcp_proto->IncrStatsNacks());
 }
