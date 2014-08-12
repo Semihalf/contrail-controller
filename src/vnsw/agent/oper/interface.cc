@@ -258,6 +258,7 @@ void Interface::GetOsParams(Agent *agent) {
     strncpy(ifr.ifr_name, name_.c_str(), IF_NAMESIZE);
     int fd = socket(AF_LOCAL, SOCK_STREAM, 0);
     assert(fd >= 0);
+
 #if defined(__linux__)
     if (ioctl(fd, SIOCGIFHWADDR, (void *)&ifr) < 0) {
 #elif defined(__FreeBSD__)
@@ -272,6 +273,11 @@ void Interface::GetOsParams(Agent *agent) {
         return;
     }
 
+#if defined(__linux__)
+    memcpy(mac_.ether_addr_octet, ifr.ifr_hwaddr.sa_data, ETHER_ADDR_LEN);
+#elif defined(__FreeBSD__)
+    memcpy(mac_.octet, ifr.ifr_addr.sa_data, ETHER_ADDR_LEN);
+#endif
 
     if (ioctl(fd, SIOCGIFFLAGS, (void *)&ifr) < 0) {
         LOG(ERROR, "Error <" << errno << ": " << strerror(errno) << 
@@ -287,11 +293,6 @@ void Interface::GetOsParams(Agent *agent) {
     }
     close(fd);
 
-#if defined(__linux__)
-    memcpy(mac_.ether_addr_octet, ifr.ifr_hwaddr.sa_data, ETHER_ADDR_LEN);
-#elif defined(__FreeBSD__)
-    memcpy(mac_.octet, ifr.ifr_addr.sa_data, ETHER_ADDR_LEN);
-#endif
     if (os_index_ == kInvalidIndex) {
         int idx = if_nametoindex(name_.c_str());
         if (idx)
