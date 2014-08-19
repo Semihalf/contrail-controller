@@ -338,8 +338,9 @@ public:
         ip->ip_len = 100;
         ip->ip_src.s_addr = inet_addr(sip);
         ip->ip_dst.s_addr = inet_addr(dip);
+	printf("AddIpHdr: %s %s %x %x\n", sip, dip, ip->ip_src.s_addr, ip->ip_dst.s_addr);
         ip->ip_p = proto;
-        len += sizeof(ip);
+        len += sizeof(*ip);
     };
 #else
 #error "Unsupported platform"

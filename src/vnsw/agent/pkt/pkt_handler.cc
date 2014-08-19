@@ -101,6 +101,14 @@ void PktHandler::HandleRcvPkt(uint8_t *ptr, std::size_t len,
     uint8_t *pkt;
 
     agent_->stats()->incr_pkt_exceptions();
+    printf("Inside HandleRcvPkt\n");
+    for (std::size_t i = 0; i < len; i++) {
+        if (!(i % 16))
+                printf("\n");
+        printf("%02hhx " , ((char *)ptr)[i]);
+    }
+    printf("\n");
+
     if ((pkt = ParseAgentHdr(pkt_info.get())) == NULL) {
         PKT_TRACE(Err, "Error parsing Agent Header");
         agent_->stats()->incr_pkt_invalid_agent_hdr();
@@ -206,10 +214,18 @@ uint8_t *PktHandler::ParseAgentHdr(PktInfo *pkt_info) {
     if (pkt_info->len < (sizeof(ether_header) + sizeof(agent_hdr) + sizeof(ether_header))) {
         return NULL;
     }
+    for (int i = 0; i < pkt_info->len; i++) {
+	if (!(i % 16))
+		printf("\n");
+	printf("%02hhx " , ((char *)pkt_info->pkt)[i]);
+    }
+    printf("\n");
 
     // packet comes with (outer) eth header, agent_hdr, actual eth packet
     pkt_info->eth = (ether_header *) pkt_info->pkt;
     uint8_t *pkt = ((uint8_t *)pkt_info->eth) + sizeof(ether_header);
+    printf("ParseAgentHdr\n");
+    printf("pkt_info->ip_saddr: %x ip_daddr %x\n", pkt_info->ip_saddr, pkt_info->ip_daddr);
 
     // Decode agent_hdr
     agent_hdr *agent = (agent_hdr *) pkt;
@@ -222,6 +238,7 @@ uint8_t *PktHandler::ParseAgentHdr(PktInfo *pkt_info) {
         pkt_info->agent_hdr.mtu = ntohl(agent->hdr_cmd_param);
         pkt_info->agent_hdr.flow_index = ntohl(agent->hdr_cmd_param_1);
     }
+    printf("pkt_info->ip_saddr: %x ip_daddr %x\n", pkt_info->ip_saddr, pkt_info->ip_daddr);
     pkt += sizeof(agent_hdr);
     return pkt;
 }
@@ -237,6 +254,8 @@ uint8_t *PktHandler::ParseIpPacket(PktInfo *pkt_info,
     pkt_info->ip = (ip *) pkt;
     pkt_info->ip_saddr = ntohl(pkt_info->ip->ip_src.s_addr);
     pkt_info->ip_daddr = ntohl(pkt_info->ip->ip_dst.s_addr);
+    printf("ParseIpPacket\n");
+    printf("pkt_info->ip_saddr: %x ip_daddr %x\n", pkt_info->ip_saddr, pkt_info->ip_daddr);
     pkt_info->ip_proto = pkt_info->ip->ip_p;
     pkt += (pkt_info->ip->ip_hl << 2);
 
@@ -332,6 +351,7 @@ uint8_t *PktHandler::ParseUserPkt(PktInfo *pkt_info, Interface *intf,
     // get to the actual packet header
     pkt_info->eth = (ether_header *) pkt;
     pkt_info->ether_type = ntohs(pkt_info->eth->ether_type);
+    printf("ParseUserPkt::ether_type = %x\n", pkt_info->ether_type);
 
     if (pkt_info->ether_type == VLAN_PROTOCOL) {
         pkt = ((uint8_t *)pkt_info->eth) + sizeof(ether_header) + 4;

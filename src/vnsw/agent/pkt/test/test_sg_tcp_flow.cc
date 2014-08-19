@@ -210,6 +210,9 @@ bool ValidateAction(uint32_t vrfid, const char *sip, const char *dip, int proto,
     bool ret = true;
     FlowEntry *fe = FlowGet(vrfid, sip, dip, proto, sport, dport, nh_id);
     FlowEntry *rfe = fe->reverse_flow_entry();
+    printf("sg_action_summary: %d\n", fe->match_p().sg_action_summary);
+    printf("sg_action_summary: %x\n", fe->match_p().sg_action_summary);
+    printf("%x, %d\n", 1 << action, 1 << action);
 
     EXPECT_TRUE((fe->match_p().sg_action_summary & (1 << action)) != 0);
     if ((fe->match_p().sg_action_summary & (1 << action)) == 0) {

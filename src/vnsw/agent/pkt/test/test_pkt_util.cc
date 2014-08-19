@@ -13,13 +13,48 @@
 
 void MakeIpPacket(PktGen *pkt, int ifindex, const char *sip,
 		  const char *dip, int proto, int hash_id, int cmd, int vrf) {
+    printf("Inside MakeIpPacket: \n");
+    printf("First ETH\n");
     pkt->AddEthHdr("00:00:00:00:00:01", "00:00:00:00:00:02", 0x800);
+    for (int i = 0; i < pkt->GetBuffLen(); i++) {
+        if (!(i % 16))
+                printf("\n");
+        printf("%02hhx " , ((char *)pkt->GetBuff())[i]);
+    }
+    printf("\nAgent HDR");
     pkt->AddAgentHdr(ifindex, cmd, hash_id, vrf) ;
+    for (int i = 0; i < pkt->GetBuffLen(); i++) {
+        if (!(i % 16))
+                printf("\n");
+        printf("%02hhx " , ((char *)pkt->GetBuff())[i]);
+    }
+    printf("\nSecond ETH");
     pkt->AddEthHdr("00:00:00:00:00:01", "00:00:00:00:00:02", 0x800);
+    for (int i = 0; i < pkt->GetBuffLen(); i++) {
+        if (!(i % 16))
+                printf("\n");
+        printf("%02hhx " , ((char *)pkt->GetBuff())[i]);
+    }
+    printf("\nIP HDR");
     pkt->AddIpHdr(sip, dip, proto);
+    for (int i = 0; i < pkt->GetBuffLen(); i++) {
+        if (!(i % 16))
+                printf("\n");
+        printf("%02hhx " , ((char *)pkt->GetBuff())[i]);
+    }
+    printf("\n");
     if (proto == 1) {
+	printf("Adding ICMP\n");
         pkt->AddIcmpHdr();
     }
+    printf("Complete packet\n");
+    for (int i = 0; i < pkt->GetBuffLen(); i++) {
+        if (!(i % 16))
+                printf("\n");
+        printf("%02hhx " , ((char *)pkt->GetBuff())[i]);
+    }
+    printf("\n");
+
 }
 
 void TxIpPacket(int ifindex, const char *sip, const char *dip, 

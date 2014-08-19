@@ -981,6 +981,7 @@ bool PktFlowInfo::Process(const PktInfo *pkt, PktControlInfo *in,
 
 void PktFlowInfo::Add(const PktInfo *pkt, PktControlInfo *in,
                       PktControlInfo *out) {
+    printf("PktFlowInfo::Add %d %x.%d %x.%d %d\n", in->nh_, pkt->ip_saddr, pkt->sport, pkt->ip_daddr, pkt->dport, pkt->ip_proto);
     FlowKey key(in->nh_, pkt->ip_saddr, pkt->ip_daddr,
                 pkt->ip_proto, pkt->sport, pkt->dport);
     FlowEntryPtr flow(Agent::GetInstance()->pkt()->flow_table()->Allocate(key));

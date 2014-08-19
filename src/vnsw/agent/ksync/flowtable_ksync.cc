@@ -575,6 +575,7 @@ bool FlowTableKSyncObject::AuditProcess() {
 
         vflow_entry = GetKernelFlowEntry(flow_idx, false);
         if (vflow_entry && vflow_entry->fe_action == VR_FLOW_ACTION_HOLD) {
+	    printf("FlowTableKSyncObject::AuditProcess\n");
             FlowKey key(vflow_entry->fe_key.key_nh_id,
                         ntohl(vflow_entry->fe_key.key_src_ip), 
                         ntohl(vflow_entry->fe_key.key_dest_ip),

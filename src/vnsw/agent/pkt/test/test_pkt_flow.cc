@@ -267,6 +267,8 @@ public:
         PktControlInfo in;
         PktControlInfo out;
 
+	printf("Addign flow %s", __PRETTY_FUNCTION__);
+	
         flow_info->Add(pkt, &in, &out);
         //agent()->pkt()->flow_table()->Add(pkt, flow_info);
         client->WaitForIdle();

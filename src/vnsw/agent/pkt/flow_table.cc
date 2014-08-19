@@ -1339,6 +1339,9 @@ void FlowEntry::InitAuditFlow(uint32_t flow_idx) {
 }
 
 FlowEntry *FlowTable::Allocate(const FlowKey &key) {
+printf("Allocating: nh = %d, src = %x.%d, dst = %x.%d, proto = %d\n",
+        (int)key.nh, (int)key.src.ipv4, key.src_port, (int)key.dst.ipv4,
+key.dst_port, (int)key.protocol);
     FlowEntry *flow = new FlowEntry(key);
     std::pair<FlowEntryMap::iterator, bool> ret;
     ret = flow_entry_map_.insert(std::pair<FlowKey, FlowEntry*>(key, flow));
@@ -1357,6 +1360,9 @@ FlowEntry *FlowTable::Allocate(const FlowKey &key) {
 
 FlowEntry *FlowTable::Find(const FlowKey &key) {
     FlowEntryMap::iterator it;
+    printf("Searching for: nh = %d, src = %x.%d, dst = %x.%d, proto = %d\n",
+        (int)key.nh, (int)key.src.ipv4, key.src_port, (int)key.dst.ipv4,
+        key.dst_port, (int)key.protocol); 
 
     it = flow_entry_map_.find(key);
     if (it != flow_entry_map_.end()) {

@@ -32,14 +32,30 @@ bool CallPktParse(PktInfo *pkt_info, uint8_t *ptr, int len) {
     Interface *intf = NULL;
     uint8_t *pkt;
 
+    printf("CallPktParse received packet:\n");
+    for (int i = 0; i < len; i++) {
+        if (!(i % 16))
+                printf("\n");
+        printf("%02hhx " , ((char *)ptr)[i]);
+    }
+    printf("\n");
+
+
     pkt_info->pkt = ptr;
     pkt_info->len = len;
     AgentStats::GetInstance()->incr_pkt_exceptions();
+    printf("CallPktParse: \n");
+    printf("pkt_info->ip_saddr: %x\n", pkt_info->ip_saddr);
+    printf("pkt_info->ip_daddr: %x\n", pkt_info->ip_daddr);
     if ((pkt = Agent::GetInstance()->pkt()->pkt_handler()->
          ParseAgentHdr(pkt_info)) == NULL) {
         LOG(ERROR, "Error parsing Agent Header");
         return false;
     }
+    printf("After invoking ParseAgentHdr\n");
+    printf("pkt_info->ip_saddr: %x\n", pkt_info->ip_saddr);
+    printf("pkt_info->ip_daddr: %x\n", pkt_info->ip_daddr);
+    printf("====\n");
 
     intf = InterfaceTable::GetInstance()->FindInterface(pkt_info->agent_hdr.ifindex);
     if (intf == NULL) {
@@ -241,6 +257,14 @@ TEST_F(PktParseTest, NonIp_On_Eth_1) {
 static bool TestPkt(PktInfo *pkt_info, PktGen *pkt) {
     uint8_t *buff(new uint8_t[pkt->GetBuffLen() + 64]);
     memcpy(buff, pkt->GetBuff(), pkt->GetBuffLen());
+    printf("TestPkt after PktGen call\n");
+    for (int i = 0; i < pkt->GetBuffLen(); i++) {
+        if (!(i % 16))
+                printf("\n");
+        printf("%02hhx " , ((char *)pkt->GetBuff())[i]);
+    }
+    printf("\n");
+
     return CallPktParse(pkt_info, buff, pkt->GetBuffLen() + 64);
 }
 
@@ -253,6 +277,9 @@ static bool ValidateIpPktInfo(PktInfo *pkt_info, const char *sip,
     if (pkt_info->ip == NULL) {
         ret = false;
     }
+
+    printf("ValidateIpPktInfo: %s %s\n", sip, dip);
+    printf("pkt_info->ip_saddr: %x\n", pkt_info->ip_saddr);
 
     EXPECT_EQ(pkt_info->ip_saddr, htonl(inet_addr(sip)));
     if (pkt_info->ip_saddr != htonl(inet_addr(sip))) {
@@ -315,12 +342,19 @@ static bool ValidateIpPktInfo(PktInfo *pkt_info, const char *sip,
 
 TEST_F(PktParseTest, IP_On_Vnet_1) {
     VmInterface *vnet1 = VmInterfaceGet(1);
+    printf("Inside TEST_F, before calling PktGen()\n");
     PktGen *pkt = new PktGen();
     PktInfo pkt_info(NULL, 0, 0);
 
     pkt->Reset();
     MakeIpPacket(pkt, vnet1->id(), "1.1.1.1", "1.1.1.2", 1, 1, -1);
+    printf("Preparing pkt_info: \n");
+    printf("pkt_info->ip_saddr: %x\n", pkt_info.ip_saddr);
+    printf("pkt_info->ip_daddr: %x\n", pkt_info.ip_daddr);
     TestPkt(&pkt_info, pkt);
+    printf("After TestPkt\n");
+    printf("pkt_info->ip_saddr: %x\n", pkt_info.ip_saddr);
+    printf("pkt_info->ip_daddr: %x\n", pkt_info.ip_daddr);
     client->WaitForIdle();
     EXPECT_TRUE(ValidateIpPktInfo(&pkt_info, "1.1.1.1", "1.1.1.2", 1, 0, 0));
 
