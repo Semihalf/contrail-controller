@@ -26,6 +26,7 @@ void IFMapAgentParser::NodeClear() {
 void IFMapAgentParser::NodeParse(xml_node &node, DBRequest::DBOperation oper, uint64_t seq) {
 
     const char *name = node.attribute("type").value();
+    printf("%s: node name %s\n", __PRETTY_FUNCTION__, name);
 
     IFMapTable *table;
     table = IFMapTable::FindTable(db_, name);
@@ -144,6 +145,7 @@ void IFMapAgentParser::LinkParse(xml_node &link, DBRequest::DBOperation oper, ui
 void IFMapAgentParser::ConfigParse(const xml_node config, const uint64_t seq) {
 
     DBRequest::DBOperation oper;
+    printf("IFMapAgentParser::ConfigParse\n");
 
     for (xml_node node = config.first_child(); node;
          node = node.next_sibling()) {

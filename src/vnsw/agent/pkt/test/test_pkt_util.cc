@@ -107,11 +107,44 @@ void TxUdpPacket(int ifindex, const char *sip, const char *dip,
 void MakeTcpPacket(PktGen *pkt, int ifindex, const char *sip,
 		   const char *dip, uint16_t sport, uint16_t dport, bool ack,
 		   int hash_id, uint32_t vrf_id) {
+    printf("%s\n", __PRETTY_FUNCTION__);
     pkt->AddEthHdr("00:00:00:00:00:01", "00:00:00:00:00:02", 0x800);
+    printf("\nAdded ETH HDR\n");
+    for (int i = 0; i < pkt->GetBuffLen(); i++) {
+        if (!(i % 16))
+                printf("\n");
+        printf("%02hhx " , ((char *)pkt->GetBuff())[i]);
+    }
     pkt->AddAgentHdr(ifindex, AGENT_TRAP_FLOW_MISS, hash_id, vrf_id);
+    printf("\n Agent HDR\n");
+    for (int i = 0; i < pkt->GetBuffLen(); i++) {
+        if (!(i % 16))
+                printf("\n");
+        printf("%02hhx " , ((char *)pkt->GetBuff())[i]);
+    }
     pkt->AddEthHdr("00:00:00:00:00:01", "00:00:00:00:00:02", 0x800);
+    printf("\nAdded ETH HDR\n");
+    for (int i = 0; i < pkt->GetBuffLen(); i++) {
+        if (!(i % 16))
+                printf("\n");
+        printf("%02hhx " , ((char *)pkt->GetBuff())[i]);
+    }
+    printf("\n");
     pkt->AddIpHdr(sip, dip, IPPROTO_TCP);
+    printf("\nAdded IP HDR\n");
+    for (int i = 0; i < pkt->GetBuffLen(); i++) {
+        if (!(i % 16))
+                printf("\n");
+        printf("%02hhx " , ((char *)pkt->GetBuff())[i]);
+    }
     pkt->AddTcpHdr(sport, dport, false, false, ack, 64);
+    printf("\nAdded TCP HDR (complete)\n");
+    for (int i = 0; i < pkt->GetBuffLen(); i++) {
+        if (!(i % 16))
+                printf("\n");
+        printf("%02hhx " , ((char *)pkt->GetBuff())[i]);
+    }
+    printf("\n");
 
 }
 

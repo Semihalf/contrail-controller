@@ -160,6 +160,7 @@ uint32_t FlowEntry::MatchAcl(const PacketHeader &hdr,
 
         if (it->acl->PacketMatch(hdr, *it, info)) {
             action |= it->action_info.action;
+            printf("%s action_info.action: %x\n", __PRETTY_FUNCTION__, it->action_info.action);
             if (it->action_info.action & (1 << TrafficAction::MIRROR)) {
                 data_.match_p.action_info.mirror_l.insert
                     (data_.match_p.action_info.mirror_l.end(),
@@ -175,6 +176,7 @@ uint32_t FlowEntry::MatchAcl(const PacketHeader &hdr,
 
     // If no acl matched, make it imlicit deny
     if (action == 0 && add_implicit_deny) {
+	printf("%s there has been no implicit deny\n", __PRETTY_FUNCTION__);
         action = (1 << TrafficAction::DROP) | 
             (1 << TrafficAction::IMPLICIT_DENY);;
         if (info) {
@@ -183,6 +185,7 @@ uint32_t FlowEntry::MatchAcl(const PacketHeader &hdr,
         }
     }
 
+    printf("%s returning with action: %x\n", __PRETTY_FUNCTION__, action);
     return action;
 }
 
@@ -252,6 +255,7 @@ bool FlowEntry::ActionRecompute() {
 }
 
 void FlowEntry::SetPacketHeader(PacketHeader *hdr) {
+    printf("%s vrf %d src %x.%d dst %x.%d proto %d\n", __PRETTY_FUNCTION__, data_.vrf, key_.src.ipv4, key_.src_port, key_.dst.ipv4, key_.dst_port, key_.protocol);
     hdr->vrf = data_.vrf;
     hdr->src_ip = key_.src.ipv4;
     hdr->dst_ip = key_.dst.ipv4;
@@ -324,6 +328,7 @@ void FlowEntry::SetOutPacketHeader(PacketHeader *hdr) {
 //      Out-Network Policy
 //      SG and out-SG from forward flow
 bool FlowEntry::DoPolicy() {
+    printf("Inside FlowEntry::DoPolicy()\n");
     data_.match_p.action_info.Clear();
     data_.match_p.policy_action = 0;
     data_.match_p.out_policy_action = 0;
@@ -344,8 +349,10 @@ bool FlowEntry::DoPolicy() {
 
     //Calculate VRF assign entry, and ignore acl is set
     //skip network and SG acl action is set
+    printf("%s after SetPacketHeader\n", __PRETTY_FUNCTION__);
     data_.match_p.vrf_assign_acl_action =
         MatchAcl(hdr, data_.match_p.m_vrf_assign_acl_l, false, true, NULL);
+    printf("%s vrf_assign_acl_action = %d\n", __PRETTY_FUNCTION__, data_.match_p.vrf_assign_acl_action);
 
     // Mirror is valid even if packet is to be dropped. So, apply it first
     data_.match_p.mirror_action = MatchAcl(hdr, data_.match_p.m_mirror_acl_l,
@@ -429,6 +436,11 @@ bool FlowEntry::DoPolicy() {
                 data_.match_p.reverse_sg_action |
                 data_.match_p.reverse_out_sg_action;
             sg_rule_uuid_ = sg_acl_info.uuid;
+            printf("DoPolicy? sg_action_summary: %x\n", data_.match_p.sg_action_summary);
+            printf("DoPolicy? sg_action: %x\n", data_.match_p.sg_action);
+            printf("DoPolicy? out_sg_action: %x\n", data_.match_p.out_sg_action);
+            printf("DoPolicy? reverse_sg_action: %x\n", data_.match_p.reverse_sg_action);
+            printf("DoPolicy? reverse_out_sg_action: %x\n", data_.match_p.reverse_out_sg_action);
         } else {
             if (ShouldDrop(data_.match_p.sg_action |
                            data_.match_p.out_sg_action)
@@ -447,6 +459,7 @@ bool FlowEntry::DoPolicy() {
                     sg_rule_uuid_ = rev_sg_acl_info.uuid;
                 }
             }
+            printf("DoPolicy? Alternate sg_action_summary: %x\n", data_.match_p.sg_action_summary);
         }
     } else {
         // SG is reflexive ACL. For reverse-flow, copy SG action from
@@ -1042,6 +1055,7 @@ void FlowEntry::UpdateReflexiveAction() {
     data_.match_p.reverse_sg_action = (1 << TrafficAction::PASS);;
     data_.match_p.reverse_out_sg_action = (1 << TrafficAction::PASS);
     data_.match_p.sg_action_summary = (1 << TrafficAction::PASS);
+    printf("%s\n", __PRETTY_FUNCTION__);
 
     FlowEntry *fwd_flow = reverse_flow_entry();
     if (fwd_flow) {
@@ -1049,6 +1063,7 @@ void FlowEntry::UpdateReflexiveAction() {
             fwd_flow->data().match_p.sg_action_summary;
         // Since SG is reflexive ACL, copy sg_rule_uuid_ from forward flow
         sg_rule_uuid_ = fwd_flow->sg_rule_uuid();
+	printf("Updated to: %x\n", data_.match_p.sg_action_summary);
     }
     // If forward flow is DROP, set action for reverse flow to
     // TRAP. If packet hits reverse flow, we will re-establish

@@ -90,6 +90,8 @@ static string AddSgIdAclXmlString(const char *node_name, const char *name, int i
     "       </node>\n"
     "   </update>\n"
     "</config>\n", node_name, name, id, src_sg_id, proto, dest_sg_id, action);
+    printf("AddSgIdAclXmlString\n");
+    printf("%s\n", buff);
     string s(buff);
     return s;
 }
