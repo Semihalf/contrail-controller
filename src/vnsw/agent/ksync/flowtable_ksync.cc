@@ -146,17 +146,9 @@ int FlowTableKSyncEntry::Encode(sandesh_op::type op, char *buf, int buf_len) {
     uint16_t drop_reason = VR_FLOW_DR_UNKNOWN;
     FlowEntry *rev_flow = flow_entry_->reverse_flow_entry();
 
-    //If action is NAT and reverse flow entry is not valid
-    //then we should wait for the reverse flow to be programmed
-    if ((flow_entry_->is_flags_set(FlowEntry::NatFlow) ||
-         flow_entry_->is_flags_set(FlowEntry::EcmpFlow)) &&
-        rev_flow && rev_flow->flow_handle() == FlowEntry::kInvalidFlowHandle) {
-        return 0;
-    }
-
     req.set_fr_op(flow_op::FLOW_SET);
     req.set_fr_rid(0);
-    req.set_fr_index(flow_entry_->flow_handle());
+    req.set_fr_index(hash_id_);
     const FlowKey *fe_key = &flow_entry_->key();
     req.set_fr_flow_sip(htonl(fe_key->src.ipv4));
     req.set_fr_flow_dip(htonl(fe_key->dst.ipv4));
@@ -168,11 +160,19 @@ int FlowTableKSyncEntry::Encode(sandesh_op::type op, char *buf, int buf_len) {
     uint16_t flags = 0;
 
     if (op == sandesh_op::DELETE) {
-        if (flow_entry_->flow_handle() == FlowEntry::kInvalidFlowHandle) {
+        if (hash_id_ == FlowEntry::kInvalidFlowHandle) {
             return 0;
         }
         req.set_fr_flags(0);
     } else {
+        //If action is NAT and reverse flow entry is not valid
+        //then we should wait for the reverse flow to be programmed
+        if ((flow_entry_->is_flags_set(FlowEntry::NatFlow) ||
+             flow_entry_->is_flags_set(FlowEntry::EcmpFlow)) &&
+            rev_flow && rev_flow->flow_handle() == FlowEntry::kInvalidFlowHandle) {
+            return 0;
+        }
+
         flags = VR_FLOW_FLAG_ACTIVE;
         uint32_t fe_action = flow_entry_->match_p().action_info.action;
         if ((fe_action) & (1 << TrafficAction::PASS)) {
@@ -305,11 +305,6 @@ int FlowTableKSyncEntry::Encode(sandesh_op::type op, char *buf, int buf_len) {
 
 bool FlowTableKSyncEntry::Sync() {
     bool changed = false;
-
-    if (hash_id_ != flow_entry_->flow_handle()) {
-        hash_id_ = flow_entry_->flow_handle();
-        changed = true;
-    }
 
     FlowEntry *rev_flow = flow_entry_->reverse_flow_entry();
     if (rev_flow) {
@@ -460,6 +455,15 @@ std::string FlowTableKSyncEntry::ToString() const {
 bool FlowTableKSyncEntry::IsLess(const KSyncEntry &rhs) const {
     const FlowTableKSyncEntry &entry = static_cast
         <const FlowTableKSyncEntry &>(rhs);
+    /*
+     * Ksync Flow Table should have the same key as vrouter flow table,
+     * so that all the flow entries present in vrouter can be represented
+     * in Ksync. This will also ensure that the index change for a flow
+     * entry will be sync'ed appropriately in vrouter.
+     */
+    if (hash_id_ != entry.hash_id_) {
+        return hash_id_ < entry.hash_id_;
+    }
     return flow_entry_ < entry.flow_entry_;
 }
 

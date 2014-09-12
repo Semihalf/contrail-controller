@@ -43,7 +43,7 @@ private:
     void OtherPktTrace(PktTrace::Pkt &pkt, PktSandesh *resp);
 
     void FillPktData(PktTrace::Pkt &pkt, PktData &resp);
-    void FillVrouterHdr(PktTrace::Pkt &pkt, VrouterHdr &resp);
+    uint16_t FillVrouterHdr(PktTrace::Pkt &pkt, VrouterHdr &resp);
     void FillArpHdr(ether_arp *arp, ArpHdr &resp);
     void FillMacHdr(ether_header *eth, MacHdr &resp);
     void FillIpv4Hdr(ip *ip, Ipv4Hdr &resp);

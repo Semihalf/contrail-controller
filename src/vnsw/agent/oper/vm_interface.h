@@ -157,6 +157,7 @@ public:
         Ip4Address  addr_;
         uint32_t    plen_;
         bool        ecmp_;
+        mutable Ip4Address  gw_ip_;
     };
     typedef std::set<AllowedAddressPair, AllowedAddressPair>
         AllowedAddressPairSet;
@@ -372,7 +373,12 @@ public:
     void UpdateL2();
     const AclDBEntry* vrf_assign_acl() const { return vrf_assign_acl_.get();}
     bool WaitForTraffic() const;
-    bool GetDhcpOptions(std::vector<autogen::DhcpOptionType> *options) const;
+    bool GetInterfaceDhcpOptions(
+            std::vector<autogen::DhcpOptionType> *options) const;
+    bool GetSubnetDhcpOptions(
+            std::vector<autogen::DhcpOptionType> *options) const;
+    bool GetIpamDhcpOptions(
+            std::vector<autogen::DhcpOptionType> *options) const;
     const Peer *peer() const;
 private:
     bool IsActive() const;
@@ -381,7 +387,8 @@ private:
     bool PolicyEnabled() const;
     void UpdateL3Services(bool dhcp, bool dns);
     void AddRoute(const std::string &vrf_name, const Ip4Address &ip,
-                  uint32_t plen, bool policy, bool ecmp);
+                  uint32_t plen, const std::string &vn_name, bool policy,
+                  bool ecmp, const Ip4Address &gw_ip);
     void DeleteRoute(const std::string &vrf_name, const Ip4Address &ip,
                      uint32_t plen);
     void ServiceVlanAdd(ServiceVlan &entry);
@@ -413,6 +420,7 @@ private:
     void UpdateL2(bool old_l2_active, VrfEntry *old_vrf, int old_vxlan_id,
                   bool force_update, bool policy_change);
     void DeleteL2(bool old_l2_active, VrfEntry *old_vrf);
+    void UpdateVxLan();
 
     void AllocL3MplsLabel(bool force_update, bool policy_change);
     void DeleteL3MplsLabel();
@@ -501,6 +509,7 @@ private:
     std::auto_ptr<LocalVmPortPeer> peer_;
     VrfAssignRuleList vrf_assign_rule_list_;
     AclDBEntryRef vrf_assign_acl_;
+    Ip4Address vm_ip_gw_addr_;
     DISALLOW_COPY_AND_ASSIGN(VmInterface);
 };
 

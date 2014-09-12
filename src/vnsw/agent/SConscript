@@ -16,7 +16,7 @@ env = BuildEnv.Clone()
 ##########################################################################
 # Build CCFLAGS
 ##########################################################################
-env.AppendUnique(CCFLAGS='-fno-exceptions')
+env.CppDisableExceptions()
 
 ##########################################################################
 # Build CPPPATH
@@ -77,6 +77,7 @@ env.Append(LIBPATH = MapBuildDir([
     'vnsw/agent/controller',
     'vnsw/agent/diag',
     'vnsw/agent/filter',
+    'vnsw/agent/init',
     'vnsw/agent/kstate', 
     'vnsw/agent/ksync',
     'vnsw/agent/openstack',
@@ -122,7 +123,7 @@ env.Prepend(LIBS = [
     'cpuinfo',
     'io',
     'sandesh',
-    'connection_info',
+    'process_info',
     'http',
     'http_parser',
     'base',
@@ -173,6 +174,7 @@ AgentEnv = env.Clone()
 
 # Contrail agent libraries
 AgentEnv.AppendUnique(CONTRAIL_LIBS = [
+    'contrail_init_common',
     'agent_services',
     'diag',
     'pkt',
@@ -188,13 +190,17 @@ AgentEnv.AppendUnique(CONTRAIL_LIBS = [
 AgentEnv.AppendUnique(TEST_CMN_LIBS_PRE = [
     'agent_test',
     'ifmap_test',
+    'task_test',
     'control_node_mock',
     'gunit',
 ])
 
 AgentEnv.AppendUnique(TEST_CMN_LIBS_POST = [ 'agent_test_buildinfo' ])
 AgentEnv.AppendUnique(TEST_CMN_CPPPATH = [env['TOP'] + '/vnsw/agent/test'])
-AgentEnv.AppendUnique(TEST_CMN_LIBPATH = [env['TOP'] + '/vnsw/agent/test'])
+AgentEnv.AppendUnique(TEST_CMN_LIBPATH = [
+    env['TOP'] + '/base/test',
+    env['TOP'] + '/vnsw/agent/test',
+])
 AgentEnv.AppendUnique(TEST_CMN_CCFLAGS = [
     '-Wno-return-type',
     '-Wno-unused-function'
@@ -279,6 +285,7 @@ subdirs = [
     'controller',
     'diag',
     'filter',
+    'init',
     'kstate',
     'ksync',
     'openstack',

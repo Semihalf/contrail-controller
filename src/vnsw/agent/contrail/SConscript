@@ -22,13 +22,8 @@ cflags.append('-fexceptions')
 buildinfo_dep_libs = [
     '#build/lib/libthrift.a',
     '#build/lib/libthriftasio.a',
-    '#build/lib/libboost_program_options.a',
-    '#build/lib/libboost_regex.a',
-    '#build/lib/libboost_system.a', 
-    '#build/lib/libcurl.a',
     '#build/lib/libhttp.a',
     '#build/lib/libhttp_parser.a', 
-    '#build/lib/liblog4cplus.a',
     '#build/lib/libpugixml.a',
     '#build/lib/libsandesh.a',
     '#build/lib/libsandeshflow.a', 
@@ -108,6 +103,7 @@ contrail_vrouter_agent = env.Program(target = 'contrail-vrouter-agent',
 env.Alias('agent:contrail-vrouter-agent', contrail_vrouter_agent)
 env.Default(contrail_vrouter_agent)
 
+# Please update sandesh/common/vns.sandesh on process name change
 env.Alias('install', env.Install(env['INSTALL_BIN'], contrail_vrouter_agent))
 env.Alias('install', env.Install(env['INSTALL_CONF'], 
           '../contrail-vrouter-agent.conf'))

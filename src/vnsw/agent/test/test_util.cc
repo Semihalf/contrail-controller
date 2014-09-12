@@ -6,6 +6,7 @@
 #include "test/test_init.h"
 #include "oper/mirror_table.h"
 #include "uve/test/vn_uve_table_test.h"
+#include "uve/test/vn_uve_table_test.h"
 
 #define MAX_TESTNAME_LEN 80
 using namespace std;
@@ -84,7 +85,8 @@ void DelLinkString(char *buff, int &len, const char *node_name1,
 }
 
 void AddNodeString(char *buff, int &len, const char *node_name,
-                   const char *name, int id, const char *attr) {
+                   const char *name, int id, const char *attr,
+                   bool admin_state) {
     sprintf(buff + len, 
             "       <node type=\"%s\">\n"
             "           <name>%s</name>\n"
@@ -100,10 +102,11 @@ void AddNodeString(char *buff, int &len, const char *node_name,
             "                   <uuid-mslong>0</uuid-mslong>\n"
             "                   <uuid-lslong>%d</uuid-lslong>\n"
             "               </uuid>\n"
-            "               <enable>true</enable>\n"
+            "               <enable>%s</enable>\n"
             "           </id-perms>\n"
             "           %s\n"
-            "       </node>\n", node_name, name, id, attr);
+            "       </node>\n", node_name, name, id,
+                                (admin_state == true) ? "true" : "false", attr);
     len = strlen(buff);
 }
 
@@ -297,13 +300,14 @@ void AddNodeByStatus(const char *node_name, const char *name, int id, bool statu
     return;
 }
 
+// admin_state is true by default
 void AddNode(const char *node_name, const char *name, int id, 
-                    const char *attr) {
+                    const char *attr, bool admin_state) {
     char buff[10240];
     int len = 0;
 
     AddXmlHdr(buff, len);
-    AddNodeString(buff, len, node_name, name, id, attr);
+    AddNodeString(buff, len, node_name, name, id, attr, admin_state);
     AddXmlTail(buff, len);
     pugi::xml_document xdoc_;
     pugi::xml_parse_result result = xdoc_.load(buff);
@@ -362,14 +366,14 @@ void IntfCfgAdd(int intf_id, const string &name, const string ipaddr,
     char vm_name[MAX_TESTNAME_LEN];
     sprintf(vm_name, "vm%d", vm_id);
     data->Init(MakeUuid(vm_id), MakeUuid(vn_id), MakeUuid(project_id),
-               name, ip, mac, vm_name, vlan, 0);
+               name, ip, mac, vm_name, vlan, CfgIntEntry::CfgIntVMPort, 0);
 
     DBRequest req;
     req.oper = DBRequest::DB_ENTRY_ADD_CHANGE;
     req.key.reset(key);
     req.data.reset(data);
     Agent::GetInstance()->interface_config_table()->Enqueue(&req);
-    usleep(1000);
+    client->WaitForIdle();
 }
 
 void IntfCfgAdd(int intf_id, const string &name, const string ipaddr,
@@ -928,7 +932,8 @@ void VnAddReq(int id, const char *name) {
     std::vector<VnIpam> ipam;
     VnData::VnIpamDataMap vn_ipam_data;
     Agent::GetInstance()->vn_table()->AddVn(MakeUuid(id), name, nil_uuid(),
-                                              name, ipam, vn_ipam_data, id);
+                                              name, ipam, vn_ipam_data, id,
+                                              true);
     usleep(1000);
 }
 
@@ -937,7 +942,8 @@ void VnAddReq(int id, const char *name, int acl_id) {
     VnData::VnIpamDataMap vn_ipam_data;
     Agent::GetInstance()->vn_table()->AddVn(MakeUuid(id), name, 
                                               MakeUuid(acl_id),
-                                              name, ipam, vn_ipam_data, id);
+                                              name, ipam, vn_ipam_data, id,
+                                              true);
     usleep(1000);
 }
 
@@ -946,7 +952,7 @@ void VnAddReq(int id, const char *name, int acl_id, const char *vrf_name) {
     VnData::VnIpamDataMap vn_ipam_data;
     Agent::GetInstance()->vn_table()->AddVn(MakeUuid(id), name, 
                                               MakeUuid(acl_id), vrf_name, ipam,
-                                              vn_ipam_data, id);
+                                              vn_ipam_data, id, true);
     usleep(1000);
 }
 
@@ -954,7 +960,8 @@ void VnAddReq(int id, const char *name, const char *vrf_name) {
     std::vector<VnIpam> ipam;
     VnData::VnIpamDataMap vn_ipam_data;
     Agent::GetInstance()->vn_table()->AddVn(MakeUuid(id), name, nil_uuid(), 
-                                              vrf_name, ipam, vn_ipam_data, id);
+                                              vrf_name, ipam, vn_ipam_data, id,
+                                              true);
     usleep(1000);
 }
 
@@ -1060,6 +1067,22 @@ void AclAddReq(int id, int ace_id, bool drop) {
     Agent::GetInstance()->acl_table()->Enqueue(&req);
     delete acl_spec;
     usleep(1000);
+}
+
+void DeleteRoute(const char *vrf, const char *ip) {
+    Ip4Address addr = Ip4Address::from_string(ip);
+    Agent::GetInstance()->fabric_inet4_unicast_table()->DeleteReq(NULL,
+                                            vrf, addr, 32, NULL);
+    client->WaitForIdle();
+    WAIT_FOR(1000, 1, (RouteFind(vrf, addr, 32) == false));
+}
+
+void DeleteRoute(const char *vrf, const char *ip, uint8_t plen) {
+    Ip4Address addr = Ip4Address::from_string(ip);
+    Agent::GetInstance()->fabric_inet4_unicast_table()->DeleteReq(NULL,
+                                            vrf, addr, plen, NULL);
+    client->WaitForIdle();
+    WAIT_FOR(1000, 1, (RouteFind(vrf, addr, 32) == false));
 }
 
 bool RouteFind(const string &vrf_name, const Ip4Address &addr, int plen) {
@@ -1366,7 +1389,8 @@ void AddL2Vn(const char *name, int id) {
     AddNode("virtual-network", name, id, str.str().c_str());
 }
 
-void AddVn(const char *name, int id) {
+// default admin_state is true
+void AddVn(const char *name, int id, bool admin_state) {
     std::stringstream str;
     str << "<virtual-network-properties>" << endl;
     str << "    <network-id>" << id << "</network-id>" << endl;
@@ -1374,7 +1398,7 @@ void AddVn(const char *name, int id) {
     str << "    <forwarding-mode>l2_l3</forwarding-mode>" << endl;
     str << "</virtual-network-properties>" << endl;
 
-    AddNode("virtual-network", name, id, str.str().c_str());
+    AddNode("virtual-network", name, id, str.str().c_str(), admin_state);
 }
 
 void DelVn(const char *name) {
@@ -1958,8 +1982,9 @@ void DeleteVmportEnv(struct PortInfo *input, int count, int del_vn, int acl_id,
                 }
             }
 
+            // Ignore duplicate deletes
             if (j < i) {
-                break;
+                continue;
             }
             if (vn)
                 sprintf(vn_name, "%s", vn);
@@ -2045,7 +2070,8 @@ void CreateVmportFIpEnv(struct PortInfo *input, int count, int acl_id,
 void CreateVmportEnvInternal(struct PortInfo *input, int count, int acl_id, 
                      const char *vn, const char *vrf,
                      const char *vm_interface_attr,
-                     bool l2_vn, bool with_ip, bool ecmp) {
+                     bool l2_vn, bool with_ip, bool ecmp,
+                     bool vn_admin_state) {
     char vn_name[MAX_TESTNAME_LEN];
     char vm_name[MAX_TESTNAME_LEN];
     char vrf_name[MAX_TESTNAME_LEN];
@@ -2073,7 +2099,7 @@ void CreateVmportEnvInternal(struct PortInfo *input, int count, int acl_id,
         sprintf(vm_name, "vm%d", input[i].vm_id);
         sprintf(instance_ip, "instance%d", input[i].vm_id);
         if (!l2_vn) {
-            AddVn(vn_name, input[i].vn_id);
+            AddVn(vn_name, input[i].vn_id, vn_admin_state);
             AddVrf(vrf_name);
         }
         AddVm(vm_name, input[i].vm_id);
@@ -2116,26 +2142,28 @@ void CreateVmportEnvInternal(struct PortInfo *input, int count, int acl_id,
 void CreateVmportEnvWithoutIp(struct PortInfo *input, int count, int acl_id, 
                               const char *vn, const char *vrf) {
     CreateVmportEnvInternal(input, count, acl_id, vn, vrf, NULL, false, false,
-                            false);
+                            false, true);
 }
 
 void CreateVmportEnv(struct PortInfo *input, int count, int acl_id, 
                      const char *vn, const char *vrf,
-                     const char *vm_interface_attr) {
+                     const char *vm_interface_attr,
+                     bool vn_admin_state) {
     CreateVmportEnvInternal(input, count, acl_id, vn, vrf,
-                            vm_interface_attr, false, true, false);
+                            vm_interface_attr, false, true, false,
+                            vn_admin_state);
 }
 
 void CreateL2VmportEnv(struct PortInfo *input, int count, int acl_id, 
                      const char *vn, const char *vrf) {
     CreateVmportEnvInternal(input, count, acl_id, vn, vrf, NULL, true,
-                            true, false);
+                            true, false, true);
 }
 
 void CreateVmportWithEcmp(struct PortInfo *input, int count, int acl_id,
                           const char *vn, const char *vrf) {
     CreateVmportEnvInternal(input, count, acl_id, vn, vrf, NULL, false,
-                            true, true);
+                            true, true, true);
 }
 
 void FlushFlowTable() {
@@ -2294,6 +2322,11 @@ FlowEntry* FlowGet(int vrf_id, std::string sip, std::string dip, uint8_t proto,
 
     FlowEntry *entry = table->Find(key);
     return entry;
+}
+
+FlowEntry* FlowGet(int nh_id, std::string sip, std::string dip, uint8_t proto,
+                   uint16_t sport, uint16_t dport) {
+    return FlowGet(0, sip, dip, proto, sport, dport, nh_id);
 }
 
 bool FlowGet(int vrf_id, const char *sip, const char *dip, uint8_t proto, 
@@ -2602,7 +2635,7 @@ PktGen *TxTcpPacketUtil(int ifindex, const char *sip, const char *dip,
                         int sport, int dport, uint32_t hash_idx) {
     PktGen *pkt = new PktGen();
     pkt->AddEthHdr("00:00:00:00:00:01", "00:00:00:00:00:02", 0x800);
-    pkt->AddAgentHdr(ifindex, AGENT_TRAP_FLOW_MISS, hash_idx);
+    pkt->AddAgentHdr(ifindex, AgentHdr::TRAP_FLOW_MISS, hash_idx);
     pkt->AddEthHdr("00:00:00:00:00:01", "00:00:00:00:00:02", 0x800);
     pkt->AddIpHdr(sip, dip, IPPROTO_TCP);
     pkt->AddTcpHdr(sport, dport, false, false, false, 64);
@@ -2620,7 +2653,7 @@ PktGen *TxIpPacketUtil(int ifindex, const char *sip, const char *dip,
                        int proto, int hash_id) {
     PktGen *pkt = new PktGen();
     pkt->AddEthHdr("00:00:00:00:00:01", "00:00:00:00:00:02", 0x800);
-    pkt->AddAgentHdr(ifindex, AGENT_TRAP_FLOW_MISS, hash_id);
+    pkt->AddAgentHdr(ifindex, AgentHdr::TRAP_FLOW_MISS, hash_id);
     pkt->AddEthHdr("00:00:00:00:00:01", "00:00:00:00:00:02", 0x800);
     pkt->AddIpHdr(sip, dip, proto);
     if (proto == 1)
@@ -2670,7 +2703,7 @@ PktGen *TxMplsPacketUtil(int ifindex, const char *out_sip,
                             int proto, int hash_idx) {
     PktGen *pkt = new PktGen();
     pkt->AddEthHdr("00:00:00:00:00:01", "00:00:00:00:00:02", 0x800);
-    pkt->AddAgentHdr(ifindex, AGENT_TRAP_FLOW_MISS, hash_idx, MplsToVrfId(label),
+    pkt->AddAgentHdr(ifindex, AgentHdr::TRAP_FLOW_MISS, hash_idx, MplsToVrfId(label),
                      label);
     pkt->AddEthHdr("00:00:00:00:00:01", "00:00:00:00:00:02", 0x800);
     pkt->AddIpHdr(out_sip, out_dip, IPPROTO_GRE);
@@ -2696,7 +2729,7 @@ PktGen *TxMplsTcpPacketUtil(int ifindex, const char *out_sip,
                             int sport, int dport, int hash_idx) {
     PktGen *pkt = new PktGen();
     pkt->AddEthHdr("00:00:00:00:00:01", "00:00:00:00:00:02", 0x800);
-    pkt->AddAgentHdr(ifindex, AGENT_TRAP_FLOW_MISS, hash_idx, MplsToVrfId(label),
+    pkt->AddAgentHdr(ifindex, AgentHdr::TRAP_FLOW_MISS, hash_idx, MplsToVrfId(label),
                      label);
     pkt->AddEthHdr("00:00:00:00:00:01", "00:00:00:00:00:02", 0x800);
     pkt->AddIpHdr(out_sip, out_dip, IPPROTO_GRE);
@@ -2843,8 +2876,9 @@ BgpPeer *CreateBgpPeer(const Ip4Address &addr, std::string name) {
     AgentXmppChannel *channel;
     Agent::GetInstance()->set_controller_ifmap_xmpp_server(addr.to_string(), 0);
     
-    channel = new AgentXmppChannel(Agent::GetInstance(), xmpp_channel, 
+    channel = new AgentXmppChannel(Agent::GetInstance(),
                                    "XMPP Server", "", 0);
+    channel->RegisterXmppChannel(xmpp_channel);
     AgentXmppChannel::HandleAgentXmppClientChannelEvent(channel, xmps::READY);
     client->WaitForIdle();
     return channel->bgp_peer_id();

@@ -11,6 +11,7 @@
 #endif
 #include "pkt/proto_handler.h"
 #include "pkt/pkt_init.h"
+#include "pkt/packet_buffer.h"
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -21,29 +22,25 @@ ProtoHandler::ProtoHandler(Agent *agent, boost::shared_ptr<PktInfo> info,
 ProtoHandler::~ProtoHandler() {
 }
 
+uint32_t ProtoHandler::EncapHeaderLen() const {
+    return agent_->pkt()->pkt_handler()->EncapHeaderLen();
+}
+
 // send packet to the pkt0 interface
 void ProtoHandler::Send(uint16_t len, uint16_t itf, uint16_t vrf,
                         uint16_t cmd, PktHandler::PktModuleName mod) {
-    // update the outer header
-    struct ether_header *eth = (ether_header*)pkt_info_->pkt;
-    std::string tmp_str((char *)eth->ether_shost, ETHER_ADDR_LEN);
-    memcpy(eth->ether_shost, eth->ether_dhost, ETHER_ADDR_LEN);
-    memcpy(eth->ether_dhost, tmp_str.data(), ETHER_ADDR_LEN);
-    eth->ether_type = htons(ETHERTYPE_IP);
-    // add agent header
-    agent_hdr *agent = (agent_hdr *) (eth + 1);
-    agent->hdr_ifindex = htons(itf);
-    agent->hdr_vrf = htons(vrf);
-    agent->hdr_cmd = htons(cmd);
-    len += IPC_HDR_LEN;
-
-    if (agent_->pkt()->pkt_handler()) {
-        agent_->pkt()->pkt_handler()->Send(pkt_info_->pkt, len, mod);
-    } else {
-        delete [] pkt_info_->pkt;
+    // If pkt_info_->pkt is non-NULL, pkt is freed in destructor of pkt_info_
+    if (agent_->pkt()->pkt_handler() == NULL) {
+        return;
     }
 
+    uint16_t offset = (uint8_t *)pkt_info_->eth - pkt_info_->pkt;
+    PacketBufferPtr buff = agent_->pkt()->packet_buffer_manager()->Allocate
+        (mod, pkt_info_->pkt, len, offset, len, 0);
     pkt_info_->pkt = NULL;
+
+    AgentHdr hdr(itf, vrf, cmd);
+    agent_->pkt()->pkt_handler()->Send(hdr, buff);
 }
 
 uint16_t ProtoHandler::EthHdr(char *buff, uint8_t len,

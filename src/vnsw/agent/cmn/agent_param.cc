@@ -347,7 +347,7 @@ void AgentParam::ParseDefaultSection() {
 
     if (!GetValueFromTree<uint16_t>(http_server_port_,
                                     "DEFAULT.http_server_port")) {
-        http_server_port_ = ContrailPorts::HttpPortAgent;
+        http_server_port_ = ContrailPorts::HttpPortAgent();
     }
 
     GetValueFromTree<string>(tunnel_type_, "DEFAULT.tunnel_type");
@@ -378,19 +378,15 @@ void AgentParam::ParseDefaultSection() {
         log_category_ = "*";
     }
 
-    unsigned int log_local = 0, debug_logging = 0;
-    if (opt_uint = tree_.get_optional<unsigned int>("DEFAULT.log_local")) {
-        log_local = opt_uint.get();
-    }
-    if (log_local) {
+    if (optional<bool> log_local_opt =
+        tree_.get_optional<bool>("DEFAULT.log_local")) {
         log_local_ = true;
     } else {
         log_local_ = false;
     }
-    if (opt_uint = tree_.get_optional<unsigned int>("DEFAULT.log_local")) {
-        debug_logging = opt_uint.get();
-    }
-    if (debug_logging) {
+
+    if (optional<bool> debug_opt =
+        tree_.get_optional<bool>("DEFAULT.debug")) {
         debug_ = true;
     } else {
         debug_ = false;
@@ -399,6 +395,13 @@ void AgentParam::ParseDefaultSection() {
     GetValueFromTree<bool>(use_syslog_, "DEFAULT.use_syslog");
     if (!GetValueFromTree<string>(syslog_facility_, "DEFAULT.syslog_facility")) {
         syslog_facility_ = "LOG_LOCAL0";
+    }
+
+    if (optional<bool> log_flow_opt =
+        tree_.get_optional<bool>("DEFAULT.log_flow")) {
+        log_flow_ = true;
+    } else {
+        log_flow_ = false;
     }
 }
 
@@ -522,6 +525,9 @@ void AgentParam::ParseDefaultSectionArguments
     }
     if (var_map.count("DEFAULT.debug")) {
         debug_ = true;
+    }
+    if (var_map.count("DEFAULT.log_flow")) {
+         log_flow_ = true;
     }
 }
 
@@ -691,27 +697,27 @@ static bool ValidateInterface(bool test_mode, const std::string &ifname) {
     return true;
 }
 
-void AgentParam::Validate() {
+int AgentParam::Validate() {
     // Validate vhost interface name
     if (vhost_.name_ == "") {
         LOG(ERROR, "Configuration error. vhost interface name not specified");
-        exit(EINVAL);
+        return (EINVAL);
     }
 
     // Check if interface is already present
     if (ValidateInterface(test_mode_, vhost_.name_) == false) {
-        exit(ENODEV);
+        return (ENODEV);
     }
 
     // Validate ethernet port
     if (eth_port_ == "") {
         LOG(ERROR, "Configuration error. eth_port not specified");
-        exit(EINVAL);
+        return (EINVAL);
     }
 
     // Check if interface is already present
     if (ValidateInterface(test_mode_, eth_port_) == false) {
-        exit(ENODEV);
+        return (ENODEV);
     }
 
     // Validate physical port used in vmware
@@ -719,14 +725,15 @@ void AgentParam::Validate() {
         if (vmware_physical_port_ == "") {
             LOG(ERROR, "Configuration error. Physical port connecting to "
                 "virtual-machines not specified");
-            exit(EINVAL);
+            return (EINVAL);
         }
 
         if (ValidateInterface(test_mode_, vmware_physical_port_) == false) {
-            exit(ENODEV);
+            return (ENODEV);
         }
     }
 
+    return 0;
 }
 
 void AgentParam::InitVhostAndXenLLPrefix() {
@@ -801,17 +808,18 @@ void AgentParam::set_test_mode(bool mode) {
 AgentParam::AgentParam(Agent *agent) :
         vhost_(), eth_port_(), xmpp_instance_count_(), xmpp_server_1_(),
         xmpp_server_2_(), dns_server_1_(), dns_server_2_(),
-        dns_port_1_(ContrailPorts::DnsServerPort),
-        dns_port_2_(ContrailPorts::DnsServerPort),
+        dns_port_1_(ContrailPorts::DnsServerPort()),
+        dns_port_2_(ContrailPorts::DnsServerPort()),
         dss_server_(), mgmt_ip_(), mode_(MODE_KVM), xen_ll_(),
         tunnel_type_(), metadata_shared_secret_(), max_vm_flows_(),
         linklocal_system_flows_(), linklocal_vm_flows_(),
         flow_cache_timeout_(), config_file_(), program_name_(),
-        log_file_(), log_local_(false), log_level_(),
+        log_file_(), log_local_(false), log_flow_(false), log_level_(),
         log_category_(), use_syslog_(false),
         collector_server_list_(), http_server_port_(), host_name_(),
-        agent_stats_interval_(AgentStatsInterval),
-        flow_stats_interval_(FlowStatsInterval),
+        agent_stats_interval_(kAgentStatsInterval),
+        flow_stats_interval_(kFlowStatsInterval),
+        vrouter_stats_interval_(kVrouterStatsInterval),
         vmware_physical_port_(""), test_mode_(false), debug_(false), tree_(),
         headless_mode_(false), si_netns_command_(), si_netns_workers_(0),
         si_netns_timeout_(0) {

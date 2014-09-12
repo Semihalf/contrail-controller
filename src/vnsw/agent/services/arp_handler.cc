@@ -146,8 +146,17 @@ bool ArpHandler::HandlePacket() {
 
         case ARPOP_REPLY:  {
             arp_proto->IncrementStatsArpReplies();
-            if (entry) {
-                entry->HandleArpReply(MacAddress(arp_->arp_sha));
+            if (itf->type() == Interface::VM_INTERFACE) {
+                uint32_t ip;
+                memcpy(&ip, arp_->arp_spa, sizeof(ip));
+                ip = ntohl(ip);
+                //Enqueue a request to trigger state machine
+                agent()->oper_db()->route_preference_module()->
+                    EnqueueTrafficSeen(Ip4Address(ip), 32, itf->id(),
+                                       vrf->vrf_id());
+                return true;
+            } else if(entry) {
+                entry->HandleArpReply(arp_->arp_sha);
                 return true;
             } else {
                 entry = new ArpEntry(io_, this, key, ArpEntry::INITING);
@@ -170,9 +179,8 @@ bool ArpHandler::HandlePacket() {
                 agent()->oper_db()->route_preference_module()->
                     EnqueueTrafficSeen(Ip4Address(ip), 32, itf->id(),
                                        vrf->vrf_id());
-            }
-
-            if (entry) {
+                return true;
+            } else if (entry) {
                 entry->HandleArpReply(MacAddress(arp_->arp_sha));
                 return true;
             } else {
@@ -284,9 +292,9 @@ uint16_t ArpHandler::ArpHdr(const MacAddress &smac, in_addr_t sip,
 void ArpHandler::SendArp(uint16_t op, const MacAddress &smac,
                          in_addr_t sip, const MacAddress &tmac,
                          in_addr_t tip, uint16_t itf, uint16_t vrf) {
-    pkt_info_->pkt = new uint8_t[MIN_ETH_PKT_LEN + IPC_HDR_LEN];
+    pkt_info_->pkt = new uint8_t[MIN_ETH_PKT_LEN + EncapHeaderLen()];
     uint8_t *buf = pkt_info_->pkt;
-    memset(buf, 0, MIN_ETH_PKT_LEN + IPC_HDR_LEN);
+    memset(buf, 0, MIN_ETH_PKT_LEN + EncapHeaderLen());
     pkt_info_->eth = (ether_header *) (buf + sizeof(ether_header) + sizeof(agent_hdr));
     arp_ = pkt_info_->arp = (ether_arp *) (pkt_info_->eth + 1);
     arp_tpa_ = tip;
@@ -294,6 +302,6 @@ void ArpHandler::SendArp(uint16_t op, const MacAddress &smac,
     ArpHdr(smac, sip, tmac, tip, op);
     EthHdr(smac, MacAddress::BroadcastMac(), 0x806);
 
-    Send(sizeof(ether_header) + sizeof(ether_arp), itf, vrf, AGENT_CMD_SWITCH, PktHandler::ARP);
+    Send(sizeof(ether_header) + sizeof(ether_arp), itf, vrf, AgentHdr::TX_SWITCH, PktHandler::ARP);
 }
 

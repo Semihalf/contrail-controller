@@ -18,6 +18,7 @@ IcmpHandler::~IcmpHandler() {
 }
 
 bool IcmpHandler::Run() {
+
     IcmpProto *icmp_proto = agent()->GetIcmpProto();
     Interface *itf =
         agent()->interface_table()->FindInterface(GetInterfaceIndex());
@@ -32,7 +33,7 @@ bool IcmpHandler::Run() {
         case ICMP_ECHO:
             if (CheckPacket()) {
                 icmp_proto->IncrStatsGwPing();
-                SendResponse();
+                SendResponse(vm_itf);
             } else
                 icmp_proto->IncrStatsGwPingErr();
             return true;
@@ -44,7 +45,7 @@ bool IcmpHandler::Run() {
 }
 
 bool IcmpHandler::CheckPacket() {
-    if (pkt_info_->len < (IPC_HDR_LEN + sizeof(ether_header) +
+    if (pkt_info_->len < (EncapHeaderLen() + sizeof(ether_header) +
                           ntohs(pkt_info_->ip->ip_len)))
         return false;
 
@@ -57,23 +58,40 @@ bool IcmpHandler::CheckPacket() {
     return false;
 }
 
-void IcmpHandler::SendResponse() {
-    MacAddress src_mac(pkt_info_->eth->ether_dhost);
-    MacAddress dest_mac(pkt_info_->eth->ether_shost);
+void IcmpHandler::SendResponse(VmInterface *vm_intf) {
+    // Max size of buffer
+    char *ptr = (char *)pkt_info_->pkt;
+    uint16_t buf_len = pkt_info_->max_pkt_len;
 
-    // fill in the response
-    uint16_t len = icmp_len_;
-    icmp_->icmp_type = ICMP_ECHOREPLY;
-    icmp_->icmp_cksum = Csum((uint16_t *)icmp_, icmp_len_, 0);
+    // Copy the ICMP payload
+    char icmp_payload[icmp_len_];
+    memcpy(icmp_payload, icmp_, icmp_len_);
 
-    len += sizeof(ip);
-    IpHdr(len, htonl(pkt_info_->ip_daddr),
-          htonl(pkt_info_->ip_saddr), IPPROTO_ICMP);
-    EthHdr(agent()->vhost_interface()->mac(),
-           MacAddress(pkt_info_->eth->ether_shost), IP_PROTOCOL);
-    len += sizeof(ether_header);
+    // Retain the agent-header before ethernet header
+    uint16_t len = (char *)pkt_info_->eth - (char *)pkt_info_->pkt;
 
-    Send(len, GetInterfaceIndex(), pkt_info_->vrf,
-         AGENT_CMD_SWITCH, PktHandler::ICMP);
+    // Form ICMP Packet with following
+    // EthHdr - IP Header - ICMP Header
+    len += EthHdr(ptr + len, buf_len - len,
+                  agent()->vhost_interface()->mac(),
+                  MacAddress(pkt_info_->eth->ether_shost), IP_PROTOCOL, vm_intf->vlan_id());
+
+    uint16_t ip_len = sizeof(struct ip) + icmp_len_;
+
+    len += IpHdr(ptr + len, buf_len - len, ip_len, htonl(pkt_info_->ip_daddr),
+                 htonl(pkt_info_->ip_saddr), IPPROTO_ICMP);
+
+    // Restore the ICMP header copied earlier
+    struct icmphdr *hdr = (struct icmphdr *) (ptr + len);
+    memcpy(ptr + len, icmp_payload, icmp_len_);
+    len += icmp_len_;
+
+    // Change type to reply
+    hdr->type = ICMP_ECHOREPLY;
+    // Recompute ICMP checksum
+    IcmpChecksum((char *)hdr, icmp_len_);
+
+    Send(len, GetInterfaceIndex(), pkt_info_->vrf, AgentHdr::TX_SWITCH,
+         PktHandler::ICMP);
 }
 

@@ -113,7 +113,7 @@ public:
         agent_hdr *agent = (agent_hdr *)(eth + 1);
         agent->hdr_ifindex = htons(ifindex);
         agent->hdr_vrf = htons(0);
-        agent->hdr_cmd = htons(AGENT_TRAP_NEXTHOP);
+        agent->hdr_cmd = htons(AgentHdr::TRAP_NEXTHOP);
 
         eth = (ether_header *) (agent + 1);
         memcpy(eth->ether_dhost, dest_mac, ETHER_ADDR_LEN);
@@ -148,7 +148,7 @@ public:
         len = 64;
 
         ip->ip_len = htons(len + sizeof(ip));
-        len += sizeof(ip) + sizeof(ether_header) + IPC_HDR_LEN;
+        len += sizeof(ip) + sizeof(ether_header) + TapInterface::kAgentHdrLen;
         TestTapInterface *tap = (TestTapInterface *)
             (Agent::GetInstance()->pkt()->pkt_handler()->tap_interface());
         tap->GetTestPktHandler()->TestPktSend(buf.get(), len);

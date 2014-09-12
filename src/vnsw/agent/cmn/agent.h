@@ -11,6 +11,7 @@
 #include <stdint.h>
 #include <boost/intrusive_ptr.hpp>
 #include <cmn/agent_cmn.h>
+#include <base/connection_info.h>
 #include "net/mac_address.h"
 
 class Agent;
@@ -28,6 +29,8 @@ class AgentDBEntry;
 class XmppClient;
 class OperDB;
 class AgentRoute;
+class TaskScheduler;
+class AgentInit;
 
 class Interface;
 typedef boost::intrusive_ptr<Interface> InterfaceRef;
@@ -144,9 +147,9 @@ class Peer;
 class LifetimeManager;
 class DiagTable;
 class VNController;
-class ConnectionState;
 class AgentSignal;
 class ServiceInstanceTable;
+class LoadbalancerTable;
 class Agent;
 
 extern void RouterIdDepInit(Agent *agent);
@@ -411,6 +414,15 @@ public:
        service_instance_table_= table;
    }
 
+    // Loadbalancer-pool
+   LoadbalancerTable *loadbalancer_table() const {
+       return loadbalancer_table_;
+   }
+
+   void set_loadbalancer_table(LoadbalancerTable *table) {
+       loadbalancer_table_ = table;
+   }
+
     // DNS XMPP Server
     const int8_t &dns_xmpp_server_index() const {return xs_dns_idx_;}
     void set_dns_xmpp_server_index(uint8_t xs_idx) {xs_dns_idx_ = xs_idx;}
@@ -519,10 +531,10 @@ public:
     void set_vhost_interface(const Interface *interface) {
         vhost_interface_ = interface;
     }
-    ConnectionState* connection_state() const {
+    process::ConnectionState* connection_state() const {
         return connection_state_;
     }
-    void set_connection_state(ConnectionState* state) {
+    void set_connection_state(process::ConnectionState* state) {
         connection_state_ = state;
     }
     uint16_t metadata_server_port() const {return metadata_server_port_;}
@@ -601,7 +613,15 @@ public:
     }
 
     int sandesh_port() const { return sandesh_port_;}
+
     DB *db() const {return db_;}
+
+    TaskScheduler *task_scheduler() const { return task_scheduler_; }
+    void set_task_scheduler(TaskScheduler *t) { task_scheduler_ = t; }
+
+    AgentInit *agent_init() const { return agent_init_; }
+    void set_agent_init(AgentInit *init) { agent_init_ = init; }
+
     const std::string &fabric_interface_name() const {
         return ip_fabric_intf_name_;
     }
@@ -695,6 +715,8 @@ private:
 
     // DB handles
     DB *db_;
+    TaskScheduler *task_scheduler_;
+    AgentInit *agent_init_;
     InterfaceTable *intf_table_;
     NextHopTable *nh_table_;
     Inet4UnicastAgentRouteTable *uc_rt_table_;
@@ -710,6 +732,7 @@ private:
     VrfAssignTable *vrf_assign_table_;
     VxLanTable *vxlan_table_;
     ServiceInstanceTable *service_instance_table_;
+    LoadbalancerTable *loadbalancer_table_;
 
     // Mirror config table
     MirrorCfgTable *mirror_cfg_table_;
@@ -764,7 +787,7 @@ private:
     VxLanNetworkIdentifierMode vxlan_network_identifier_mode_;
     bool headless_agent_mode_;
     const Interface *vhost_interface_;
-    ConnectionState* connection_state_;
+    process::ConnectionState* connection_state_;
     bool debug_;
     bool test_mode_;
     bool init_done_;
