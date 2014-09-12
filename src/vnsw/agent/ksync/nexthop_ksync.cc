@@ -32,8 +32,6 @@
 #include "vr_types.h"
 
 
-static uint8_t nil_mac[6] = {0, 0, 0, 0, 0, 0};
-
 NHKSyncEntry::NHKSyncEntry(NHKSyncObject *obj, const NHKSyncEntry *entry,
                            uint32_t index) :
     KSyncNetlinkDBEntry(index), ksync_obj_(obj), type_(entry->type_),
@@ -947,25 +945,24 @@ void NHKSyncEntry::SetEncap(InterfaceKSyncEntry *if_ksync,
         return;
     }
 
-    const uint8_t *smac = nil_mac;
+    MacAddress smac;
     /* DMAC encode */
-    for (int i = 0 ; i < ETHER_ADDR_LEN; i++) {
-        const uint8_t *d = (const uint8_t *)&dmac_;
-        encap.push_back(d[i]);
+    for (size_t i = 0; i < smac.size(); i++) {
+        encap.push_back((int8_t)smac[i]);
     }
     /* SMAC encode */
     if (type_ == NextHop::VLAN) {
-        smac = (const uint8_t *)&smac_;
+        smac = smac_;
     } else if ((type_ == NextHop::INTERFACE || type_ == NextHop::ARP)
-					&& if_ksync) {
-	smac = (const uint8_t *)if_ksync->mac();
+               && if_ksync) {
+    smac = if_ksync->mac();
 
     } else {
         Agent *agent = ksync_obj_->ksync()->agent();
-        smac = (const uint8_t *)&agent->vhost_interface()->mac();
+        smac = agent->vhost_interface()->mac();
     }
-    for (int i = 0 ; i < ETHER_ADDR_LEN; i++) {
-        encap.push_back(smac[i]);
+    for (size_t i = 0 ; i < smac.size(); i++) {
+        encap.push_back((int8_t)smac[i]);
     }
 
     // Add 802.1q header if

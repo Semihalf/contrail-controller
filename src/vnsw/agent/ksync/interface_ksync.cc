@@ -273,7 +273,7 @@ bool InterfaceKSyncEntry::Sync(DBEntry *e) {
         assert(0);
     }
 
-    if (smac == mac()) {
+    if (smac != mac()) {
         mac_ = smac;
         ret = true;
     }
@@ -362,9 +362,8 @@ int InterfaceKSyncEntry::Encode(sandesh_op::type op, char *buf, int buf_len) {
             mac = parent->mac();
 
         }
-        std::vector<int8_t> intf_mac((int8_t*)mac,
-                                     (int8_t*)mac + mac.size());
-        encoder.set_vifr_mac(intf_mac);
+        encoder.set_vifr_mac(std::vector<int8_t>((int8_t *)mac,
+                                                 (int8_t *)mac + mac.size()));
 
         break;
     }
@@ -437,8 +436,9 @@ int InterfaceKSyncEntry::Encode(sandesh_op::type op, char *buf, int buf_len) {
         }
     }
 
-    encoder.set_vifr_mac(std::vector<int8_t>((const int8_t*)mac(),
-                                             (const int8_t*)mac() + mac().size()));
+    encoder.set_vifr_mac(std::vector<int8_t>((const int8_t *)mac(),
+                                             (const int8_t *)mac() + mac().size()));
+
     encoder.set_vifr_flags(flags);
 
     encoder.set_vifr_vrf(vrf_id_);

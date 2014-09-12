@@ -82,12 +82,12 @@ void IcmpHandler::SendResponse(VmInterface *vm_intf) {
                  htonl(pkt_info_->ip_saddr), IPPROTO_ICMP);
 
     // Restore the ICMP header copied earlier
-    struct icmphdr *hdr = (struct icmphdr *) (ptr + len);
+    struct icmp *hdr = (struct icmp *) (ptr + len);
     memcpy(ptr + len, icmp_payload, icmp_len_);
     len += icmp_len_;
 
     // Change type to reply
-    hdr->type = ICMP_ECHOREPLY;
+    hdr->icmp_type = ICMP_ECHOREPLY;
     // Recompute ICMP checksum
     IcmpChecksum((char *)hdr, icmp_len_);
 

@@ -45,7 +45,7 @@ private:
     Event *
     RTMProcess(const struct if_msghdr *rtm, size_t size);
     int RTMDecode(const struct rt_msghdr_common *rtm, size_t len,
-		uint32_t seq_no);
+                  uint32_t seq_no);
     int RTMProcessBuffer(const void *buffer, size_t size);
     int RTCreateSocket(int fib);
     int RTInitRoutes(int fib);

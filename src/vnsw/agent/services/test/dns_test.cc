@@ -251,7 +251,7 @@ public:
         if (type == DNS_OPCODE_QUERY) {
             len = SendDnsQuery(dns, numItems, items, flags);
         } else if (type == DNS_OPCODE_UPDATE) {
-            BindUtil::Operation op = 
+            BindUtil::Operation op =
                 update ? BindUtil::ADD_UPDATE : BindUtil::DELETE_UPDATE;
             len = SendDnsUpdate(dns, op, "vdns1", "test.contrail.juniper.net",
                                 numItems, items);
@@ -260,8 +260,8 @@ public:
 
         len += sizeof(udphdr);
         udp->uh_ulen = htons(len);
-        ip->ip_len = htons(len + sizeof(ip));
-        len += sizeof(ip) + sizeof(ether_header) + TapInterface::kAgentHdrLen;
+        ip->ip_len = htons(len + sizeof(*ip));
+        len += sizeof(*ip) + sizeof(ether_header) + TapInterface::kAgentHdrLen;
 
         TestTapInterface *tap = (TestTapInterface *)
             (Agent::GetInstance()->pkt()->pkt_handler()->tap_interface());

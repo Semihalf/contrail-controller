@@ -18,7 +18,7 @@
 #define TCP_PAYLOAD_SIZE     64
 #define UDP_PAYLOAD_SIZE     64
 
-#define ARPOP_REQUEST   1 
+#define ARPOP_REQUEST   1
 #define ARPOP_REPLY     2
 
 #define ARPHRD_ETHER    1
@@ -73,7 +73,7 @@ public:
         return ans;
     }
 
-    static void AddEthHdr(char *buff, int &len, const char *dmac, 
+    static void AddEthHdr(char *buff, int &len, const char *dmac,
                          const char *smac, uint16_t proto) {
     }
 
@@ -113,7 +113,7 @@ public:
         IpUtils::IpInit(&pkt.ip, IPPROTO_TCP, len, sip, dip);
         IpUtils::EthInit(&pkt.eth, ETHERTYPE_IP);
     }
-    unsigned char *GetPacket() const { return (unsigned char *)&pkt; } 
+    unsigned char *GetPacket() const { return (unsigned char *)&pkt; }
 private:
     void Init(uint16_t sport, uint16_t dport) {
         pkt.tcp.th_sport = htons(sport);
@@ -140,7 +140,7 @@ public:
         IpUtils::IpInit(&pkt.ip, IPPROTO_UDP, len, sip, dip);
         IpUtils::EthInit(&pkt.eth, ETHERTYPE_IP);
     }
-    unsigned char *GetPacket() const { return (unsigned char *)&pkt; } 
+    unsigned char *GetPacket() const { return (unsigned char *)&pkt; }
 private:
     void Init(uint16_t sport, uint16_t dport) {
         pkt.udp.uh_sport = htons(sport);
@@ -166,13 +166,13 @@ public:
         tip = ntohl(tip);
         memcpy(pkt.arp_tpa, &tip, 4);
     }
-    unsigned char *GetPacket() const { return (unsigned char *)&pkt; } 
+    unsigned char *GetPacket() const { return (unsigned char *)&pkt; }
 private:
     struct ether_arp pkt;
 };
 
 class IcmpPacket {
-public:        
+public:
     IcmpPacket(uint8_t *smac, uint8_t *dmac, uint32_t sip, uint32_t dip) {
         uint16_t len;
         len = sizeof(pkt.ip) + sizeof(pkt.icmp);
@@ -184,7 +184,7 @@ public:
         pkt.icmp.icmp_hun.ih_idseq.icd_id = 0;
         pkt.icmp.icmp_hun.ih_idseq.icd_seq = 0;
     }
-    unsigned char *GetPacket() const { return (unsigned char *)&pkt; } 
+    unsigned char *GetPacket() const { return (unsigned char *)&pkt; }
 private:
     icmp_packet pkt;
 };
@@ -228,7 +228,7 @@ public:
         struct tcphdr *tcp = (struct tcphdr *)(buff + len);
         tcp->th_dport = htons(dport);
         tcp->th_sport  = htons(sport);
-		
+
         tcp->th_flags &= ~(TH_FIN | TH_SYN | TH_ACK);
         tcp->th_flags |= ((fin != 0 ? TH_FIN : 0) |    \
                         (syn != 0 ? TH_SYN : 0) |      \

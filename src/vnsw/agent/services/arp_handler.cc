@@ -156,7 +156,7 @@ bool ArpHandler::HandlePacket() {
                                        vrf->vrf_id());
                 return true;
             } else if(entry) {
-                entry->HandleArpReply(arp_->arp_sha);
+                entry->HandleArpReply(MacAddress(arp_->arp_sha));
                 return true;
             } else {
                 entry = new ArpEntry(io_, this, key, ArpEntry::INITING);

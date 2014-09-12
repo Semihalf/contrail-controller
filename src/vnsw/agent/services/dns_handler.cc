@@ -735,7 +735,7 @@ void DnsHandler::SendDnsResponse() {
     dns_resp_size_ += sizeof(udphdr);
     UdpHdr(dns_resp_size_, src_ip, DNS_SERVER_PORT,
            dest_ip, ntohs(pkt_info_->transp.udp->uh_sport));
-    dns_resp_size_ += sizeof(ip);
+    dns_resp_size_ += sizeof(struct ip);
     IpHdr(dns_resp_size_, src_ip, dest_ip, IPPROTO_UDP);
     EthHdr(agent()->vhost_interface()->mac(), dest_mac, IP_PROTOCOL);
 

@@ -58,10 +58,6 @@ uint16_t ProtoHandler::EthHdr(char *buff, uint8_t len,
         return 0;
     }
 
-    //memcpy(eth->ether_dhost, dest, ETHER_ADDR_LEN);
-    //memcpy(eth->ether_shost, src, ETHER_ADDR_LEN);
-    //eth->ether_dhost = dest;
-    //eth->ether_shost = src;
     dest.ToArray(eth->ether_dhost, sizeof(eth->ether_dhost));
     src.ToArray(eth->ether_shost, sizeof(eth->ether_dhost));
 
@@ -128,7 +124,7 @@ uint16_t ProtoHandler::IpHdr(char *buff, uint16_t buf_len, uint16_t len,
     return sizeof(struct ip);
 }
 
-void ProtoHandler::IpHdr(uint16_t len, in_addr_t src, in_addr_t dest, 
+void ProtoHandler::IpHdr(uint16_t len, in_addr_t src, in_addr_t dest,
                          uint8_t protocol) {
     IpHdr((char *)pkt_info_->ip, sizeof(struct ip), len, src, dest,
           protocol);

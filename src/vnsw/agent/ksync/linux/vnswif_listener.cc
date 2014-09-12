@@ -286,7 +286,7 @@ VnswInterfaceListenerLinux::HandleNetlinkRouteMsg(struct nlmsghdr *nlh)
         type = Event::ADD_ROUTE;
     }
 
-    return new Event(type, dst_addr, rtm->rtm_dst_len, name, gw_addr, 
+    return new Event(type, dst_addr, rtm->rtm_dst_len, name, gw_addr,
                      rtm->rtm_protocol, rtm->rtm_flags);
 }
 

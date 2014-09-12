@@ -273,7 +273,7 @@ public:
         }
 
         udp->uh_ulen = htons(len);
-        ip->ip_len = htons(len + sizeof(ip));
+        ip->ip_len = htons(len + sizeof(*ip));
         len += sizeof(*ip) + sizeof(ether_header) + TapInterface::kAgentHdrLen;
         TestTapInterface *tap = (TestTapInterface *)
             (Agent::GetInstance()->pkt()->pkt_handler()->tap_interface());

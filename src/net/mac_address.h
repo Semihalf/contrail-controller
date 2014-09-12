@@ -57,7 +57,11 @@ public:
         return sizeof(addr_);
     }
 
-    u_int8_t &operator[](int i) {
+    u_int8_t &operator[](size_t i) {
+        return ((u_int8_t *)&addr_)[i];
+    }
+
+    u_int8_t operator[](size_t i) const {
         return ((u_int8_t *)&addr_)[i];
     }
 

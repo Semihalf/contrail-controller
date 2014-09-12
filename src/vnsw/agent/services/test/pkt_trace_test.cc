@@ -161,8 +161,8 @@ public:
             icmp->icmp_cksum = IpUtils::IPChecksum((uint16_t *)icmp, 64);
         len = 64;
 
-        ip->ip_len = htons(len + sizeof(ip));
-        len += sizeof(ip) + sizeof(ether_header) + TapInterface::kAgentHdrLen;
+        ip->ip_len = htons(len + sizeof(*ip));
+        len += sizeof(*ip) + sizeof(ether_header) + TapInterface::kAgentHdrLen;
         TestTapInterface *tap = (TestTapInterface *)
             (Agent::GetInstance()->pkt()->pkt_handler()->tap_interface());
         tap->GetTestPktHandler()->TestPktSend(buf.get(), len);

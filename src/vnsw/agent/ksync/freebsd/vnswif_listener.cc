@@ -501,7 +501,7 @@ int VnswInterfaceListenerFreeBSD::RTInitIfAndAddr()
     return ret;
 }
 
-VnswInterfaceListenerFreeBSD::VnswInterfaceListenerFreeBSD(Agent *agent) : 
+VnswInterfaceListenerFreeBSD::VnswInterfaceListenerFreeBSD(Agent *agent) :
     VnswInterfaceListenerBase(agent), fib_(-1) {
 }
 
@@ -638,4 +638,4 @@ void VnswInterfaceListenerFreeBSD::UpdateLinkLocalRoute(
         assert(ec.value() == 0);
     }
 }
- 
+

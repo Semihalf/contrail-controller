@@ -28,7 +28,7 @@ class VnswInterfaceListenerLinux : public VnswInterfaceListenerBase
 public:
     VnswInterfaceListenerLinux(Agent *agent);
     virtual ~VnswInterfaceListenerLinux();
- 
+
 private:
     friend class TestVnswIf;
 

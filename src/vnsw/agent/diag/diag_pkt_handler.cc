@@ -110,7 +110,7 @@ void DiagPktHandler::SwapL4() {
         TcpHdr(htonl(pkt_info_->ip_daddr), ntohs(tcp->th_dport),
                htonl(pkt_info_->ip_saddr), ntohs(tcp->th_sport),
                false, ntohs(tcp->th_ack),
-               ntohs(pkt_info_->ip->ip_len) - sizeof(ip));
+               ntohs(pkt_info_->ip->ip_len) - sizeof(struct ip));
     } else if(pkt_info_->ip_proto == IPPROTO_UDP) {
         udphdr *udp = pkt_info_->transp.udp;
         UdpHdr(ntohs(udp->uh_ulen), pkt_info_->ip_daddr, ntohs(udp->uh_dport),

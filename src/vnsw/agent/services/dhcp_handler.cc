@@ -693,7 +693,7 @@ bool DhcpHandler::CreateRelayPacket() {
     memcpy(dhcp->options, DHCP_OPTIONS_COOKIE, 4);
 
     int16_t opt_rem_len = in_pkt_info.len - EncapHeaderLen() - sizeof(ether_header)
-                          - sizeof(ip) - sizeof(udphdr) - DHCP_FIXED_LEN - 4;
+                          - sizeof(struct ip) - sizeof(udphdr) - DHCP_FIXED_LEN - 4;
     uint16_t opt_len = 4;
     DhcpOptions *read_opt = (DhcpOptions *)(dhcp_->options + 4);
     DhcpOptions *write_opt = (DhcpOptions *)(dhcp->options + 4);
@@ -742,7 +742,7 @@ bool DhcpHandler::CreateRelayPacket() {
 
     UdpHdr(pkt_info_->len, in_pkt_info.ip->ip_src.s_addr, pkt_info_->sport,
            in_pkt_info.ip->ip_dst.s_addr, pkt_info_->dport);
-    pkt_info_->len += sizeof(ip);
+    pkt_info_->len += sizeof(struct ip);
 
     IpHdr(pkt_info_->len, htonl(agent()->router_id().to_ulong()),
           0xFFFFFFFF, IPPROTO_UDP);
@@ -812,7 +812,7 @@ bool DhcpHandler::CreateRelayResponsePacket() {
 
     UdpHdr(pkt_info_->len, agent()->router_id().to_ulong(), pkt_info_->sport,
            0xFFFFFFFF, pkt_info_->dport);
-    pkt_info_->len += sizeof(ip);
+    pkt_info_->len += sizeof(struct ip);
     IpHdr(pkt_info_->len, htonl(agent()->router_id().to_ulong()),
           0xFFFFFFFF, IPPROTO_UDP);
     EthHdr(agent()->pkt()->pkt_handler()->mac_address(),
@@ -1511,7 +1511,7 @@ uint16_t DhcpHandler::FillDhcpResponse(MacAddress &dest_mac,
     len += sizeof(udphdr);
     UdpHdr(len, src_ip, DHCP_SERVER_PORT, dest_ip, DHCP_CLIENT_PORT);
 
-    len += sizeof(ip);
+    len += sizeof(struct ip);
 
     IpHdr(len, src_ip, dest_ip, IPPROTO_UDP);
 
