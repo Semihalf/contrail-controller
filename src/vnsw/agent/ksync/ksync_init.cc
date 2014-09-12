@@ -232,7 +232,7 @@ void KSync::UpdateVhostMac() {
         (agent_->interface_table()->FindActiveEntry(&key));
     ifr.ifr_addr = eth->mac();
 
-    ifr.ifr_addr.sa_len = eth->mac()->size();
+    ifr.ifr_addr.sa_len = eth->mac().size();
 
     assert(ioctl(s, SIOCSIFLLADDR, &ifr) != -1);
 

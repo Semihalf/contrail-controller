@@ -7,7 +7,9 @@
 
 #include <string>
 #include <net/ethernet.h>
+#if defined(__linux__)
 #include <linux/if_ether.h>
+#endif
 #include <boost/bind.hpp>
 #include <boost/function.hpp>
 #include <boost/asio.hpp>
