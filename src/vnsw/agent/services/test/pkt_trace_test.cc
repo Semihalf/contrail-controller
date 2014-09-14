@@ -161,7 +161,7 @@ public:
 
         ip->ip_len = htons(len + sizeof(*ip));
 
-        len += sizeof(iphdr) + sizeof(ethhdr) + Agent::GetInstance()->pkt()->pkt_handler()->EncapHeaderLen();
+        len += sizeof(struct ip) + sizeof(ether_header) + Agent::GetInstance()->pkt()->pkt_handler()->EncapHeaderLen();
         TestPkt0Interface *tap = (TestPkt0Interface *)
                 (Agent::GetInstance()->pkt()->control_interface());
         tap->TxPacket(buf, len);

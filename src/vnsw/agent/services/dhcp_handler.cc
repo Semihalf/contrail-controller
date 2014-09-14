@@ -741,7 +741,7 @@ bool DhcpHandler::CreateRelayPacket() {
 
     UdpHdr(len, in_pkt_info.ip->ip_src.s_addr, pkt_info_->sport,
            in_pkt_info.ip->ip_dst.s_addr, pkt_info_->dport);
-    len += sizeof(iphdr);
+    len += sizeof(struct ip);
     IpHdr(len, htonl(agent()->router_id().to_ulong()), 0xFFFFFFFF, IPPROTO_UDP);
     EthHdr(agent()->GetDhcpProto()->ip_fabric_interface_mac(),
            MacAddress(in_pkt_info.eth->ether_dhost), ETHERTYPE_IP);

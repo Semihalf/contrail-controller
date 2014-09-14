@@ -300,7 +300,7 @@ void ArpHandler::SendArp(uint16_t op, const MacAddress &smac,
 
     ArpHdr(smac, sip, tmac, tip, op);
     EthHdr(smac, MacAddress::BroadcastMac(), 0x806);
-    pkt_info_->set_len(sizeof(ethhdr) + sizeof(ether_arp));
+    pkt_info_->set_len(sizeof(ether_header) + sizeof(ether_arp));
 
     Send(itf, vrf, AgentHdr::TX_SWITCH, PktHandler::ARP);
 }
