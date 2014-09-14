@@ -9,9 +9,11 @@
 #include <sys/socket.h>
 
 #include <net/if.h>
+#if defined(__linux__)
 #include <linux/if_ether.h>
 #include <linux/if_tun.h>
 #include <linux/if_packet.h>
+#endif
 
 #include "base/logging.h"
 #include "cmn/agent_cmn.h"
@@ -44,6 +46,8 @@ Pkt0Interface::~Pkt0Interface() {
 }
 
 void Pkt0Interface::InitControlInterface() {
+//XXX Missing TAP implementation for FreeBSD
+#if defined(__linux__)
     pkt_handler()->agent()->set_pkt_interface_name(name_);
 
     if ((tap_fd_ = open(TUN_INTF_CLONE_DEV, O_RDWR)) < 0) {
@@ -83,7 +87,7 @@ void Pkt0Interface::InitControlInterface() {
             "> retrieving MAC address of the tap interface");
         assert(0);
     }
-    memcpy(mac_address_, ifr.ifr_hwaddr.sa_data, ETH_ALEN);
+    memcpy(mac_address_, ifr.ifr_hwaddr.sa_data, ETHER_ADDR_LEN);
 
     int raw;
     if ((raw = socket(AF_PACKET, SOCK_RAW, htons(ETH_P_ALL))) == -1) {
@@ -132,6 +136,7 @@ void Pkt0Interface::InitControlInterface() {
     input_.assign(tap_fd_, ec);
     assert(ec == 0);
 
+#endif 
     VrouterControlInterface::InitControlInterface();
     AsyncRead();
 }
