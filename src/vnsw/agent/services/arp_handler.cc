@@ -294,7 +294,7 @@ void ArpHandler::SendArp(uint16_t op, const MacAddress &smac,
 
     uint8_t *buf = pkt_info_->packet_buffer()->data();
     memset(buf, 0, pkt_info_->packet_buffer()->data_len());
-    pkt_info_->eth = (ethhdr *)buf;
+    pkt_info_->eth = (ether_header *)buf;
     arp_ = pkt_info_->arp = (ether_arp *) (pkt_info_->eth + 1);
     arp_tpa_ = tip;
 
