@@ -13,8 +13,10 @@
 
 class MacAddress {
 public:
+    static const MacAddress kBroadcastAddress;
     MacAddress();
     explicit MacAddress(const uint8_t *data);
+    bool IsBroadcast() const;
     explicit MacAddress(const struct ether_addr &a) : valid_(true) {
         addr_ = a;
      }

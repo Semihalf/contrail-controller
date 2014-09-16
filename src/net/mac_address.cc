@@ -19,12 +19,18 @@ const struct ether_addr MacAddress::kZeroMac = { { 0x00 } };
 const struct ether_addr MacAddress::kBroadcastMac = { { 0xFF, 0xFF, 0xFF,
                                                         0xFF, 0xFF, 0xFF } };
 
+const MacAddress MacAddress::kBroadcastAddress(kBroadcastMac);
+
 MacAddress::MacAddress() : valid_(true) {
     addr_ = kZeroMac;
 }
 
 MacAddress::MacAddress(const uint8_t *data) : valid_(true) {
     memcpy(&addr_, data, sizeof(addr_));
+}
+
+bool MacAddress::IsBroadcast() const {
+    return CompareTo(MacAddress::kBroadcastAddress) == 0;
 }
 
 MacAddress::MacAddress(uint a, uint b, uint c, uint d, uint e, uint f) {

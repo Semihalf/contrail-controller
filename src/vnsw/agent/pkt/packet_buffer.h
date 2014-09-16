@@ -22,10 +22,17 @@ public:
     static const uint32_t kDefaultBufferLen = 1024;
     virtual ~PacketBuffer();
 
+    uint8_t *buffer() const { return buffer_.get(); }
+    uint16_t buffer_len() const { return buffer_len_; }
+
     uint8_t *data() const;
     uint16_t data_len() const;
-    uint32_t module() const { return module_; }
 
+    uint32_t module() const { return module_; }
+    void set_module(uint32_t module) { module_ = module; }
+
+    void set_len(uint32_t len);
+    bool SetOffset(uint16_t offset);
 private:
     friend class PacketBufferManager;
     PacketBuffer(PacketBufferManager *mgr, uint32_t module, uint16_t len,

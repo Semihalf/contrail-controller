@@ -13,8 +13,6 @@
 #include <cmn/agent_cmn.h>
 #include <pkt/pkt_init.h>
 #include <pkt/pkt_handler.h>
-#include <pkt/tap_interface.h>
-#include <pkt/test_tap_interface.h>
 #include <services/services_init.h>
 #include <test/test_cmn_util.h>
 #include <diag/diag_types.h>
@@ -32,9 +30,9 @@
 class DiagTest : public ::testing::Test {
 public:
     DiagTest() : count_(0) {
-        tap_ = static_cast<const TestTapInterface *>(
-               Agent::GetInstance()->pkt()->pkt_handler()->tap_interface());
-        tap_->GetTestPktHandler()->RegisterCallback(
+        tap_ = static_cast<TestPkt0Interface *>(
+               Agent::GetInstance()->pkt()->control_interface());
+        tap_->RegisterCallback(
               boost::bind(&DiagTest::DiagCallback, this, _1, _2));
         rid_ = Agent::GetInstance()->interface_table()->Register(
                       boost::bind(&DiagTest::ItfUpdate, this, _2));
@@ -125,8 +123,7 @@ public:
         smac.ToArray(eth->ether_shost, sizeof(eth->ether_shost));
 
         // send the recieved packet back
-        tap_->GetTestPktHandler()->TestPktSend(buf, length);
-        delete [] buf;
+        tap_->TxPacket(buf, length);
     }
 
     void SendDiag(const std::string &sip, int32_t sport, const std::string &dip,
@@ -177,7 +174,7 @@ public:
 
 private:
     uint32_t count_;
-    const TestTapInterface *tap_;
+    TestPkt0Interface *tap_;
     DBTableBase::ListenerId rid_;
     uint32_t itf_count_;
     std::vector<std::size_t> itf_id_;

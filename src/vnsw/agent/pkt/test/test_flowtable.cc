@@ -71,7 +71,8 @@ FlowEntry *FlowInit(TestFlowKey *t) {
     t->InitFlowKey(&key);
     FlowEntry *flow = Agent::GetInstance()->pkt()->flow_table()->Allocate(key);
 
-    boost::shared_ptr<PktInfo> pkt_info(new PktInfo(NULL, 0, 0));
+    boost::shared_ptr<PktInfo> pkt_info(new PktInfo(Agent::GetInstance(),
+                                                    100, 0, 0));
     PktFlowInfo info(pkt_info, Agent::GetInstance()->pkt()->flow_table());
     PktInfo *pkt = pkt_info.get();
 
@@ -361,7 +362,7 @@ protected:
 
 class SetupTask : public Task {
     public:
-        SetupTask(FlowTableTest *test) : Task((TaskScheduler::GetInstance()->GetTaskId("Agent::FlowHandler")), 0), test_(test) {
+        SetupTask(FlowTableTest *test) : Task((TaskScheduler::GetInstance()->GetTaskId("Agent::FlowHandler")), -1), test_(test) {
         }
         virtual bool Run() {
             test_->flow1 = FlowInit(test_->key1);

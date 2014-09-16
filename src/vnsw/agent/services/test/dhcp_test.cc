@@ -14,8 +14,6 @@
 #include <controller/controller_init.h>
 #include <controller/controller_vrf_export.h>
 #include <pkt/pkt_init.h>
-#include <pkt/tap_interface.h>
-#include <pkt/test_tap_interface.h>
 #include <services/services_init.h>
 #include <ksync/ksync_init.h>
 #include <openstack/instance_service_server.h>
@@ -201,10 +199,10 @@ public:
                   bool response = false, uint32_t yiaddr = 0,
                   uint32_t vmifindex = 0) {
         int len = 512;
-        boost::scoped_array<uint8_t> buf(new uint8_t[len]);
-        memset(buf.get(), 0, len);
+        uint8_t *buf = new uint8_t[len];
+        memset(buf, 0, len);
 
-        ether_header *eth = (ether_header *)buf.get();
+        ether_header *eth = (ether_header *)buf;
         eth->ether_dhost[5] = 1;
         eth->ether_shost[5] = 2;
         eth->ether_type = htons(0x800);
@@ -274,10 +272,11 @@ public:
 
         udp->uh_ulen = htons(len);
         ip->ip_len = htons(len + sizeof(*ip));
-        len += sizeof(*ip) + sizeof(ether_header) + TapInterface::kAgentHdrLen;
-        TestTapInterface *tap = (TestTapInterface *)
-            (Agent::GetInstance()->pkt()->pkt_handler()->tap_interface());
-        tap->GetTestPktHandler()->TestPktSend(buf.get(), len);
+        len += sizeof(struct ip) + sizeof(ether_header) +
+                Agent::GetInstance()->pkt()->pkt_handler()->EncapHeaderLen();
+        TestPkt0Interface *tap = (TestPkt0Interface *)
+                (Agent::GetInstance()->pkt()->control_interface());
+        tap->TxPacket(buf, len);
     }
 
     int AddOptions(uint8_t *ptr, uint8_t msg_type, uint32_t ifindex,

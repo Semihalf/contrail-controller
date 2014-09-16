@@ -45,8 +45,7 @@ bool IcmpHandler::Run() {
 }
 
 bool IcmpHandler::CheckPacket() {
-    if (pkt_info_->len < (EncapHeaderLen() + sizeof(ether_header) +
-                          ntohs(pkt_info_->ip->ip_len)))
+    if (pkt_info_->len < (sizeof(ether_header) + ntohs(pkt_info_->ip->ip_len)))
         return false;
 
     uint16_t checksum = icmp_->icmp_cksum;
@@ -90,8 +89,9 @@ void IcmpHandler::SendResponse(VmInterface *vm_intf) {
     hdr->icmp_type = ICMP_ECHOREPLY;
     // Recompute ICMP checksum
     IcmpChecksum((char *)hdr, icmp_len_);
+    pkt_info_->set_len(len);
 
-    Send(len, GetInterfaceIndex(), pkt_info_->vrf, AgentHdr::TX_SWITCH,
+    Send(GetInterfaceIndex(), pkt_info_->vrf, AgentHdr::TX_SWITCH,
          PktHandler::ICMP);
 }
 

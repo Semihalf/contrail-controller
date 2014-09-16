@@ -18,8 +18,6 @@
 #include <controller/controller_init.h>
 #include <controller/controller_vrf_export.h>
 #include <pkt/pkt_init.h>
-#include <pkt/tap_interface.h>
-#include <pkt/test_tap_interface.h>
 #include <services/services_init.h>
 #include <ksync/ksync_init.h>
 #include <openstack/instance_service_server.h>
@@ -116,10 +114,10 @@ public:
 
     void SendIcmp(short ifindex, uint32_t dest_ip, IcmpError error = NO_ERROR) {
         int len = 512;
-        boost::scoped_array<uint8_t> buf(new uint8_t[len]);
-        memset(buf.get(), 0, len);
+        uint8_t *buf = new uint8_t[len];
+        memset(buf, 0, len);
 
-        ether_header *eth = (ether_header *)buf.get();
+        ether_header *eth = (ether_header *)buf;
         eth->ether_dhost[5] = 1;
         eth->ether_shost[5] = 2;
         eth->ether_type = htons(ETHERTYPE_IP);
@@ -162,10 +160,11 @@ public:
         len = 64;
 
         ip->ip_len = htons(len + sizeof(*ip));
-        len += sizeof(*ip) + sizeof(ether_header) + TapInterface::kAgentHdrLen;
-        TestTapInterface *tap = (TestTapInterface *)
-            (Agent::GetInstance()->pkt()->pkt_handler()->tap_interface());
-        tap->GetTestPktHandler()->TestPktSend(buf.get(), len);
+
+        len += sizeof(iphdr) + sizeof(ethhdr) + Agent::GetInstance()->pkt()->pkt_handler()->EncapHeaderLen();
+        TestPkt0Interface *tap = (TestPkt0Interface *)
+                (Agent::GetInstance()->pkt()->control_interface());
+        tap->TxPacket(buf, len);
     }
 
 private:

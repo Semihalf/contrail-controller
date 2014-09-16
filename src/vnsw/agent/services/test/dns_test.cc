@@ -13,11 +13,8 @@
 #include <controller/controller_init.h>
 #include <controller/controller_vrf_export.h>
 #include <pkt/pkt_init.h>
-#include <pkt/tap_interface.h>
-#include <pkt/test_tap_interface.h>
 #include <services/services_init.h>
 #include <ksync/ksync_init.h>
-// #include <openstack/instance_service_server.h>
 #include <oper/vrf.h>
 #include <pugixml/pugixml.hpp>
 #include <services/dns_proto.h>
@@ -261,11 +258,11 @@ public:
         len += sizeof(udphdr);
         udp->uh_ulen = htons(len);
         ip->ip_len = htons(len + sizeof(*ip));
-        len += sizeof(*ip) + sizeof(ether_header) + TapInterface::kAgentHdrLen;
 
-        TestTapInterface *tap = (TestTapInterface *)
-            (Agent::GetInstance()->pkt()->pkt_handler()->tap_interface());
-        tap->GetTestPktHandler()->TestPktSend(buf, len);
+        len += sizeof(struct ip) + sizeof(ether_header) + Agent::GetInstance()->pkt()->pkt_handler()->EncapHeaderLen();
+        TestPkt0Interface *tap = (TestPkt0Interface *)
+                (Agent::GetInstance()->pkt()->control_interface());
+        tap->TxPacket(buf, len);
     }
 
     void SendDnsResp(int numQues, DnsItem *items, int numAuth, DnsItem *auth,
@@ -320,7 +317,8 @@ public:
         AgentDnsXmppChannel *tmp_xmpp_channel = 
             new AgentDnsXmppChannel(Agent::GetInstance(), "server", 0);
         Agent *agent = Agent::GetInstance();
-        boost::shared_ptr<PktInfo> pkt_info(new PktInfo(NULL, 0, 0));;
+        boost::shared_ptr<PktInfo> pkt_info(new PktInfo(Agent::GetInstance(),
+                                                        100, 0, 0));
         DnsHandler *dns_handler = new DnsHandler(agent, pkt_info, *agent->event_manager()->io_service());
         DnsUpdateData data;
         FillDnsUpdateData(data, 10);

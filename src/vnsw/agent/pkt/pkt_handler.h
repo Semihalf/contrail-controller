@@ -33,7 +33,6 @@
 #define VLAN_PROTOCOL      0x8100
 
 struct agent_hdr;
-class TapInterface;
 class PacketBuffer;
 
 struct InterTaskMsg {
@@ -91,12 +90,12 @@ struct AgentHdr {
     };
 
     AgentHdr() :
-        ifindex(-1), vrf(-1), cmd(-1), cmd_param(-1), nh(-1), flow_index(0),
+        ifindex(-1), vrf(-1), cmd(-1), cmd_param(-1), nh(-1), flow_index(-1),
         mtu(0) {}
 
     AgentHdr(uint16_t ifindex_p, uint16_t vrf_p, uint16_t cmd_p) :
         ifindex(ifindex_p), vrf(vrf_p), cmd(cmd_p), cmd_param(-1), nh(-1),
-        flow_index(0), mtu(0) {}
+        flow_index(-1), mtu(0) {}
 
     ~AgentHdr() {}
 
@@ -154,13 +153,23 @@ struct PktInfo {
         struct icmp     *icmp;
     } transp;
 
-    PktInfo(uint8_t *msg, std::size_t msg_size, std::size_t max_size);
+    PktInfo(Agent *agent, uint32_t buff_len, uint32_t module, uint32_t mdata);
+    PktInfo(const PacketBufferPtr &buff);
     PktInfo(InterTaskMsg *msg);
     virtual ~PktInfo();
 
     const AgentHdr &GetAgentHdr() const;
     void UpdateHeaderPtr();
     std::size_t hash() const;
+
+    PacketBuffer *packet_buffer() const { return packet_buffer_.get(); }
+    PacketBufferPtr packet_buffer_ptr() const { return packet_buffer_; }
+    void AllocPacketBuffer(Agent *agent, uint32_t module, uint16_t len,
+                           uint32_t mdata);
+    void set_len(uint32_t len);
+
+private:
+    PacketBufferPtr     packet_buffer_;
 };
 
 // Receive packets from the pkt0 (tap) interface, parse and send the packet to
@@ -180,6 +189,7 @@ public:
         ICMP,
         DIAG,
         ICMP_ERROR,
+        RX_PACKET,
         MAX_MODULES
     };
 
@@ -200,23 +210,15 @@ public:
         void PktQThresholdExceeded(PktModuleName mod);
     };
 
-    PktHandler(Agent *, const std::string &, boost::asio::io_service &, bool);
+    PktHandler(Agent *, PktModule *pkt_module);
     virtual ~PktHandler();
-
-    void Init();
-    void Shutdown();
-    void IoShutdown();
-    void CreateInterfaces(const std::string &if_name);
 
     void Register(PktModuleName type, RcvQueueFunc cb);
 
-    const MacAddress &mac_address();
-    const TapInterface *tap_interface() { return tap_interface_.get(); }
-
-    void Send(const AgentHdr &hdr, PacketBufferPtr buff);
+    void Send(const AgentHdr &hdr, const PacketBufferPtr &buff);
 
     // identify pkt type and send to the registered handler
-    void HandleRcvPkt(uint8_t*, std::size_t, std::size_t);  
+    void HandleRcvPkt(const AgentHdr &hdr, const PacketBufferPtr &buff);
     void SendMessage(PktModuleName mod, InterTaskMsg *msg); 
 
     bool IsGwPacket(const Interface *intf, uint32_t dst_ip);
@@ -236,10 +238,11 @@ public:
     }
 
     uint32_t EncapHeaderLen() const;
+    Agent *agent() const { return agent_; }
+    PktModule *pkt_module() const { return pkt_module_; }
 private:
     friend bool ::CallPktParse(PktInfo *pkt_info, uint8_t *ptr, int len);
 
-    uint8_t *ParseAgentHdr(PktInfo *pkt_info);
     uint8_t *ParseIpPacket(PktInfo *pkt_info, PktType::Type &pkt_type,
                            uint8_t *ptr);
     uint8_t *ParseUserPkt(PktInfo *pkt_info, Interface *intf,
@@ -256,7 +259,7 @@ private:
     boost::array<PktTrace, MAX_MODULES> pkt_trace_;
 
     Agent *agent_;
-    boost::scoped_ptr<TapInterface> tap_interface_;
+    PktModule *pkt_module_;
 
     DISALLOW_COPY_AND_ASSIGN(PktHandler);
 };
