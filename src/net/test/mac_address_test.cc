@@ -13,7 +13,7 @@ class MacAddressTest : public ::testing::Test {
 };
 
 TEST_F(MacAddressTest, Broadcast) {
-    EXPECT_TRUE(MacAddress::kBroadcastAddress.IsBroadcast());
+    EXPECT_TRUE(MacAddress::BroadcastMac().IsBroadcast());
     uint8_t data[] = { 0xff, 0xff, 0xff, 0xff, 0xff, 0xff };
     MacAddress mac(data);
     EXPECT_TRUE(mac.IsBroadcast());

@@ -13,7 +13,6 @@
 
 class MacAddress {
 public:
-    static const MacAddress kBroadcastAddress;
     MacAddress();
     explicit MacAddress(const uint8_t *data);
     bool IsBroadcast() const;
@@ -27,12 +26,6 @@ public:
     MacAddress(uint a, uint b, uint c, uint d, uint e, uint f);
 
     explicit MacAddress(const std::string &s);
-
-    MacAddress &Broadcast() {
-        addr_ = kBroadcastMac;
-        valid_ = true;
-        return *this;
-    }
 
     static MacAddress FromString(const std::string &str);
     static MacAddress FromString(const std::string &str,
@@ -142,14 +135,18 @@ public:
         addr_ = kZeroMac;
     }
 
+    void Broadcast() {
+        addr_ = kBroadcastMac;
+    }
+
     std::string ToString() const;
     const uint8_t *GetData() const { return (uint8_t *)&addr_; }
 
     static const ether_addr kZeroMac;
     static const ether_addr kBroadcastMac;
     static const MacAddress BroadcastMac() {
-        MacAddress t;
-        return t.Broadcast();
+        MacAddress t(kBroadcastMac);
+        return t;
     }
 private:
     struct ether_addr addr_;
