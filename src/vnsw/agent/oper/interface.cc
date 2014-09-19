@@ -12,6 +12,7 @@
 #include "db/db_table.h"
 #include "ifmap/ifmap_node.h"
 
+#include <cmn/agent_param.h>
 #include <cfg/cfg_init.h>
 #include <cfg/cfg_interface.h>
 #include <oper/operdb_init.h>
@@ -63,6 +64,7 @@ DBEntry *InterfaceTable::Add(const DBRequest *req) {
 
     intf->id_ = index_table_.Insert(intf);
 
+    intf->transport_ = data->transport_;
     // Get the os-ifindex and mac of interface
     intf->GetOsParams(agent());
 
@@ -84,13 +86,27 @@ bool InterfaceTable::OnChange(DBEntry *entry, const DBRequest *req) {
     case Interface::INET: {
         InetInterface *intf = static_cast<InetInterface *>(entry);
         if (intf) {
+            intf->OnChange(static_cast<InetInterfaceData *>(req->data.get()));
             // Get the os-ifindex and mac of interface
             intf->GetOsParams(agent());
-            intf->OnChange(static_cast<InetInterfaceData *>(req->data.get()));
             ret = true;
         }
         break;
     }
+    case Interface::PHYSICAL: {
+        PhysicalInterface *intf = static_cast<PhysicalInterface *>(entry);
+        PhysicalInterfaceData *data =
+            static_cast<PhysicalInterfaceData *>(req->data.get());
+        ret = intf->OnChange(data);
+        break;
+    }
+    case Interface::PACKET: {
+         PacketInterface *intf = static_cast<PacketInterface *>(entry);
+         PacketInterfaceData *data = static_cast<PacketInterfaceData *>(req->data.get());
+         ret = intf->OnChange(data);
+         break;
+    }
+
     default:
         break;
     }
@@ -101,6 +117,7 @@ bool InterfaceTable::OnChange(DBEntry *entry, const DBRequest *req) {
 // RESYNC supported only for VM_INTERFACE
 bool InterfaceTable::Resync(DBEntry *entry, DBRequest *req) {
     InterfaceKey *key = static_cast<InterfaceKey *>(req->key.get());
+
     if (key->type_ != Interface::VM_INTERFACE)
         return false;
 
@@ -225,13 +242,42 @@ Interface::Interface(Type type, const uuid &uuid, const string &name,
     vrf_(vrf), label_(MplsTable::kInvalidLabel), 
     l2_label_(MplsTable::kInvalidLabel), ipv4_active_(true), l2_active_(true),
     id_(kInvalidIndex), dhcp_enabled_(true), dns_enabled_(true), mac_(),
-    os_index_(kInvalidIndex), admin_state_(true), test_oper_state_(true) { 
+    os_index_(kInvalidIndex), admin_state_(true), test_oper_state_(true),
+    transport_(TRANSPORT_INVALID) { 
 }
 
 Interface::~Interface() { 
     if (id_ != kInvalidIndex) {
         static_cast<InterfaceTable *>(get_table())->FreeInterfaceId(id_);
     }
+}
+
+void Interface::SetPciIndex(Agent *agent) {
+    std::istringstream pci(agent->params()->physical_interface_pci_addr());
+
+    uint32_t  domain, bus, device, function;
+    char c;
+    if (pci >> std::hex >> domain) {
+        pci >> c;
+    } else {
+        assert(0);
+    }
+
+    if (pci >> std::hex >> bus) {
+        pci >> c;
+    } else {
+        assert(0);
+    }
+
+    if (pci >> std::hex >> device) {
+        pci >> c;
+    } else {
+        assert(0);
+    }
+
+    pci >> std::hex >> function;
+    os_index_ = domain << 16 | bus << 8 | device << 3 | function;
+    os_oper_state_ = true;
 }
 
 void Interface::GetOsParams(Agent *agent) {
@@ -243,6 +289,28 @@ void Interface::GetOsParams(Agent *agent) {
             mac_.ether_addr_octet[5] = os_index_;
         }
         os_oper_state_ = test_oper_state_;
+        return;
+    }
+
+    if (transport_ == TRANSPORT_PMD && type_ == PHYSICAL) {
+        //PCI address is the name of the interface
+        // os index from that
+       SetPciIndex(agent);
+    }
+
+    //In case of DPDK, set mac-address to the physical
+    //mac address set in configuration file, since
+    //agent cane query for mac address as physical interface
+    //will not be present
+    if (transport_ == TRANSPORT_PMD) {
+        if (type_ == PHYSICAL || type_ == INET) {
+            mac_ = *ether_aton(agent->params()->
+                               physical_interface_mac_addr().c_str());
+        }
+    }
+
+    if (transport_ != TRANSPORT_ETHERNET) {
+        os_oper_state_ = true;
         return;
     }
 
@@ -331,17 +399,19 @@ void PacketInterface::Delete() {
 
 // Enqueue DBRequest to create a Pkt Interface
 void PacketInterface::CreateReq(InterfaceTable *table,
-                                const std::string &ifname) {
+                                const std::string &ifname,
+                                Interface::Transport transport) {
     DBRequest req(DBRequest::DB_ENTRY_ADD_CHANGE);
     req.key.reset(new PacketInterfaceKey(nil_uuid(), ifname));
-    req.data.reset(new PacketInterfaceData());
+    req.data.reset(new PacketInterfaceData(transport));
     table->Enqueue(&req);
 }
 
-void PacketInterface::Create(InterfaceTable *table, const std::string &ifname) {
+void PacketInterface::Create(InterfaceTable *table, const std::string &ifname,
+                             Interface::Transport transport) {
     DBRequest req(DBRequest::DB_ENTRY_ADD_CHANGE);
     req.key.reset(new PacketInterfaceKey(nil_uuid(), ifname));
-    req.data.reset(new PacketInterfaceData());
+    req.data.reset(new PacketInterfaceData(transport));
     table->Process(req);
 }
 
@@ -360,13 +430,21 @@ void PacketInterface::Delete(InterfaceTable *table, const std::string &ifname) {
     req.data.reset(NULL);
     table->Process(req);
 }
+
+bool PacketInterface::OnChange(PacketInterfaceData *data) {
+    if (transport_ != data->transport_) {
+        transport_ = data->transport_;
+        return true;
+    }
+    return false;
+}
 /////////////////////////////////////////////////////////////////////////////
 // Ethernet Interface routines
 /////////////////////////////////////////////////////////////////////////////
 PhysicalInterface::PhysicalInterface(const std::string &name, VrfEntry *vrf,
-                                     bool persistent) :
+                                     bool persistent, const Ip4Address &ip) :
     Interface(Interface::PHYSICAL, nil_uuid(), name, vrf),
-    persistent_(persistent) {
+    persistent_(persistent), ip_(ip) {
 }
 
 PhysicalInterface::~PhysicalInterface() {
@@ -385,18 +463,22 @@ DBEntryBase::KeyPtr PhysicalInterface::GetDBRequestKey() const {
 
 // Enqueue DBRequest to create a Host Interface
 void PhysicalInterface::CreateReq(InterfaceTable *table, const string &ifname,
-                                  const string &vrf_name, bool persistent) {
+                                  const string &vrf_name, bool persistent,
+                                  const Ip4Address &ip,
+                                  Interface::Transport transport) {
     DBRequest req(DBRequest::DB_ENTRY_ADD_CHANGE);
     req.key.reset(new PhysicalInterfaceKey(ifname));
-    req.data.reset(new PhysicalInterfaceData(vrf_name, persistent));
+    req.data.reset(new PhysicalInterfaceData(vrf_name, persistent, ip, transport));
     table->Enqueue(&req);
 }
 
 void PhysicalInterface::Create(InterfaceTable *table, const string &ifname,
-                               const string &vrf_name, bool persistent) {
+                               const string &vrf_name, bool persistent,
+                               const Ip4Address &ip,
+                               Interface::Transport transport) {
     DBRequest req(DBRequest::DB_ENTRY_ADD_CHANGE);
     req.key.reset(new PhysicalInterfaceKey(ifname));
-    req.data.reset(new PhysicalInterfaceData(vrf_name, persistent));
+    req.data.reset(new PhysicalInterfaceData(vrf_name, persistent, ip, transport));
     table->Process(req);
 }
 
@@ -415,6 +497,14 @@ void PhysicalInterface::Delete(InterfaceTable *table, const string &ifname) {
     table->Process(req);
 }
 
+bool PhysicalInterface::OnChange(PhysicalInterfaceData *data) {
+    if (transport_ != data->transport_) {
+        transport_ = data->transport_;
+        return true;
+    }
+    return false;
+}
+
 PhysicalInterfaceKey::PhysicalInterfaceKey(const std::string &name) :
     InterfaceKey(AgentKey::ADD_DEL_CHANGE, Interface::PHYSICAL, nil_uuid(),
                  name, false) {
@@ -424,7 +514,7 @@ PhysicalInterfaceKey::~PhysicalInterfaceKey() {
 }
 
 Interface *PhysicalInterfaceKey::AllocEntry(const InterfaceTable *table) const {
-    return new PhysicalInterface(name_, NULL, false);
+    return new PhysicalInterface(name_, NULL, false, Ip4Address(0));
 }
 
 Interface *PhysicalInterfaceKey::AllocEntry(const InterfaceTable *table,
@@ -438,7 +528,8 @@ Interface *PhysicalInterfaceKey::AllocEntry(const InterfaceTable *table,
     const PhysicalInterfaceData *phy_data =
         static_cast<const PhysicalInterfaceData *>(data);
 
-    return new PhysicalInterface(name_, vrf, phy_data->persistent_);
+    return new PhysicalInterface(name_, vrf, phy_data->persistent_,
+                                 phy_data->ip_);
 }
 
 InterfaceKey *PhysicalInterfaceKey::Clone() const {
@@ -446,8 +537,10 @@ InterfaceKey *PhysicalInterfaceKey::Clone() const {
 }
 
 PhysicalInterfaceData::PhysicalInterfaceData(const std::string &vrf_name,
-                                             bool persistent)
-    : InterfaceData(), persistent_(persistent) {
+                                             bool persistent,
+                                             const Ip4Address &ip,
+                                             Interface::Transport transport)
+    : InterfaceData(transport), persistent_(persistent), ip_(ip) {
     EthInit(vrf_name);
 }
 
@@ -765,6 +858,25 @@ void Interface::SetItfSandeshData(ItfSandeshData &data) const {
     } else {
         data.set_admin_state("Disabled");
     }
+
+    switch (transport_) {
+    case TRANSPORT_ETHERNET:{
+        data.set_transport("Ethernet");
+        break;
+    }
+    case TRANSPORT_SOCKET: {
+        data.set_transport("Socket");
+        break;
+    }
+    case TRANSPORT_PMD: {
+        data.set_transport("PMD");
+        break;
+    }
+    default: {
+        data.set_transport("Unknown");
+        break;
+    }
+    }
 }
 
 bool Interface::DBEntrySandesh(Sandesh *sresp, std::string &name) const {
@@ -806,4 +918,3 @@ void Interface::SendTrace(Trace event) const {
     }
     OPER_TRACE(Interface, intf_info);
 }
-

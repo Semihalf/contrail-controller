@@ -56,9 +56,13 @@ bool GetBuildInfo(std::string &build_info_str) {
     return MiscUtils::GetBuildInfo(MiscUtils::Agent, BuildInfo, build_info_str);
 }
 
-void FactoryInit() {
+void FactoryInit(const AgentParam &param) {
     AgentObjectFactory::Register<AgentUve>(boost::factory<AgentUve *>());
-    AgentObjectFactory::Register<KSync>(boost::factory<KSync *>());
+    if (param.vrouter_on_nic_mode() || param.vrouter_on_host_dpdk()) {
+        AgentObjectFactory::Register<KSync>(boost::factory<KSyncTcp *>());
+    } else {
+        AgentObjectFactory::Register<KSync>(boost::factory<KSync *>());
+    }
 }
 
 int main(int argc, char *argv[]) {
@@ -139,6 +143,12 @@ int main(int argc, char *argv[]) {
          "Timeout used to set a netns command as failing and to destroy it")
         ("SERVICE-INSTANCE.netns_workers", opt::value<string>(),
          "Number of workers used to spawn netns command")
+        ("DEFAULT.platform", opt::value<string>(),
+         "Mode in which vrouter is running(host mode, dpdk or on nic")
+        ("DEFAULT.physical_interface_address", opt::value<string>(),
+         "PCI address of physical interface(0000.00.00.0)")
+        ("DEFAULT.physical_interface_mac", opt::value<string>(),
+         "Physical interface mac address to be used")
         ;
     opt::variables_map var_map;
     try {
@@ -173,8 +183,6 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    FactoryInit();
-
     string build_info;
     GetBuildInfo(build_info);
     MiscUtils::LogVersionInfo(build_info, Category::VROUTER);
@@ -185,6 +193,8 @@ int main(int argc, char *argv[]) {
     // Read agent parameters from config file and arguments
     AgentParam param(&agent);
     param.Init(init_file, argv[0], var_map);
+
+    FactoryInit(param);
 
     // Initialize the agent-init control class
     ContrailAgentInit init;

@@ -55,7 +55,7 @@ InterfaceKSyncEntry::InterfaceKSyncEntry(InterfaceKSyncObject *obj,
     parent_(entry->parent_), policy_enabled_(entry->policy_enabled_),
     sub_type_(entry->sub_type_), type_(entry->type_), vlan_id_(entry->vlan_id_),
     vrf_id_(entry->vrf_id_), persistent_(entry->persistent_),
-    xconnect_(entry->xconnect_) {
+    xconnect_(entry->xconnect_), transport_(entry->transport_) {
 }
 
 InterfaceKSyncEntry::InterfaceKSyncEntry(InterfaceKSyncObject *obj, 
@@ -69,7 +69,8 @@ InterfaceKSyncEntry::InterfaceKSyncEntry(InterfaceKSyncObject *obj,
     mirror_direction_(Interface::UNKNOWN), os_index_(intf->os_index()),
     parent_(NULL), policy_enabled_(false), sub_type_(InetInterface::VHOST),
     type_(intf->type()), vlan_id_(VmInterface::kInvalidVlanId),
-    vrf_id_(intf->vrf_id()), persistent_(false), xconnect_(NULL) {
+    vrf_id_(intf->vrf_id()), persistent_(false), xconnect_(NULL),
+    transport_(Interface::TRANSPORT_INVALID) {
 
     if (intf->flow_key_nh()) {
         flow_key_nh_id_ = intf->flow_key_nh()->id();
@@ -91,10 +92,15 @@ InterfaceKSyncEntry::InterfaceKSyncEntry(InterfaceKSyncObject *obj,
         const InetInterface *inet_intf =
         static_cast<const InetInterface *>(intf);
         sub_type_ = inet_intf->sub_type();
+        ip_ = inet_intf->ip_addr().to_ulong();
         if (sub_type_ == InetInterface::VHOST) {
             InterfaceKSyncEntry tmp(ksync_obj_, inet_intf->xconnect());
             xconnect_ = ksync_obj_->GetReference(&tmp);
         }
+    } else if (type_ == Interface::PHYSICAL) {
+        const PhysicalInterface *phy_intf =
+            static_cast<const PhysicalInterface *>(intf);
+        ip_ = phy_intf->ip_addr().to_ulong();
     }
 }
 
@@ -207,6 +213,11 @@ bool InterfaceKSyncEntry::Sync(DBEntry *e) {
         InetInterface *vhost = static_cast<InetInterface *>(intf);
         sub_type_ = vhost->sub_type();
 
+        if (ip_ != vhost->ip_addr().to_ulong()) {
+            ip_ = vhost->ip_addr().to_ulong();
+            ret = true;
+        }
+
         InetInterface *inet_interface = static_cast<InetInterface *>(intf);
         if (sub_type_ == InetInterface::VHOST) {
             KSyncEntryPtr xconnect = NULL;
@@ -291,6 +302,10 @@ bool InterfaceKSyncEntry::Sync(DBEntry *e) {
         ret = true;
     }
 
+    if (transport_ != intf->transport()) {
+        transport_ = intf->transport();
+        ret = true;
+    }
     return ret;
 }
 
@@ -315,7 +330,12 @@ KSyncEntry *InterfaceKSyncEntry::UnresolvedReference() {
     return NULL;
 }
 
-bool IsValidOsIndex(size_t os_index, Interface::Type type, uint16_t vlan_id) {
+bool IsValidOsIndex(size_t os_index, Interface::Type type, uint16_t vlan_id,
+                    Interface::Transport transport) {
+    if (transport != Interface::TRANSPORT_ETHERNET) {
+        return true;
+    }
+
     if (os_index != Interface::kInvalidIndex)
         return true;
 
@@ -332,12 +352,13 @@ int InterfaceKSyncEntry::Encode(sandesh_op::type op, char *buf, int buf_len) {
     int encode_len, error;
 
     // Dont send message if interface index not known
-    if (IsValidOsIndex(os_index_, type_, vlan_id_) == false) {
+    if (IsValidOsIndex(os_index_, type_, vlan_id_, transport_) == false) {
         return 0;
     }
 
     uint32_t flags = 0;
     encoder.set_h_op(op);
+
     switch (type_) {
     case Interface::VM_INTERFACE: {
         if (dhcp_enable_) {
@@ -362,7 +383,6 @@ int InterfaceKSyncEntry::Encode(sandesh_op::type op, char *buf, int buf_len) {
         }
         std::vector<int8_t> intf_mac(mac, mac + ETHER_ADDR_LEN);
         encoder.set_vifr_mac(intf_mac);
-
         break;
     }
 
@@ -432,6 +452,25 @@ int InterfaceKSyncEntry::Encode(sandesh_op::type op, char *buf, int buf_len) {
         if (has_service_vlan_) {
             flags |= VIF_FLAG_SERVICE_IF;
         }
+    }
+
+    switch(transport_) {
+    case Interface::TRANSPORT_ETHERNET: {
+        encoder.set_vifr_transport(VIF_TRANSPORT_ETH);
+        break;
+    }
+
+    case Interface::TRANSPORT_SOCKET: {
+        encoder.set_vifr_transport(VIF_TRANSPORT_SOCKET);
+        break;
+    }
+
+    case Interface::TRANSPORT_PMD: {
+        encoder.set_vifr_transport(VIF_TRANSPORT_PMD);
+        break;
+    }
+    default:
+        break;
     }
 
     encoder.set_vifr_mac(std::vector<int8_t>(mac(), mac() + ETHER_ADDR_LEN));
