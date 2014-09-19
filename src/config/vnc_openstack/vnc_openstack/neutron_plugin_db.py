@@ -68,7 +68,7 @@ class DBInterface(object):
                 connected = True
             except requests.exceptions.RequestException as e:
                 gevent.sleep(3)
-
+ 
         # TODO remove this backward compat code eventually
         # changes 'net_fq_name_str pfx/len' key to 'net_id pfx/len' key
         subnet_map = self._vnc_lib.kv_retrieve(key=None)
@@ -507,7 +507,7 @@ class DBInterface(object):
     #end _network_list_project
 
     # find router ids on a given project
-    def _router_list_project(self, project_id=None):
+    def _router_list_project(self, project_id=None, detail=False):
         if project_id:
             try:
                 project_uuid = str(uuid.UUID(project_id))
@@ -517,9 +517,12 @@ class DBInterface(object):
         else:
             project_uuid = None
 
-        resp_dict = self._vnc_lib.logical_routers_list(parent_id=project_uuid)
+        resp = self._vnc_lib.logical_routers_list(parent_id=project_uuid,
+                                                  detail=detail)
+        if detail:
+            return resp
 
-        return resp_dict['logical-routers']
+        return resp['logical-routers']
     #end _router_list_project
 
     def _ipam_list_project(self, project_id):
@@ -1287,19 +1290,15 @@ class DBInterface(object):
         cidr = IPNetwork(subnet_q['cidr'])
         pfx = str(cidr.network)
         pfx_len = int(cidr.prefixlen)
-        if cidr.version != 4:
+        if cidr.version != 4 and cidr.version != 6:
             self._raise_contrail_exception('BadRequest',
-                resource='subnet', msg='IPv6 is not supported')
+                resource='subnet', msg='Unknown IP family')
         elif cidr.version != int(subnet_q['ip_version']):
             msg = _("cidr '%s' does not match the ip_version '%s'") \
                     %(subnet_q['cidr'], subnet_q['ip_version'])
             self._raise_contrail_exception('InvalidInput', error_message=msg)
         if 'gateway_ip' in subnet_q:
             default_gw = subnet_q['gateway_ip']
-            if default_gw == '0.0.0.0':
-                msg = _("Disable gateway is not supported")
-                self._raise_contrail_exception('BadRequest',
-                    resource='subnet', msg=msg)
         else:
             # Assigned first+1 from cidr
             default_gw = str(IPAddress(cidr.first + 1))
@@ -1356,13 +1355,13 @@ class DBInterface(object):
             sn_q_dict['name'] = ''
         sn_q_dict['tenant_id'] = net_obj.parent_uuid.replace('-', '')
         sn_q_dict['network_id'] = net_obj.uuid
-        sn_q_dict['ip_version'] = 4  # TODO ipv6?
         sn_q_dict['ipv6_ra_mode'] = None
         sn_q_dict['ipv6_address_mode'] = None
 
         cidr = '%s/%s' % (subnet_vnc.subnet.get_ip_prefix(),
                           subnet_vnc.subnet.get_ip_prefix_len())
         sn_q_dict['cidr'] = cidr
+        sn_q_dict['ip_version'] = IPNetwork(cidr).version # 4 or 6 
 
         subnet_key = self._subnet_vnc_get_key(subnet_vnc, net_obj.uuid)
         sn_id = self._subnet_vnc_read_or_create_mapping(key=subnet_key)
@@ -1619,16 +1618,28 @@ class DBInterface(object):
         port_refs = fip_obj.get_virtual_machine_interface_refs()
         if port_refs:
             port_id = port_refs[0]['uuid']
-            port_obj = self._virtual_machine_interface_read(port_id=port_id,
-                                             fields=['instance_ip_back_refs'])
-
+            internal_net_id = None
             # find router_id from port
-            internal_net_obj = self._virtual_network_read(net_id=port_obj.get_virtual_network_refs()[0]['uuid'])
-            net_port_objs = [self._virtual_machine_interface_read(port_id=port['uuid']) for port in internal_net_obj.get_virtual_machine_interface_back_refs()]
-            for net_port_obj in net_port_objs:
-                routers = net_port_obj.get_logical_router_back_refs()
-                if routers:
-                    router_id = routers[0]['uuid']
+            router_list = self._router_list_project(
+                fip_obj.get_project_refs()[0]['uuid'], detail=True)
+            for router_obj in router_list or []:
+                for net in router_obj.get_virtual_network_refs() or []:
+                    if net['uuid'] != floating_net_id:
+                        continue
+                    for vmi in (router_obj.get_virtual_machine_interface_refs()
+                                or []):
+                        vmi_obj = self._vnc_lib.virtual_machine_interface_read(
+                                id=vmi['uuid'])
+                        if internal_net_id is None:
+                            port_obj = self._virtual_machine_interface_read(port_id=port_id)
+                            internal_net_id = port_obj.get_virtual_network_refs()[0]['uuid']
+                        if (vmi_obj.get_virtual_network_refs()[0]['uuid'] ==
+                            internal_net_id):
+                            router_id = router_obj.uuid
+                            break
+                    if router_id:
+                        break
+                if router_id:
                     break
 
         fip_q_dict['id'] = fip_obj.uuid
@@ -3236,12 +3247,13 @@ class DBInterface(object):
                                 self._instance_ip_list(back_ref_id=[net_id])]
         return ip_addr in net_ip_list
 
-    def _create_instance_ip(self, net_obj, port_obj, ip_addr=None):
+    def _create_instance_ip(self, net_obj, port_obj, ip_addr=None, ip_family="v4"):
         ip_name = str(uuid.uuid4())
         ip_obj = InstanceIp(name=ip_name)
         ip_obj.uuid = ip_name
         ip_obj.set_virtual_machine_interface(port_obj)
         ip_obj.set_virtual_network(net_obj)
+        ip_obj.set_instance_ip_family(ip_family)
         if ip_addr:
             ip_obj.set_instance_ip_address(ip_addr)
 
@@ -3249,7 +3261,7 @@ class DBInterface(object):
         return ip_id
     # end _create_instance_ip
 
-    def _port_create_instance_ip(self, net_obj, port_obj, port_q):
+    def _port_create_instance_ip(self, net_obj, port_obj, port_q, ip_family="v4"):
         created_iip_ids = []
         fixed_ips = port_q.get('fixed_ips')
         if fixed_ips is None:
@@ -3263,7 +3275,7 @@ class DBInterface(object):
                     ip_addr = self._vnc_lib.virtual_network_ip_alloc(net_obj,
                                             subnet=subnet_key.split()[1])[0]
 
-                ip_id = self._create_instance_ip(net_obj, port_obj, ip_addr)
+                ip_id = self._create_instance_ip(net_obj, port_obj, ip_addr, ip_family)
                 created_iip_ids.append(ip_id)
             except vnc_exc.HttpError as e:
                 # Resources are not available
@@ -3286,14 +3298,32 @@ class DBInterface(object):
         # initialize port object
         port_obj = self._port_neutron_to_vnc(port_q, net_obj, CREATE)
 
+        # determine creation of v4 and v6 ip object 
+        ip_obj_v4_create = False
+        ip_obj_v6_create = False
+        ipam_refs = net_obj.get_network_ipam_refs()
+        for ipam_ref in ipam_refs:
+            subnet_vncs = ipam_ref['attr'].get_ipam_subnets()
+            for subnet_vnc in subnet_vncs:
+                cidr = '%s/%s' %(subnet_vnc.subnet.get_ip_prefix(),
+                                 subnet_vnc.subnet.get_ip_prefix_len())
+                if (IPNetwork(cidr).version == 4): 
+                    ip_obj_v4_create = True
+                if (IPNetwork(cidr).version == 6):
+                    ip_obj_v6_create = True 
+        
         # create the object
         port_id = self._resource_create('virtual_machine_interface', port_obj)
         try:
             if 'fixed_ips' in port_q:
                 self._port_create_instance_ip(net_obj, port_obj, port_q)
             elif net_obj.get_network_ipam_refs():
-                self._port_create_instance_ip(net_obj, port_obj,
-                                              {'fixed_ips':[{'ip_address': None}]})
+                if (ip_obj_v4_create is True):
+                    self._port_create_instance_ip(net_obj, port_obj,
+                         {'fixed_ips':[{'ip_address': None}]}, ip_family="v4")
+                if (ip_obj_v6_create is True):
+                    self._port_create_instance_ip(net_obj, port_obj,
+                         {'fixed_ips':[{'ip_address': None}]}, ip_family="v6")
         except vnc_exc.HttpError:
             # failure in creating the instance ip. Roll back
             self._virtual_machine_interface_delete(port_id=port_id)

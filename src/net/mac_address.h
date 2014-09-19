@@ -15,23 +15,21 @@ class MacAddress {
 public:
     MacAddress();
     explicit MacAddress(const uint8_t *data);
-    bool IsBroadcast() const;
-    explicit MacAddress(const struct ether_addr &a) : valid_(true) {
+    explicit MacAddress(const struct ether_addr &a) {
         addr_ = a;
      }
-    explicit MacAddress(const struct ether_addr *a) : valid_(true) {
+    explicit MacAddress(const struct ether_addr *a) {
         addr_ = *a;
     }
 
     MacAddress(uint a, uint b, uint c, uint d, uint e, uint f);
 
-    explicit MacAddress(const std::string &s);
+    explicit MacAddress(const std::string &s,
+                        boost::system::error_code *error = NULL);
 
-    static MacAddress FromString(const std::string &str);
-    static MacAddress FromString(const std::string &str,
-        boost::system::error_code *error);
-
+    bool IsBroadcast() const;
     int CompareTo(const MacAddress &rhs) const;
+
     bool operator==(const MacAddress *rhs) const {
         return CompareTo(*rhs) == 0;
     }
@@ -72,6 +70,11 @@ public:
 
     MacAddress &operator=(const struct sockaddr &sa) {
         return operator=(&sa);
+    }
+
+    MacAddress &operator=(const struct ether_addr &ea) {
+        addr_ = ea;
+        return *this;
     }
 
     bool ToArray(u_int8_t *p, size_t s) const {
@@ -121,16 +124,6 @@ public:
         return (*this)[5];
     }
 
-    bool IsValid() const {
-        return valid_;
-    }
-
-    MacAddress &operator=(const struct ether_addr &e) {
-        addr_ = e;
-        valid_ = true;
-        return *this;
-    }
-
     void Zero() {
         addr_ = kZeroMac;
     }
@@ -139,8 +132,11 @@ public:
         addr_ = kBroadcastMac;
     }
 
-    std::string ToString() const;
     const uint8_t *GetData() const { return (uint8_t *)&addr_; }
+
+    std::string ToString() const;
+    static MacAddress FromString(const std::string &str,
+        boost::system::error_code *error = NULL);
 
     static const ether_addr kZeroMac;
     static const ether_addr kBroadcastMac;
@@ -150,7 +146,6 @@ public:
     }
 private:
     struct ether_addr addr_;
-    bool valid_;
 };
 
 #endif
