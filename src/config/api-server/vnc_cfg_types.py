@@ -178,7 +178,7 @@ class InstanceIpServer(InstanceIpServerGen):
 
         req_ip = obj_dict.get("instance_ip_address", None)
         req_ip_family = obj_dict.get("instance_ip_family", None)
-        if req_ip_family == "v4": req_ip_version = 4
+        req_ip_version = 4 # default ip v4
         if req_ip_family == "v6": req_ip_version = 6
 
         vn_id = {'uuid': db_conn.fq_name_to_uuid('virtual-network', vn_fq_name)}
@@ -889,12 +889,21 @@ class SecurityGroupServer(SecurityGroupServerGen):
         if not ok:
             return (False, (500, 'Bad Project error : ' + pformat(proj_dict)))
 
-        obj_type = 'security-group-rule'
         if 'security_group_entries' in obj_dict:
-            quota_count = len(obj_dict['security_group_entries']['policy_rule'])
+            rule_count = len(obj_dict['security_group_entries']['policy_rule'])
+            obj_type = 'security-group-rule'
+            for sg in proj_dict.get('security_groups', []):
+                if sg['uuid'] == sec_dict['uuid']:
+                    continue
+                ok, sg_dict = db_conn.dbe_read('security-group', sg)
+                if not ok:
+                    continue
+                sge = sg_dict.get('security_group_entries', {})
+                rule_count += len(sge.get('policy_rule', []))
+
             if sec_dict['id_perms'].get('user_visible', True) is not False:
                 (ok, quota_limit) = QuotaHelper.check_quota_limit(proj_dict, obj_type,
-                                                                  quota_count)
+                                                                  rule_count-1)
                 if not ok:
                     return (False, (403, pformat(fq_name) + ' : ' + quota_limit))
 
