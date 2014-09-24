@@ -543,7 +543,7 @@ class DBInterface(object):
                 # Trigger a project read to ensure project sync
                 project_obj = self._project_read(proj_id=project_uuid)
             except Exception:
-                print "Error in converting uuid %s" % (project_id)
+                raise
         else:
             project_uuid = None
 
@@ -1006,16 +1006,7 @@ class DBInterface(object):
     def _security_group_neutron_to_vnc(self, sg_q, oper):
         if oper == CREATE:
             project_id = str(uuid.UUID(sg_q['tenant_id']))
-            def project_read(id):
-                try:
-                    return self._project_read(proj_id=id)
-                except NoIdError:
-                    return None
-            for i in range(10):
-                project_obj = project_read(project_id)
-                if project_obj:
-                    break
-                gevent.sleep(2)
+            project_obj = self._project_read(proj_id=project_id)
             id_perms = IdPermsType(enable=True,
                                    description=sg_q.get('description'))
             sg_vnc = SecurityGroup(name=sg_q['name'],
@@ -1142,17 +1133,7 @@ class DBInterface(object):
             external_attr = attr.ATTR_NOT_SPECIFIED
         if oper == CREATE:
             project_id = str(uuid.UUID(network_q['tenant_id']))
-            def project_read(id):
-                try:
-                    return self._project_read(proj_id=id)
-                except NoIdError:
-                    return None
-            for i in range(10):
-                project_obj = project_read(project_id)
-                if project_obj:
-                    break
-                gevent.sleep(2)
-
+            project_obj = self._project_read(proj_id=project_id)
             id_perms = IdPermsType(enable=True)
             net_obj = VirtualNetwork(net_name, project_obj, id_perms=id_perms)
             if external_attr == attr.ATTR_NOT_SPECIFIED:
@@ -1491,16 +1472,7 @@ class DBInterface(object):
         rtr_name = router_q.get('name', None)
         if oper == CREATE:
             project_id = str(uuid.UUID(router_q['tenant_id']))
-            def project_read(id):
-                try:
-                    return self._project_read(proj_id=id)
-                except NoIdError:
-                    return None
-            for i in range(10):
-                project_obj = project_read(project_id)
-                if project_obj:
-                    break
-                gevent.sleep(2)
+            project_obj = self._project_read(proj_id=project_id)
             id_perms = IdPermsType(enable=True)
             rtr_obj = LogicalRouter(rtr_name, project_obj, id_perms=id_perms)
         else:  # READ/UPDATE/DELETE
@@ -3453,6 +3425,15 @@ class DBInterface(object):
 
     #end port_delete
 
+    def _port_fixed_ips_is_present(self, check, against):
+        for addr in check['ip_address']:
+            for item in against:
+                if item['ip_address'] == addr:
+                    return True
+
+        return False
+    # end _port_fixed_ips_is_present
+
     def port_list(self, context=None, filters=None):
         project_obj = None
         ret_q_ports = []
@@ -3519,6 +3500,11 @@ class DBInterface(object):
                 if not self._filters_is_present(filters, 'name',
                                                 port_obj['name']):
                     continue
+                if 'fixed_ips' in filters and \
+                    not self._port_fixed_ips_is_present(filters['fixed_ips'],
+                                                        port_obj['fixed_ips']):
+                    continue
+
                 ret_list.append(port_obj)
             return ret_list
 
@@ -3632,12 +3618,7 @@ class DBInterface(object):
         # collect phase
         all_sgs = []  # all sgs in all projects
         if context and not context['is_admin']:
-            for i in range(10):
-                project_sgs = self._security_group_list_project(str(uuid.UUID(context['tenant'])))
-                if project_sgs:
-                    break
-                gevent.sleep(3)
-
+            project_sgs = self._security_group_list_project(str(uuid.UUID(context['tenant'])))
             all_sgs.append(project_sgs)
         else: # admin context
             if filters and 'tenant_id' in filters:
