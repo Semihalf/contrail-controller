@@ -41,7 +41,7 @@
 #include <controller/controller_vrf_export.h>
 #include <services/services_init.h>
 #include <ksync/ksync_init.h>
-#include <ksync/vnswif_listener.h>
+#include "vnswif_listener.h"
 #include <ifmap/ifmap_agent_parser.h>
 #include <ifmap/ifmap_agent_table.h>
 #include <init/agent_param.h>
@@ -114,6 +114,7 @@ struct PortInfo {
     char mac[32];
     int vn_id;
     int vm_id;
+    char ip6addr[128];
 };
 
 struct FlowIp {
@@ -143,9 +144,9 @@ public:
 };
 
 struct IpamInfo {
-    char ip_prefix[32];
+    char ip_prefix[128];
     int plen;
-    char gw[32];
+    char gw[128];
     bool dhcp_enable;
 };
 
