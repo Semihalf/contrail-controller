@@ -16,10 +16,7 @@
 using namespace std;
 
 const MacAddress MacAddress::kZeroMac;
-//const struct ether_addr MacAddress::kZeroMac = { { 0x00 } };
 const MacAddress MacAddress::kBroadcastMac(0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF);
-//const struct ether_addr MacAddress::kBroadcastMac = { { 0xFF, 0xFF, 0xFF,
-                                                        //0xFF, 0xFF, 0xFF } };
 
 MacAddress::MacAddress() {
     addr_ = kZeroMac;
