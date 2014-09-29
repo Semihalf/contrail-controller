@@ -1111,7 +1111,7 @@ bool RouteFindV6(const string &vrf_name, const Ip6Address &addr, int plen) {
         return false;
 
     Inet6UnicastRouteKey key(NULL, vrf_name, addr, plen);
-    Inet6UnicastRouteEntry* route = 
+    Inet6UnicastRouteEntry* route =
         static_cast<Inet6UnicastRouteEntry *>
         (static_cast<Inet6UnicastAgentRouteTable *>(vrf->
             GetInet6UnicastRouteTable())->FindActiveEntry(&key));

@@ -7,6 +7,8 @@
 
 #include "test/test_init.h"
 
+using namespace std;
+
 static const int kProjectUuid = 101;
 
 struct TestLinkLocalService {
@@ -122,6 +124,7 @@ bool RouteFind(const string &vrf_name, const Ip4Address &addr, int plen);
 bool RouteFind(const string &vrf_name, const string &addr, int plen);
 bool L2RouteFind(const string &vrf_name, const MacAddress &mac);
 bool RouteFindV6(const string &vrf_name, const string &addr, int plen);
+bool RouteFindV6(const string &vrf_name, const Ip6Address &addr, int plen);
 bool MCRouteFind(const string &vrf_name, const Ip4Address &saddr,
                  const Ip4Address &daddr);
 bool MCRouteFind(const string &vrf_name, const Ip4Address &addr);

@@ -754,7 +754,7 @@ void DnsHandler::SendDnsResponse() {
         Ip6Hdr(pkt_info_->ip6, dns_resp_size_, IPPROTO_UDP, 64,
                src_ip.to_bytes().data(), dest_ip.to_bytes().data());
         dns_resp_size_ += sizeof(ip6_hdr);
-        EthHdr(agent()->vhost_interface()->mac().ether_addr_octet, dest_mac,
+        EthHdr(agent()->vhost_interface()->mac(), dest_mac,
                ETHERTYPE_IPV6);
     }
     dns_resp_size_ += sizeof(ethhdr);
