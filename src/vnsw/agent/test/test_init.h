@@ -6,6 +6,7 @@
 #define vnsw_agent_test_init_h
 
 #include <sys/socket.h>
+#include "base/os.h"
 #include <linux/netlink.h>
 #include <net/if.h>
 #include <linux/if_tun.h>

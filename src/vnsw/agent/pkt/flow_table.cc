@@ -29,8 +29,9 @@
 
 #include <arpa/inet.h>
 #include <netinet/in.h>
-#include <netinet/tcp.h>
-#include <netinet/udp.h>
+#include "base/os.h"
+//#include <netinet/tcp.h>
+//#include <netinet/udp.h>
 
 #include "route/route.h"
 #include "init/agent_param.h"

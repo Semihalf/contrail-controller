@@ -4,8 +4,9 @@
 
 #include <arpa/inet.h>
 #include <netinet/in.h>
-#include <netinet/tcp.h>
-#include <netinet/udp.h>
+#include "base/os.h"
+//#include <netinet/tcp.h>
+//#include <netinet/udp.h>
 #include <netinet/ip6.h>
 #include <netinet/icmp6.h>
 
@@ -258,8 +259,8 @@ uint8_t *PktHandler::ParseIpPacket(PktInfo *pkt_info,
         pkt += sizeof(udphdr);
         pkt_info->data = pkt;
 
-        pkt_info->dport = ntohs(pkt_info->transp.udp->dest);
-        pkt_info->sport = ntohs(pkt_info->transp.udp->source);
+        pkt_info->dport = ntohs(pkt_info->transp.udp->uh_dport);
+        pkt_info->sport = ntohs(pkt_info->transp.udp->uh_sport);
         pkt_type = PktType::UDP;
         break;
     }
@@ -269,9 +270,9 @@ uint8_t *PktHandler::ParseIpPacket(PktInfo *pkt_info,
         pkt += sizeof(tcphdr);
         pkt_info->data = pkt;
 
-        pkt_info->dport = ntohs(pkt_info->transp.tcp->dest);
-        pkt_info->sport = ntohs(pkt_info->transp.tcp->source);
-        pkt_info->tcp_ack = pkt_info->transp.tcp->ack;
+        pkt_info->dport = ntohs(pkt_info->transp.tcp->th_dport);
+        pkt_info->sport = ntohs(pkt_info->transp.tcp->th_sport);
+        pkt_info->tcp_ack = pkt_info->transp.tcp->th_ack;
         pkt_type = PktType::TCP;
         break;
     }

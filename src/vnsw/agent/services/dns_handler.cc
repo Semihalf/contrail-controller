@@ -740,7 +740,7 @@ void DnsHandler::SendDnsResponse() {
         in_addr_t src_ip = pkt_info_->ip->daddr;
         in_addr_t dest_ip = pkt_info_->ip->saddr;
         UdpHdr(dns_resp_size_, src_ip, DNS_SERVER_PORT,
-               dest_ip, ntohs(pkt_info_->transp.udp->source));
+               dest_ip, ntohs(pkt_info_->transp.udp->uh_sport));
         dns_resp_size_ += sizeof(iphdr);
         IpHdr(dns_resp_size_, src_ip, dest_ip, IPPROTO_UDP);
         EthHdr(agent()->vhost_interface()->mac().ether_addr_octet, dest_mac,
@@ -750,7 +750,7 @@ void DnsHandler::SendDnsResponse() {
         Ip6Address src_ip = pkt_info_->ip_daddr.to_v6();
         Ip6Address dest_ip = pkt_info_->ip_saddr.to_v6();
         UdpHdr(dns_resp_size_, src_ip.to_bytes().data(), DNS_SERVER_PORT,
-               dest_ip.to_bytes().data(), ntohs(pkt_info_->transp.udp->source),
+               dest_ip.to_bytes().data(), ntohs(pkt_info_->transp.udp->uh_sport),
                IPPROTO_UDP);
         Ip6Hdr(pkt_info_->ip6, dns_resp_size_, IPPROTO_UDP, 64,
                src_ip.to_bytes().data(), dest_ip.to_bytes().data());

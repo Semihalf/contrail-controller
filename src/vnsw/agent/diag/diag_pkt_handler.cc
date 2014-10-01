@@ -112,9 +112,9 @@ void DiagPktHandler::SwapL4() {
 
     } else if(pkt_info_->ip_proto == IPPROTO_UDP) {
         udphdr *udp = pkt_info_->transp.udp;
-        UdpHdr(ntohs(udp->len), pkt_info_->ip_daddr.to_v4().to_ulong(),
-               ntohs(udp->dest), pkt_info_->ip_saddr.to_v4().to_ulong(),
-               ntohs(udp->source));
+        UdpHdr(ntohs(udp->uh_ulen), pkt_info_->ip_daddr.to_v4().to_ulong(),
+               ntohs(udp->uh_dport), pkt_info_->ip_saddr.to_v4().to_ulong(),
+               ntohs(udp->uh_sport));
     }
 }
 

@@ -5,7 +5,8 @@
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <netinet/ip.h>
-#include <netinet/tcp.h>
+//#include <netinet/tcp.h>
+#include "base/os.h"
 #include <boost/uuid/string_generator.hpp>
 
 #include <io/event_manager.h>
