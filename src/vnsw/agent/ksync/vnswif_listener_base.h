@@ -60,8 +60,8 @@ public:
             gw_(0), flags_(flags), protocol_(0) {
         }
 
-        // Constructor for route add/delete/change notification 
-        Event(Type event, const Ip4Address &addr, uint8_t plen, 
+        // Constructor for route add/delete/change notification
+        Event(Type event, const Ip4Address &addr, uint8_t plen,
               const std::string &interface, const Ip4Address &gw,
               uint8_t protocol, uint32_t flags) :
             event_(event), interface_(interface), addr_(addr), plen_(plen),
@@ -78,7 +78,7 @@ public:
     };
 
     struct HostInterfaceEntry {
-        HostInterfaceEntry() : 
+        HostInterfaceEntry() :
             addr_(0), plen_(0), link_up_(false), oper_seen_(false),
             host_seen_(false), oper_id_(Interface::kInvalidIndex) {
         }
@@ -106,7 +106,7 @@ protected:
 public:
     VnswInterfaceListenerBase(Agent *agent);
     virtual ~VnswInterfaceListenerBase();
-    
+
     void Init();
     void Shutdown();
     bool IsValidLinkLocalAddress(const Ip4Address &addr) const;
@@ -118,6 +118,9 @@ public:
     HostInterfaceEntry *GetHostInterfaceEntry(const std::string &name);
 
     uint32_t vhost_update_count() const { return vhost_update_count_; }
+
+    uint32_t ll_add_count() const { return ll_add_count_; }
+    uint32_t ll_del_count() const { return ll_del_count_; }
 
 protected:
     friend class TestVnswIf;
@@ -166,11 +169,6 @@ protected:
     uint32_t vhost_update_count_;
     uint32_t ll_add_count_;
     uint32_t ll_del_count_;
-
-public:
-    uint32_t ll_add_count() const { return ll_add_count_; }
-    uint32_t ll_del_count() const { return ll_del_count_; }
-
 
     DISALLOW_COPY_AND_ASSIGN(VnswInterfaceListenerBase);
 };

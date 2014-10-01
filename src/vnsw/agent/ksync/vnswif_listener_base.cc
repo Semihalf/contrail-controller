@@ -8,6 +8,7 @@
 #include <base/util.h>
 #include <cmn/agent_cmn.h>
 #include <init/agent_param.h>
+#include <init/agent_init.h>
 #include <cfg/cfg_init.h>
 #include <oper/route_common.h>
 #include <oper/mirror_table.h>
@@ -22,7 +23,7 @@ VnswInterfaceListenerBase::VnswInterfaceListenerBase(Agent *agent) :
     sock_(*(agent->event_manager())->io_service()),
     intf_listener_id_(DBTableBase::kInvalidId), seqno_(0),
     vhost_intf_up_(false), ll_addr_table_(), revent_queue_(NULL),
-    vhost_update_count_(0), ll_add_count_(0), ll_del_count_(0) { 
+    vhost_update_count_(0), ll_add_count_(0), ll_del_count_(0) {
 }
 
 VnswInterfaceListenerBase::~VnswInterfaceListenerBase() {
@@ -47,7 +48,7 @@ void VnswInterfaceListenerBase::Init() {
     /* Allocate Route Event Workqueue */
     revent_queue_ = new WorkQueue<Event *>
                     (TaskScheduler::GetInstance()->GetTaskId("db::DBTable"), 0,
-                     boost::bind(&VnswInterfaceListenerBase::ProcessEvent, 
+                     boost::bind(&VnswInterfaceListenerBase::ProcessEvent,
                      this, _1));
 
     if (agent_->test_mode())
@@ -65,14 +66,9 @@ void VnswInterfaceListenerBase::Init() {
     RegisterAsyncReadHandler();
 }
 
-void VnswInterfaceListenerBase::Shutdown() { 
+void VnswInterfaceListenerBase::Shutdown() {
     // Expect only one entry for vhost0 during shutdown
-    assert(host_interface_table_.size() <= 1);
-    for (HostInterfaceTable::iterator it = host_interface_table_.begin();
-         it != host_interface_table_.end(); it++) {
-        it->second = NULL;
-    }
-    host_interface_table_.clear();
+    assert(host_interface_table_.size() == 0);
     if (agent_->test_mode()) {
         return;
     }
@@ -184,7 +180,7 @@ void VnswInterfaceListenerBase::Activate(const std::string &name, uint32_t id) {
     InterfaceResync(agent_, id, true);
 }
 
-void VnswInterfaceListenerBase::DeActivate(const std::string &name, uint32_t id){
+void VnswInterfaceListenerBase::DeActivate(const std::string &name, uint32_t id) {
     InterfaceResync(agent_, id, false);
 }
 
@@ -257,9 +253,9 @@ void VnswInterfaceListenerBase::HandleInterfaceEvent(const Event *event) {
         ResetSeen(event->interface_, false);
     } else {
         SetSeen(event->interface_, false);
-        bool up = 
+        bool up =
             (event->flags_ & (IFF_UP | IFF_RUNNING)) == (IFF_UP | IFF_RUNNING);
-                                    
+
 
         SetLinkState(event->interface_, up);
 
@@ -273,7 +269,7 @@ void VnswInterfaceListenerBase::HandleInterfaceEvent(const Event *event) {
     }
 }
 
-bool VnswInterfaceListenerBase::IsValidLinkLocalAddress(const Ip4Address &addr) 
+bool VnswInterfaceListenerBase::IsValidLinkLocalAddress(const Ip4Address &addr)
     const {
     return (ll_addr_table_.find(addr) != ll_addr_table_.end());
 }
@@ -312,20 +308,20 @@ void VnswInterfaceListenerBase::HandleAddressEvent(const Event *event) {
 
     // We only handle IP Address add for VHOST interface
     // We dont yet handle delete of IP address or change of IP address
-    if (event->event_ != Event::ADD_ADDR || 
+    if (event->event_ != Event::ADD_ADDR ||
         event->interface_ != agent_->vhost_interface_name() ||
         event->addr_.to_ulong() == 0) {
         return;
     }
 
     // Check if vhost already has address. We cant handle IP address change yet
-    const InetInterface *vhost = 
+    const InetInterface *vhost =
         static_cast<const InetInterface *>(agent_->vhost_interface());
     if (vhost->ip_addr().to_ulong() != 0) {
         return;
     }
 
-    LOG(DEBUG, "Setting IP address for " << event->interface_ << " to " 
+    LOG(DEBUG, "Setting IP address for " << event->interface_ << " to "
         << event->addr_.to_string() << "/" << (unsigned short)event->plen_);
     vhost_update_count_++;
 
@@ -343,12 +339,12 @@ void VnswInterfaceListenerBase::HandleAddressEvent(const Event *event) {
                              agent_->vhost_default_gateway(),
                              Agent::NullString(), agent_->fabric_vrf_name());
     if (dep_init_reqd)
-        RouterIdDepInit(agent_);
+        agent_->agent_init()->ConnectToControllerBase();
 }
 
 void
 VnswInterfaceListenerBase::UpdateLinkLocalRouteAndCount(
-    const Ip4Address &addr, bool del_rt) 
+    const Ip4Address &addr, bool del_rt)
 {
     if (del_rt)
         ll_del_count_++;
@@ -365,12 +361,12 @@ void VnswInterfaceListenerBase::LinkLocalRouteFromLinkLocalEvent(Event *event) {
     if (event->event_ == Event::DEL_LL_ROUTE) {
         ll_addr_table_.erase(event->addr_);
         UpdateLinkLocalRouteAndCount(event->addr_, true); } else {
-        ll_addr_table_.insert(event->addr_);
+            ll_addr_table_.insert(event->addr_);
         UpdateLinkLocalRouteAndCount(event->addr_, false);
     }
 }
 
-// For link-local routes added by agent, we treat agent as master. So, force 
+// For link-local routes added by agent, we treat agent as master. So, force
 // add the routes again if they are deleted from kernel
 void VnswInterfaceListenerBase::LinkLocalRouteFromRouteEvent(Event *event) {
     if (event->protocol_ != kVnswRtmProto)
@@ -388,7 +384,7 @@ void VnswInterfaceListenerBase::LinkLocalRouteFromRouteEvent(Event *event) {
     }
 
     if ((event->event_ == Event::DEL_ROUTE) ||
-        (event->event_ == Event::ADD_ROUTE 
+        (event->event_ == Event::ADD_ROUTE
          && event->interface_ != agent_->vhost_interface_name())) {
         UpdateLinkLocalRouteAndCount(event->addr_, false);
     }
@@ -405,7 +401,7 @@ void VnswInterfaceListenerBase::DelLinkLocalRoutes() {
 }
 
 /****************************************************************************
- * Event handler 
+ * Event handler
  ****************************************************************************/
 static string EventTypeToString(uint32_t type) {
     const char *name[] = {
@@ -428,7 +424,7 @@ static string EventTypeToString(uint32_t type) {
 }
 
 bool VnswInterfaceListenerBase::ProcessEvent(Event *event) {
-    LOG(DEBUG, "VnswInterfaceListenerBase Event " << EventTypeToString(event->event_) 
+    LOG(DEBUG, "VnswInterfaceListenerBase Event " << EventTypeToString(event->event_)
         << " Interface " << event->interface_ << " Addr "
         << event->addr_.to_string() << " prefixlen " << (uint32_t)event->plen_
         << " Gateway " << event->gw_.to_string() << " Flags " << event->flags_

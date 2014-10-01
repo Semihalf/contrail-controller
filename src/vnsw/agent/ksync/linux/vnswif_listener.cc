@@ -4,6 +4,7 @@
 
 #include <assert.h>
 
+#include <bits/sockaddr.h>
 #include <linux/netlink.h>
 #include <linux/rtnetlink.h>
 #include <ifaddrs.h>
@@ -19,20 +20,12 @@
 #include <ksync/interface_ksync.h>
 #include "vnswif_listener.h"
 
-extern void RouterIdDepInit(Agent *agent);
-
 VnswInterfaceListenerLinux::VnswInterfaceListenerLinux(Agent *agent) :
     VnswInterfaceListenerBase(agent) {
 }
 
 VnswInterfaceListenerLinux::~VnswInterfaceListenerLinux() {
-    if (read_buf_){
-        delete [] read_buf_;
-        read_buf_ = NULL;
-    }
-    delete revent_queue_;
 }
-
 int VnswInterfaceListenerLinux::CreateSocket() {
     int s = socket(PF_NETLINK, SOCK_DGRAM, NETLINK_ROUTE);
 
@@ -56,8 +49,7 @@ int VnswInterfaceListenerLinux::CreateSocket() {
     return s;
 }
 
-void VnswInterfaceListenerLinux::SyncCurrentState()
-{
+void VnswInterfaceListenerLinux::SyncCurrentState() {
     /* Fetch Links from kernel syncronously, to allow dump request for routes
      * to go through fine
      */
@@ -72,8 +64,7 @@ void VnswInterfaceListenerLinux::SyncCurrentState()
 
 // Initiate netlink scan based on type and flags
 void
-VnswInterfaceListenerLinux::InitNetlinkScan(uint32_t type, uint32_t seqno)
-{
+VnswInterfaceListenerLinux::InitNetlinkScan(uint32_t type, uint32_t seqno) {
     struct nlmsghdr *nlh;
     const uint32_t buf_size = VnswInterfaceListenerLinux::kMaxBufferSize;
 
@@ -121,10 +112,8 @@ void VnswInterfaceListenerLinux::RegisterAsyncReadHandler() {
 }
 
 
-void
-VnswInterfaceListenerLinux::ReadHandler(
-    const boost::system::error_code &error, std::size_t len)
-{
+void VnswInterfaceListenerLinux::ReadHandler(
+    const boost::system::error_code &error, std::size_t len) {
     struct nlmsghdr *nlh;
 
     if (error == 0) {
@@ -230,8 +219,7 @@ string VnswInterfaceListenerLinux::NetlinkTypeToString(uint32_t type) {
 }
 
 VnswInterfaceListenerBase::Event *
-VnswInterfaceListenerLinux::HandleNetlinkRouteMsg(struct nlmsghdr *nlh)
-{
+VnswInterfaceListenerLinux::HandleNetlinkRouteMsg(struct nlmsghdr *nlh) {
     struct rtmsg *rtm = (struct rtmsg *) NLMSG_DATA (nlh);
 
     if (rtm->rtm_family != AF_INET || rtm->rtm_table != RT_TABLE_MAIN
@@ -291,7 +279,7 @@ VnswInterfaceListenerLinux::HandleNetlinkRouteMsg(struct nlmsghdr *nlh)
 }
 
 VnswInterfaceListenerBase::Event *
-VnswInterfaceListenerLinux::HandleNetlinkIntfMsg(struct nlmsghdr *nlh){
+VnswInterfaceListenerLinux::HandleNetlinkIntfMsg(struct nlmsghdr *nlh) {
     /* Get the atttibutes len */
     int rtl = RTM_PAYLOAD(nlh);
 
@@ -321,7 +309,7 @@ VnswInterfaceListenerLinux::HandleNetlinkIntfMsg(struct nlmsghdr *nlh){
 }
 
 VnswInterfaceListenerBase::Event *
-VnswInterfaceListenerLinux::HandleNetlinkAddrMsg(struct nlmsghdr *nlh){
+VnswInterfaceListenerLinux::HandleNetlinkAddrMsg(struct nlmsghdr *nlh) {
     struct ifaddrmsg *ifa = (struct ifaddrmsg *) NLMSG_DATA (nlh);
 
     // Get interface name from os-index
@@ -352,14 +340,12 @@ VnswInterfaceListenerLinux::HandleNetlinkAddrMsg(struct nlmsghdr *nlh){
     } else {
         type = Event::ADD_ADDR;
     }
-    return new Event(type, name, Ip4Address(ipaddr),
-                                            ifa->ifa_prefixlen, ifa->ifa_flags);
+    return new Event(type, name, Ip4Address(ipaddr), ifa->ifa_prefixlen,
+                     ifa->ifa_flags);
 }
 
-int
-VnswInterfaceListenerLinux::NlMsgDecode(struct nlmsghdr *nl,
-    std::size_t len, uint32_t seq_no)
-{
+int VnswInterfaceListenerLinux::NlMsgDecode(struct nlmsghdr *nl,
+                                            std::size_t len, uint32_t seq_no) {
     Event *event = NULL;
     struct nlmsghdr *nlh = nl;
     for (; (NLMSG_OK(nlh, len)); nlh = NLMSG_NEXT(nlh, len)) {
@@ -392,6 +378,5 @@ VnswInterfaceListenerLinux::NlMsgDecode(struct nlmsghdr *nl,
             revent_queue_->Enqueue(event);
         }
     }
-
     return 0;
 }

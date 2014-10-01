@@ -45,8 +45,7 @@ struct rt_msghdr_common {
 #define RTM_ADDR_MAX ((int)(sizeof(struct rt_addresses)/ \
                       sizeof(struct sockaddr *)))
 
-int VnswInterfaceListenerFreeBSD::NetmaskLen(int mask)
-{
+int VnswInterfaceListenerFreeBSD::NetmaskLen(int mask) {
     if (mask == 0)
         return 0;
 
@@ -54,10 +53,9 @@ int VnswInterfaceListenerFreeBSD::NetmaskLen(int mask)
 }
 
 unsigned int
-VnswInterfaceListenerFreeBSD::RTMGetAddresses(
-    const char *in, size_t *size, unsigned int af,
-    struct rt_addresses *rta)
-{
+VnswInterfaceListenerFreeBSD::RTMGetAddresses(const char *in, size_t *size,
+    unsigned int af, struct rt_addresses *rta) {
+
     struct sockaddr **out = (struct sockaddr **)rta;
     int i = 0;
     size_t wsize = *size;
@@ -89,8 +87,7 @@ VnswInterfaceListenerFreeBSD::RTMGetAddresses(
 
 
 const std::string
-VnswInterfaceListenerFreeBSD::RTMTypeToString(int type)
-{
+VnswInterfaceListenerFreeBSD::RTMTypeToString(int type) {
     static const char *types[] = {
         "RTM_ADD",
         "RTM_DELETE",
@@ -122,8 +119,8 @@ VnswInterfaceListenerFreeBSD::RTMTypeToString(int type)
 
 VnswInterfaceListener::Event *
 VnswInterfaceListenerFreeBSD::RTMProcess(const struct rt_msghdr *rtm,
-    size_t size)
-{
+    size_t size) {
+
     struct rt_addresses rta = { 0 };
     size_t s = size - sizeof(*rtm);
     char name[IFNAMSIZ] = { 0 };
@@ -156,8 +153,7 @@ VnswInterfaceListenerFreeBSD::RTMProcess(const struct rt_msghdr *rtm,
         return NULL;
     }
 
-    if (rtm->rtm_addrs & RTA_NETMASK)
-    {
+    if (rtm->rtm_addrs & RTA_NETMASK) {
         mask_len = NetmaskLen(
             ntohl(((struct sockaddr_in *)rta.netmask)->sin_addr.s_addr)
         );
@@ -166,8 +162,7 @@ VnswInterfaceListenerFreeBSD::RTMProcess(const struct rt_msghdr *rtm,
     /* Only routes to host are supported, which means routes that
        either have RTF_HOST flags or netmask narrowed to one host
        (unicast, all 1s) */
-    if (!(rtm->rtm_flags & RTF_HOST || mask_len == 32))
-    {
+    if (!(rtm->rtm_flags & RTF_HOST || mask_len == 32)) {
         LOG(DEBUG, __PRETTY_FUNCTION__ << ": "
             << RTMTypeToString(rtm->rtm_type)
             << " misses requirements for processing");
@@ -211,8 +206,8 @@ VnswInterfaceListenerFreeBSD::RTMProcess(const struct rt_msghdr *rtm,
 
 VnswInterfaceListener::Event *
 VnswInterfaceListenerFreeBSD::RTMProcess(const struct ifa_msghdr *rtm,
-    size_t size)
-{
+                                         size_t size) {
+
     struct rt_addresses rta = { 0 };
     size_t s = size;
     char name[IFNAMSIZ] = { 0 };
@@ -260,9 +255,9 @@ VnswInterfaceListenerFreeBSD::RTMProcess(const struct ifa_msghdr *rtm,
 }
 
 VnswInterfaceListener::Event *
-VnswInterfaceListenerFreeBSD::RTMProcess(
-    const struct if_msghdr *rtm, size_t size)
-{
+VnswInterfaceListenerFreeBSD::RTMProcess(const struct if_msghdr *rtm,
+                                         size_t size) {
+
     struct rt_addresses rta = { 0 };
     size_t s = size;
     char name[IFNAMSIZ] = { 0 };
@@ -302,9 +297,8 @@ VnswInterfaceListenerFreeBSD::RTMProcess(
     return new Event(type, name, rtm->ifm_flags);
 }
 
-int VnswInterfaceListenerFreeBSD::RTMDecode(
-    const struct rt_msghdr_common *rtm, size_t len, uint32_t seq_no)
-{
+int VnswInterfaceListenerFreeBSD::RTMDecode(const struct rt_msghdr_common *rtm,
+                                            size_t len, uint32_t seq_no) {
     Event *event = NULL;
     /* Segfault protection */
     if (len < sizeof(*rtm)) {
@@ -337,8 +331,7 @@ int VnswInterfaceListenerFreeBSD::RTMDecode(
 }
 
 int VnswInterfaceListenerFreeBSD::RTMProcessBuffer(const void *buffer,
-    size_t size)
-{
+                                                   size_t size) {
     struct rt_msghdr_common *p = (struct rt_msghdr_common *)buffer;
     int ret = 0;
 
@@ -361,8 +354,7 @@ int VnswInterfaceListenerFreeBSD::RTMProcessBuffer(const void *buffer,
     return ret;
 }
 
-int VnswInterfaceListenerFreeBSD::Getfib()
-{
+int VnswInterfaceListenerFreeBSD::Getfib() {
     int fibnum;
     size_t size = sizeof(fibnum);
 
@@ -383,8 +375,7 @@ int VnswInterfaceListenerFreeBSD::Getfib()
     return -2;
 }
 
-int VnswInterfaceListenerFreeBSD::CreateSocket()
-{
+int VnswInterfaceListenerFreeBSD::CreateSocket() {
     /* Get routing table */
     int fib = Getfib();
     int s = -1;
@@ -418,8 +409,7 @@ int VnswInterfaceListenerFreeBSD::CreateSocket()
     return s;
 }
 
-void VnswInterfaceListenerFreeBSD::SyncCurrentState()
-{
+void VnswInterfaceListenerFreeBSD::SyncCurrentState() {
     /* Get current system settings */
     RTInitIfAndAddr();
 
@@ -427,8 +417,7 @@ void VnswInterfaceListenerFreeBSD::SyncCurrentState()
 }
 
 void *VnswInterfaceListenerFreeBSD::SysctlDump(int *mib, int mib_len,
-    size_t *ret_len, int *ret_code)
-{
+                                               size_t *ret_len, int *ret_code) {
     size_t size = 0;
     void *dump_buf = NULL;
     int ret = 0;
@@ -458,8 +447,7 @@ exit_here:
     return dump_buf;
 }
 
-int VnswInterfaceListenerFreeBSD::RTInitRoutes(int fib)
-{
+int VnswInterfaceListenerFreeBSD::RTInitRoutes(int fib) {
     int mib[] = { CTL_NET, PF_ROUTE, 0, AF_INET, NET_RT_DUMP, 0, fib};
     int mib_len = sizeof(mib)/sizeof(int);
     size_t size;
@@ -483,8 +471,7 @@ int VnswInterfaceListenerFreeBSD::RTInitRoutes(int fib)
     return ret;
 }
 
-int VnswInterfaceListenerFreeBSD::RTInitIfAndAddr()
-{
+int VnswInterfaceListenerFreeBSD::RTInitIfAndAddr() {
     int mib[] = { CTL_NET, PF_ROUTE, 0, AF_INET, NET_RT_IFLIST, 0};
     int mib_len = sizeof(mib)/sizeof(int);
     size_t size;

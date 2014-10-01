@@ -108,14 +108,15 @@ uint16_t DiagPktHandler::TcpCsum(in_addr_t src, in_addr_t dest, uint16_t len,
 void DiagPktHandler::SwapL4() {
     if (pkt_info_->ip_proto == IPPROTO_TCP) {
         tcphdr *tcp = pkt_info_->transp.tcp;
-        TcpHdr(htonl(pkt_info_->ip_daddr), ntohs(tcp->th_dport),
-               htonl(pkt_info_->ip_saddr), ntohs(tcp->th_sport),
-               false, ntohs(tcp->th_ack),
+        TcpHdr(htonl(pkt_info_->ip_daddr.to_v4().to_ulong()), ntohs(tcp->th_dport),
+               htonl(pkt_info_->ip_saddr.to_v4().to_ulong()),
+               ntohs(tcp->th_sport), false, ntohs(tcp->th_ack),
                ntohs(pkt_info_->ip->ip_len) - sizeof(struct ip));
     } else if(pkt_info_->ip_proto == IPPROTO_UDP) {
         udphdr *udp = pkt_info_->transp.udp;
-        UdpHdr(ntohs(udp->uh_ulen), pkt_info_->ip_daddr, ntohs(udp->uh_dport),
-               pkt_info_->ip_saddr, ntohs(udp->uh_sport));
+        UdpHdr(ntohs(udp->uh_ulen), pkt_info_->ip_daddr.to_v4().to_ulong(),
+               ntohs(udp->uh_dport), pkt_info_->ip_saddr.to_v4().to_ulong(),
+               ntohs(udp->uh_sport));
     }
 }
 

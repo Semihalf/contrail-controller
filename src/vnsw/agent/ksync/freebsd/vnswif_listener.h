@@ -11,16 +11,7 @@
 #include <boost/asio.hpp>
 #include "ksync/vnswif_listener_base.h"
 
-/****************************************************************************
- * Module responsible to keep host-os and agent in-sync
- * - Adds route to host-os for link-local addresses allocated for a vm-interface
- * - If VHOST interface is not configured with IP address, will read IP address
- *   from host-os and update agent
- * - Notifies creation of xapi* interface
- ****************************************************************************/
-
-class VnswInterfaceListenerFreeBSD : public VnswInterfaceListenerBase
-{
+class VnswInterfaceListenerFreeBSD : public VnswInterfaceListenerBase {
 public:
     VnswInterfaceListenerFreeBSD(Agent *agent);
     virtual ~VnswInterfaceListenerFreeBSD();

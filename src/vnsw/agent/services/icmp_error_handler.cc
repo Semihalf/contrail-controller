@@ -33,7 +33,8 @@ bool IcmpErrorHandler::Run() {
 
     VmInterface *vm_itf = dynamic_cast<VmInterface *>
         (agent()->interface_table()->FindInterface(GetInterfaceIndex()));
-    if (vm_itf == NULL || vm_itf->ipv4_forwarding() == false || vm_itf->vn() == NULL) {
+    if (vm_itf == NULL || vm_itf->layer3_forwarding() == false ||
+        vm_itf->vn() == NULL) {
         proto_->increment_interface_errors();
         return true;
     }
@@ -53,18 +54,18 @@ bool IcmpErrorHandler::SendIcmpError(VmInterface *intf) {
     FlowKey key;
     if (pkt_info_->agent_hdr.flow_index == (uint32_t)-1) {
         // flow index is -1 for 255.255.255.255
-        if (pkt_info_->ip_daddr != 0xFFFFFFFF) {
+        if (pkt_info_->ip_daddr.to_v4().to_ulong() != 0xFFFFFFFF) {
             proto_->increment_invalid_flow_index();
             return true;
         }
-        src_ip = pkt_info_->ip_saddr;
+        src_ip = pkt_info_->ip_saddr.to_v4().to_ulong();
     } else {
         if (proto_->FlowIndexToKey(pkt_info_->agent_hdr.flow_index, &key)
             == false) {
             proto_->increment_invalid_flow_index();
             return true;
         }
-        src_ip = key.src.ipv4;
+        src_ip = key.src_addr.to_v4().to_ulong();
     }
 
     // Get IPAM to find default gateway
@@ -87,7 +88,8 @@ bool IcmpErrorHandler::SendIcmpError(VmInterface *intf) {
                   intf->vlan_id());
 
     uint16_t ip_len = sizeof(struct ip) + sizeof(struct icmp) + data_len;
-    len += IpHdr(ptr + len, buf_len - len, ip_len, ipam->default_gw.to_ulong(),
+    len += IpHdr(ptr + len, buf_len - len, ip_len,
+            ipam->default_gw.to_v4().to_ulong(),
             htonl(src_ip), IPPROTO_ICMP);
 
     char *icmp = ptr + len;
@@ -100,8 +102,8 @@ bool IcmpErrorHandler::SendIcmpError(VmInterface *intf) {
         struct ip *ip = (struct ip *)data;
         uint16_t ip_hlen = ip->ip_hl * 4;
 
-        ip->ip_src.s_addr = htonl(key.src.ipv4);
-        ip->ip_dst.s_addr = htonl(key.dst.ipv4);
+        ip->ip_src.s_addr = htonl(key.src_addr.to_v4().to_ulong());
+        ip->ip_dst.s_addr = htonl(key.dst_addr.to_v4().to_ulong());
         ip->ip_sum = Csum((uint16_t *)data, ip_hlen, 0);
         if (ip->ip_p == IPPROTO_UDP) {
             udphdr *udp = (udphdr *)(data + ip_hlen);

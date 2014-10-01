@@ -11,20 +11,10 @@
 #include <boost/asio.hpp>
 #include "ksync/vnswif_listener_base.h"
 
-/****************************************************************************
- * Module responsible to keep host-os and agent in-sync
- * - Adds route to host-os for link-local addresses allocated for a vm-interface
- * - If VHOST interface is not configured with IP address, will read IP address
- *   from host-os and update agent
- * - Notifies creation of xapi* interface
- ****************************************************************************/
-
-#define XAPI_INTF_PREFIX "xapi"
-
 namespace local = boost::asio::local;
 
-class VnswInterfaceListenerLinux : public VnswInterfaceListenerBase
-{
+class VnswInterfaceListenerLinux : public VnswInterfaceListenerBase {
+
 public:
     VnswInterfaceListenerLinux(Agent *agent);
     virtual ~VnswInterfaceListenerLinux();
