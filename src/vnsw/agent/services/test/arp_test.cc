@@ -62,26 +62,26 @@ public:
     }
 
     void SendArpReq(short ifindex, short vrf, uint32_t sip, uint32_t tip) {
-        int len = 2 * sizeof(ethhdr) + sizeof(agent_hdr) +
+        int len = 2 * sizeof(struct ether_header) + sizeof(agent_hdr) +
                   sizeof(ether_arp);
         uint8_t *ptr(new uint8_t[len]);
         uint8_t *buf  = ptr;
         memset(buf, 0, len);
 
-        ethhdr *eth = (ethhdr *)buf;
-        eth->h_dest[5] = 1;
-        eth->h_source[5] = 2;
-        eth->h_proto = htons(0x800);
+        struct ether_header *eth = (struct ether_header *)buf;
+        eth->ether_dhost[5] = 1;
+        eth->ether_shost[5] = 2;
+        eth->ether_type = htons(0x800);
 
         agent_hdr *agent = (agent_hdr *)(eth + 1);
         agent->hdr_ifindex = htons(ifindex);
         agent->hdr_vrf = htons(vrf);
         agent->hdr_cmd = htons(AgentHdr::TRAP_RESOLVE);
 
-        eth = (ethhdr *) (agent + 1);
-        dest_mac.ToArray(eth->h_dest, sizeof(eth->h_dest));
-        src_mac.ToArray(eth->h_source, sizeof(eth->h_source));
-        eth->h_proto = htons(0x806);
+        eth = (struct ether_header *) (agent + 1);
+        dest_mac.ToArray(eth->ether_dhost, sizeof(eth->ether_dhost));
+        src_mac.ToArray(eth->ether_shost, sizeof(eth->ether_shost));
+        eth->ether_type = htons(0x806);
 
         ether_arp *arp = (ether_arp *) (eth + 1);
         arp->ea_hdr.ar_hrd = htons(ARPHRD_ETHER);
@@ -102,25 +102,25 @@ public:
     }
 
     void SendArpReply(short ifindex, short vrf, uint32_t sip, uint32_t tip) {
-        int len = 2 * sizeof(ethhdr) + sizeof(agent_hdr) + sizeof(ether_arp);
+        int len = 2 * sizeof(struct ether_header) + sizeof(agent_hdr) + sizeof(ether_arp);
         uint8_t *ptr(new uint8_t[len]);
         uint8_t *buf  = ptr;
         memset(buf, 0, len);
 
-        ethhdr *eth = (ethhdr *)buf;
-        eth->h_dest[5] = 2;
-        eth->h_source[5] = 1;
-        eth->h_proto = htons(0x800);
+        struct ether_header *eth = (struct ether_header *)buf;
+        eth->ether_dhost[5] = 2;
+        eth->ether_shost[5] = 1;
+        eth->ether_type = htons(0x800);
 
         agent_hdr *agent = (agent_hdr *)(eth + 1);
         agent->hdr_ifindex = htons(ifindex);
         agent->hdr_vrf = htons(vrf);
         agent->hdr_cmd = htons(AgentHdr::TRAP_ARP);
 
-        eth = (ethhdr *) (agent + 1);
-        src_mac.ToArray(eth->h_dest, sizeof(eth->h_dest));
-        dest_mac.ToArray(eth->h_source, sizeof(eth->h_source));
-        eth->h_proto = htons(0x806);
+        eth = (struct ether_header *) (agent + 1);
+        src_mac.ToArray(eth->ether_dhost, sizeof(eth->ether_dhost));
+        dest_mac.ToArray(eth->ether_shost, sizeof(eth->ether_shost));
+        eth->ether_type = htons(0x806);
 
         ether_arp *arp = (ether_arp *) (eth + 1);
         arp->ea_hdr.ar_hrd = htons(ARPHRD_ETHER);
@@ -184,12 +184,12 @@ public:
     bool FindArpRoute(uint32_t addr, const string &vrf_name) {
         Agent *agent = Agent::GetInstance();
         Ip4Address ip(addr);
-        Inet4UnicastRouteKey rt_key(agent->local_peer(), vrf_name, ip, 32);
+        InetUnicastRouteKey rt_key(agent->local_peer(), vrf_name, ip, 32);
         VrfEntry *vrf = Agent::GetInstance()->vrf_table()->FindVrfFromName(vrf_name);
         if (!vrf || !(vrf->GetInet4UnicastRouteTable()))
             return false;
-        Inet4UnicastRouteEntry *rt = static_cast<Inet4UnicastRouteEntry *>
-            (static_cast<Inet4UnicastAgentRouteTable *>(vrf->
+        InetUnicastRouteEntry *rt = static_cast<InetUnicastRouteEntry *>
+            (static_cast<InetUnicastAgentRouteTable *>(vrf->
             GetInet4UnicastRouteTable())->FindActiveEntry(&rt_key));
         if (rt)
             return true;
@@ -199,7 +199,7 @@ public:
 
     void ArpNHUpdate(DBRequest::DBOperation op, in_addr_t addr) {
         Ip4Address ip(addr);
-        Inet4UnicastAgentRouteTable::ArpRoute(op, ip, MacAddress(),
+        InetUnicastAgentRouteTable::ArpRoute(op, ip, MacAddress(),
                           Agent::GetInstance()->fabric_vrf_name(),
                           *Agent::GetInstance()->GetArpProto()->ip_fabric_interface(),
                           false, 32);

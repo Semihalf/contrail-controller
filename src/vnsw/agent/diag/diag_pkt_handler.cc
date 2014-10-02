@@ -20,7 +20,7 @@ void DiagPktHandler::SetReply() {
 }
 
 void DiagPktHandler::SetDiagChkSum() {
-    pkt_info_->ip->check = 0xffff;
+    pkt_info_->ip->ip_sum = 0xffff;
 }
 
 void DiagPktHandler::Reply() {
@@ -37,7 +37,11 @@ bool DiagPktHandler::Run() {
 
     if (!ad) {
         //Ignore if packet doesnt have proper L4 header
-               return true;
+        return true;
+    }
+    if (pkt_info_->ether_type == ETHERTYPE_IPV6) {
+        //Ignore IPv6 packets until it is supported
+        return true;
     }
     if (ntohl(ad->op_) == AgentDiagPktData::DIAG_REQUEST) {
         //Request received swap the packet
@@ -108,7 +112,7 @@ void DiagPktHandler::SwapL4() {
         TcpHdr(htonl(pkt_info_->ip_daddr.to_v4().to_ulong()), ntohs(tcp->dest),
                htonl(pkt_info_->ip_saddr.to_v4().to_ulong()),
                ntohs(tcp->source), false, ntohs(tcp->ack_seq),
-               ntohs(pkt_info_->ip->tot_len) - sizeof(iphdr));
+               ntohs(pkt_info_->ip->ip_len) - sizeof(struct ip));
 
     } else if(pkt_info_->ip_proto == IPPROTO_UDP) {
         udphdr *udp = pkt_info_->transp.udp;
@@ -120,13 +124,13 @@ void DiagPktHandler::SwapL4() {
 
 void DiagPktHandler::SwapIpHdr() {
     //IpHdr expects IP address to be in network format
-    iphdr *ip = pkt_info_->ip;
-    IpHdr(ntohs(ip->tot_len), ip->daddr, ip->saddr, ip->protocol);
+    struct ip *ip = pkt_info_->ip;
+    IpHdr(ntohs(ip->ip_len), ip->ip_dst.s_addr, ip->ip_src.s_addr, ip->ip_p);
 }
 
 void DiagPktHandler::SwapEthHdr() {
-    ethhdr *eth = pkt_info_->eth;
-    EthHdr(MacAddress(eth->h_dest), MacAddress(eth->h_source), ntohs(eth->h_proto));
+    struct ether_header *eth = pkt_info_->eth;
+    EthHdr(MacAddress(eth->ether_dhost), MacAddress(ether_shost), ntohs(eth->ether_type));
 }
 
 void DiagPktHandler::Swap() {

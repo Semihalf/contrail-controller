@@ -82,7 +82,7 @@ void ArpProto::VrfNotify(DBTablePartBase *part, DBEntryBase *entry) {
 
 //Send ARP request on interface in Active-BackUp mode
 //So that preference of route can be incremented if the VM replies to ARP
-void ArpVrfState::SendArpRequestForVm(Inet4UnicastRouteEntry *route) {
+void ArpVrfState::SendArpRequestForVm(InetUnicastRouteEntry *route) {
     for (Route::PathList::const_iterator it = route->GetPathList().begin();
             it != route->GetPathList().end(); it++) {
         const AgentPath *path = static_cast<const AgentPath *>(it.operator->());
@@ -118,7 +118,7 @@ void ArpVrfState::SendArpRequestForVm(Inet4UnicastRouteEntry *route) {
             if (path->subnet_gw_ip().is_v4()) {
                 arp_handler.SendArp(ARPOP_REQUEST, agent->vrrp_mac(),
                         path->subnet_gw_ip().to_v4().to_ulong(),
-                        MacAddress(), route->addr().to_ulong(),
+                        MacAddress, route->addr().to_v4().to_ulong(),
                         intf_id, route->vrf_id());
             }
             arp_proto->IncrementStatsVmArpReq();
@@ -127,7 +127,7 @@ void ArpVrfState::SendArpRequestForVm(Inet4UnicastRouteEntry *route) {
 }
 
 void ArpVrfState::RouteUpdate(DBTablePartBase *part, DBEntryBase *entry) {
-    Inet4UnicastRouteEntry *route = static_cast<Inet4UnicastRouteEntry *>(entry);
+    InetUnicastRouteEntry *route = static_cast<InetUnicastRouteEntry *>(entry);
 
     DBState *state =
         static_cast<DBState *>
@@ -137,7 +137,7 @@ void ArpVrfState::RouteUpdate(DBTablePartBase *part, DBEntryBase *entry) {
         if (state) {
             if (arp_proto->gratuitous_arp_entry() &&
                 arp_proto->gratuitous_arp_entry()->key().ip ==
-                    route->addr().to_ulong()) {
+                    route->addr().to_v4().to_ulong()) {
                 arp_proto->del_gratuitous_arp_entry();
             }
             entry->ClearState(part->parent(), route_table_listener_id);
@@ -153,7 +153,7 @@ void ArpVrfState::RouteUpdate(DBTablePartBase *part, DBEntryBase *entry) {
         arp_proto->del_gratuitous_arp_entry();
         //Send Grat ARP
         arp_proto->SendArpIpc(ArpProto::ARP_SEND_GRATUITOUS,
-                          route->addr().to_ulong(), route->vrf());
+                          route->addr().to_v4().to_ulong(), route->vrf());
     }
 
     //Check if there is a local VM path, if yes send a

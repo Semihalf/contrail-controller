@@ -594,9 +594,9 @@ void Dhcpv6Handler::WriteIaOption(const Dhcpv6Ia &ia,
 
 uint16_t Dhcpv6Handler::FillDhcpResponse(const MacAddress &dest_mac,
                                          Ip6Address src_ip, Ip6Address dest_ip) {
-    pkt_info_->eth = (ethhdr *)(pkt_info_->pkt);
+    pkt_info_->eth = (struct ether_header *)(pkt_info_->pkt);
     EthHdr(agent()->vhost_interface()->mac(), dest_mac, ETHERTYPE_IPV6);
-    uint16_t header_len = sizeof(ethhdr);
+    uint16_t header_len = sizeof(struct ether_header);
     if (vm_itf_->vlan_id() != VmInterface::kInvalidVlanId) {
         // cfi and priority are zero
         VlanHdr(pkt_info_->pkt + 12, vm_itf_->vlan_id());
@@ -621,7 +621,7 @@ uint16_t Dhcpv6Handler::FillDhcpResponse(const MacAddress &dest_mac,
 
 void Dhcpv6Handler::SendDhcpResponse() {
     UpdateStats();
-    FillDhcpResponse(MacAddress(pkt_info_->eth->h_source), config_.gw_addr.to_v6(),
+    FillDhcpResponse(MacAddress(pkt_info_->eth->ether_shost), config_.gw_addr.to_v6(),
                      pkt_info_->ip_saddr.to_v6());
     Send(GetInterfaceIndex(), pkt_info_->vrf,
          AgentHdr::TX_SWITCH, PktHandler::DHCPV6);

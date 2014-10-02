@@ -133,6 +133,35 @@ class DictST(object):
 
 # end DictST
 
+def get_si_vns(si_obj, si_props):
+    left_vn = None
+    right_vn = None
+
+    st_refs = si_obj.get_service_template_refs()
+    uuid = st_refs[0]['uuid']
+    st_obj = _vnc_lib.service_template_read(id=uuid)
+    st_props = st_obj.get_service_template_properties()
+    if st_props.get_ordered_interfaces():
+        st_if_list = st_props.get_interface_type()
+        si_if_list = si_props.get_interface_list()
+        for idx in range(0, len(st_if_list)):
+            st_if = st_if_list[idx]
+            si_if = si_if_list[idx]
+            if st_if.get_service_interface_type() == 'left':
+                left_vn = si_if.get_virtual_network()
+            elif st_if.get_service_interface_type() == 'right':
+                right_vn = si_if.get_virtual_network()
+    else:
+        left_vn = si_props.get_left_virtual_network()
+        right_vn = si_props.get_right_virtual_network()
+
+    if left_vn == "":
+        left_vn = parent_str + ':' + svc_info.get_left_vn_name()
+    if right_vn == "":
+        right_vn = parent_str + ':' + svc_info.get_right_vn_name()
+
+    return left_vn, right_vn
+# end get_si_vns
 
 def _access_control_list_update(acl_obj, name, obj, entries):
     if acl_obj is None:
@@ -665,10 +694,7 @@ class VirtualNetworkST(DictST):
             _sandesh._logger.debug("%s: route table next hop must be service "
                                    "instance with auto policy", self.name)
             return None
-        left_vn_str = svc_info.get_left_vn(si.get_parent_fq_name_str(),
-            si_props.left_virtual_network)
-        right_vn_str = svc_info.get_right_vn(si.get_parent_fq_name_str(),
-            si_props.right_virtual_network)
+        left_vn_str, right_vn_str = get_si_vns(si, si_props)
         if (not left_vn_str or not right_vn_str):
             _sandesh._logger.debug("%s: route table next hop service instance "
                                    "must have left and right virtual networks",
@@ -1523,18 +1549,21 @@ class ServiceChain(DictST):
                 "service chain %s: vn1_obj or vn2_obj is None", self.name)
             return None
 
-        service_ri2 = vn1_obj.get_primary_routing_instance()
+        ri1 = vn1_obj.get_primary_routing_instance()
+        service_ri2 = None
         first_node = True
         for service in self.service_list:
             service_name1 = vn1_obj.get_service_name(self.name, service)
             service_name2 = vn2_obj.get_service_name(self.name, service)
             service_ri1 = vn1_obj.locate_routing_instance(
                 service_name1, self.name)
-            if service_ri1 is None or service_ri2 is None:
-                _sandesh._logger.debug("service chain %s: service_ri1 or "
-                                       "service_ri2 is None", self.name)
+            if service_ri1 is None:
+                _sandesh._logger.debug("service chain %s: service_ri1 is None",
+                                       self.name)
                 return None
-            service_ri2.add_connection(service_ri1)
+
+            if service_ri2 is not None:
+                service_ri2.add_connection(service_ri1)
             service_ri2 = vn2_obj.locate_routing_instance(
                 service_name2, self.name)
             if service_ri2 is None:
@@ -1546,6 +1575,8 @@ class ServiceChain(DictST):
                 first_node = False
                 service_ri1.update_route_target_list(
                     vn1_obj.rt_list, import_export='export')
+                service_ri1.update_route_target_list([ri1.route_target],
+                                                     import_export='import')
 
             try:
                 service_instance = _vnc_lib.service_instance_read(
@@ -1617,11 +1648,11 @@ class ServiceChain(DictST):
             _vnc_lib.routing_instance_update(service_ri1.obj)
             _vnc_lib.routing_instance_update(service_ri2.obj)
 
+        ri2 = vn2_obj.get_primary_routing_instance()
         service_ri2.update_route_target_list(
             vn2_obj.rt_list, import_export='export')
-
-        service_ri2.add_connection(vn2_obj.get_primary_routing_instance())
-
+        service_ri2.update_route_target_list([ri2.route_target],
+                                             import_export='import')
         if not transparent and len(self.service_list) == 1:
             for vn in VirtualNetworkST.values():
                 for prefix, nexthop in vn.route_table.items():
@@ -3072,10 +3103,7 @@ class SchemaTransformer(object):
                                    "instance %s", si_name)
             return
         si_props = si.get_service_instance_properties()
-        left_vn_str = svc_info.get_left_vn(si.get_parent_fq_name_str(),
-                                           si_props.left_virtual_network)
-        right_vn_str = svc_info.get_right_vn(si.get_parent_fq_name_str(),
-                                             si_props.right_virtual_network)
+        left_vn_str, right_vn_str = get_si_vns(si, si_props)
         if (not left_vn_str or not right_vn_str):
             _sandesh._logger.debug(
                 "%s: route table next hop service instance must "
@@ -3289,11 +3317,9 @@ class SchemaTransformer(object):
                                 match.dst_address.virtual_network
                         if (len(action.apply_service) != 0):
                             # if a service was applied, the ACL should have a
-                            # pass action, and we should not make a connection
-                            # between the routing instances
+                            # pass action
                             action.simple_action = "pass"
                             action.apply_service = []
-                            continue
 
                         if action.simple_action:
                             virtual_network.add_connection(connected_network)
