@@ -118,7 +118,7 @@ void ArpVrfState::SendArpRequestForVm(InetUnicastRouteEntry *route) {
             if (path->subnet_gw_ip().is_v4()) {
                 arp_handler.SendArp(ARPOP_REQUEST, agent->vrrp_mac(),
                         path->subnet_gw_ip().to_v4().to_ulong(),
-                        MacAddress, route->addr().to_v4().to_ulong(),
+                        MacAddress(), route->addr().to_v4().to_ulong(),
                         intf_id, route->vrf_id());
             }
             arp_proto->IncrementStatsVmArpReq();
