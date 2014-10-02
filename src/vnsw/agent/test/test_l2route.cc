@@ -5,6 +5,7 @@
 //  Created by Praveen K V
 //  Copyright (c) 2012 Contrail Systems. All rights reserved.
 //
+#include "base/os.h"
 #include <base/logging.h>
 #include <io/event_manager.h>
 #include <tbb/task.h>
@@ -33,8 +34,8 @@
 #include "kstate/test/test_kstate_util.h"
 #include "vr_types.h"
 
-#include <controller/controller_export.h> 
-#include <boost/assign/list_of.hpp> 
+#include <controller/controller_export.h>
+#include <boost/assign/list_of.hpp>
 using namespace boost::assign;
 std::string eth_itf;
 

@@ -1,11 +1,12 @@
+#include "base/os.h"
 #include <test/test_basic_scale.h>
 #include <controller/controller_route_walker.h>
 
 class ControllerRouteWalkerTest : public ControllerRouteWalker {
-public:    
+public:
     ControllerRouteWalkerTest(Peer *peer) : ControllerRouteWalker(Agent::GetInstance(), peer),
-    vrf_count_(0), route_count_(0), walk_done_(false) { 
-    };    
+    vrf_count_(0), route_count_(0), walk_done_(false) {
+    };
     virtual ~ControllerRouteWalkerTest() { };
 
     virtual bool VrfWalkNotify(DBTablePartBase *partition, DBEntryBase *e) {

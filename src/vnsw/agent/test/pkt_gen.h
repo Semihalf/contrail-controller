@@ -5,8 +5,8 @@
 #ifndef vnsw_agent_test_pkt_gen_h
 #define vnsw_agent_test_pkt_gen_h
 
-#include <netinet/ip.h>
 #include "base/os.h"
+#include <netinet/ip.h>
 //#include <netinet/tcp.h>
 //#include <netinet/udp.h>
 #include <netinet/ether.h>
@@ -183,8 +183,8 @@ private:
     void Init(uint16_t sport, uint16_t dport) {
         pkt.udp.uh_sport = htons(sport);
         pkt.udp.uh_dport = htons(dport);
-        pkt.udp.uh_len = htons(sizeof(pkt.payload));
-        pkt.udp.iuh_sum = htons(0); //ignoring checksum for now.
+        pkt.udp.uh_ulen = htons(sizeof(pkt.payload));
+        pkt.udp.uh_sum = htons(0); //ignoring checksum for now.
 
     }
     struct udp_packet pkt;
@@ -256,7 +256,7 @@ private:
         pkt.tcp.res1 = 0;
         pkt.tcp.res2 = 0;
 #endif
-        pkt.th_flags = 0;
+        pkt.tcp.th_flags = 0;
 
         pkt.tcp.th_win = htons(0);
         pkt.tcp.th_sum = htons(0);
@@ -355,9 +355,12 @@ public:
         struct tcphdr *tcp = (struct tcphdr *)(buff + len);
         tcp->th_dport = htons(dport);
         tcp->th_sport = htons(sport);
+#if 0
         tcp->fin = fin;
         tcp->syn = syn;
         tcp->ack = ack;
+#endif
+        tcp->th_flags = (fin ? TH_FIN : 0) | (syn ? TH_SYN : 0) | (ack ? TH_ACK : 0);
         len += sizeof(tcphdr) + len;
     };
 

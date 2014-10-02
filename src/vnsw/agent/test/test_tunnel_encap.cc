@@ -2,6 +2,7 @@
  * Copyright (c) 2013 Juniper Networks, Inc. All rights reserved.
  */
 
+#include "base/os.h"
 #include <base/logging.h>
 #include <io/event_manager.h>
 #include <tbb/task.h>
@@ -30,7 +31,7 @@
 #include "kstate/test/test_kstate_util.h"
 #include "vr_types.h"
 
-#include <controller/controller_export.h> 
+#include <controller/controller_export.h>
 
 using namespace std;
 

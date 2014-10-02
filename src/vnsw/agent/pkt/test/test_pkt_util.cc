@@ -8,7 +8,8 @@
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <netinet/ip.h>
-#include <netinet/tcp.h>
+#include "base/os.h"
+//#include <netinet/tcp.h>
 #include <cmn/agent_cmn.h>
 
 void MakeIpPacket(PktGen *pkt, int ifindex, const char *sip,

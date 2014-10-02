@@ -2,6 +2,7 @@
  * Copyright (c) 2013 Juniper Networks, Inc. All rights reserved.
  */
 
+#include "base/os.h"
 #include "testing/gunit.h"
 
 #include <netinet/if_ether.h>
@@ -241,15 +242,15 @@ public:
         ip->daddr = htonl(dest_ip);
 
         udphdr *udp = (udphdr *) (ip + 1);
-        udp->source = htons(DNS_CLIENT_PORT);
-        udp->dest = htons(DNS_SERVER_PORT);
-        udp->check = 0;
+        udp->uh_sport = htons(DNS_CLIENT_PORT);
+        udp->uh_dport = htons(DNS_SERVER_PORT);
+        udp->uh_sum = 0;
 
         dnshdr *dns = (dnshdr *) (udp + 1);
         if (type == DNS_OPCODE_QUERY) {
             len = SendDnsQuery(dns, numItems, items, flags);
         } else if (type == DNS_OPCODE_UPDATE) {
-            BindUtil::Operation op = 
+            BindUtil::Operation op =
                 update ? BindUtil::ADD_UPDATE : BindUtil::DELETE_UPDATE;
             len = SendDnsUpdate(dns, op, "vdns1", "test.contrail.juniper.net",
                                 numItems, items);
@@ -257,7 +258,7 @@ public:
             assert(0);
 
         len += sizeof(udphdr);
-        udp->len = htons(len);
+        udp->uh_ulen = htons(len);
         ip->tot_len = htons(len + sizeof(iphdr));
 
         len += sizeof(iphdr) + sizeof(ethhdr) + Agent::GetInstance()->pkt()->pkt_handler()->EncapHeaderLen();

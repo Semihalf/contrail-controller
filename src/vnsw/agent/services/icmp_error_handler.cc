@@ -107,8 +107,8 @@ bool IcmpErrorHandler::SendIcmpError(VmInterface *intf) {
         ip->check = Csum((uint16_t *)data, ip_hlen, 0);
         if (ip->protocol == IPPROTO_UDP) {
             udphdr *udp = (udphdr *)(data + ip_hlen);
-            udp->source = ntohs(key.src_port);
-            udp->dest = ntohs(key.dst_port);
+            udp->uh_sport = ntohs(key.src_port);
+            udp->uh_dport = ntohs(key.dst_port);
         } else if (ip->protocol == IPPROTO_TCP) {
             tcphdr *tcp = (tcphdr *)(data + ip_hlen);
             tcp->source = ntohs(key.src_port);
