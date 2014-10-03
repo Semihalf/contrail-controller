@@ -6,8 +6,10 @@
 #define vnsw_agent_test_pkt_gen_h
 
 #include <netinet/ip.h>
-#include <netinet/ether.h>
+#include <net/ethernet.h>
+#if defined(__linux__)
 #include <linux/if_ether.h>
+#endif
 #include <netinet/ip_icmp.h>
 
 #include <pkt/pkt_handler.h>
