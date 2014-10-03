@@ -166,7 +166,7 @@ TEST_F(TestAap, SubnetGw) {
     client->WaitForIdle();
 
     Ip4Address subnet_gw_ip = Ip4Address::from_string("10.10.10.200");
-    Inet4UnicastRouteEntry *rt = RouteGet("vrf1", ip1, 32);
+    InetUnicastRouteEntry *rt = RouteGet("vrf1", ip1, 32);
     EXPECT_TRUE(rt->GetActivePath()->subnet_gw_ip() == subnet_gw_ip);
 
     DelIPAM("vn1", "vdns1");
@@ -179,7 +179,7 @@ TEST_F(TestAap, StateMachine_1) {
     EXPECT_TRUE(RouteFind("vrf1", ip, 32));
 
     VmInterface *vm_intf = VmInterfaceGet(1);
-    Inet4UnicastRouteEntry *rt =
+    InetUnicastRouteEntry *rt =
         RouteGet("vrf1", ip, 32);
     const AgentPath *path = rt->GetActivePath();
     EXPECT_TRUE(path->path_preference().sequence() == 0);
@@ -201,7 +201,7 @@ TEST_F(TestAap, StateMachine_2) {
     client->WaitForIdle();
 
     VmInterface *vm_intf = VmInterfaceGet(1);
-    Inet4UnicastRouteEntry *rt =
+    InetUnicastRouteEntry *rt =
         RouteGet("vrf1", ip, 32);
     const AgentPath *path = rt->FindPath(vm_intf->peer());
     EXPECT_TRUE(path->path_preference().sequence() == 0);
@@ -223,7 +223,7 @@ TEST_F(TestAap, StateMachine_3) {
     client->WaitForIdle();
 
     VmInterface *vm_intf = VmInterfaceGet(1);
-    Inet4UnicastRouteEntry *rt =
+    InetUnicastRouteEntry *rt =
         RouteGet("vrf1", ip, 32);
     const AgentPath *path = rt->FindPath(vm_intf->peer());
     EXPECT_TRUE(path->path_preference().sequence() == 0);
@@ -257,7 +257,7 @@ TEST_F(TestAap, StateMachine_4) {
    client->WaitForIdle();
 
    VmInterface *vm_intf = VmInterfaceGet(1);
-   Inet4UnicastRouteEntry *rt =
+   InetUnicastRouteEntry *rt =
        RouteGet("vrf1", sip, 24);
    const AgentPath *path = rt->FindPath(vm_intf->peer());
    EXPECT_TRUE(path->path_preference().sequence() == 0);
@@ -283,7 +283,7 @@ TEST_F(TestAap, StateMachine_5) {
     client->WaitForIdle();
 
     VmInterface *vm_intf = VmInterfaceGet(1);
-    Inet4UnicastRouteEntry *rt =
+    InetUnicastRouteEntry *rt =
         RouteGet("vrf1", ip, 32);
     const AgentPath *path = rt->FindPath(vm_intf->peer());
     EXPECT_TRUE(path->path_preference().sequence() == 0);
@@ -316,7 +316,7 @@ TEST_F(TestAap, StateMachine_6) {
     Ip4Address sip = Ip4Address::from_string("24.1.1.0");
     client->WaitForIdle();
     VmInterface *vm_intf = VmInterfaceGet(1);
-    Inet4UnicastRouteEntry *rt =
+    InetUnicastRouteEntry *rt =
         RouteGet("vrf1", sip, 24);
     const AgentPath *path = rt->FindPath(vm_intf->peer());
     EXPECT_TRUE(path->path_preference().sequence() == 0);
@@ -355,7 +355,7 @@ TEST_F(TestAap, StateMachine_7) {
     Ip4Address sip = Ip4Address::from_string("24.1.1.0");
     client->WaitForIdle();
     VmInterface *vm_intf = VmInterfaceGet(1);
-    Inet4UnicastRouteEntry *rt =
+    InetUnicastRouteEntry *rt =
         RouteGet("vrf1", sip, 24);
     const AgentPath *path = rt->FindPath(vm_intf->peer());
     EXPECT_TRUE(path->path_preference().sequence() == 0);
@@ -413,7 +413,7 @@ TEST_F(TestAap, StateMachine_8) {
     Ip4Address sip = Ip4Address::from_string("24.1.1.0");
     client->WaitForIdle();
     VmInterface *vm_intf = VmInterfaceGet(1);
-    Inet4UnicastRouteEntry *rt =
+    InetUnicastRouteEntry *rt =
         RouteGet("vrf1", sip, 24);
     const AgentPath *path = rt->FindPath(vm_intf->peer());
     EXPECT_TRUE(path->path_preference().sequence() == 0);
@@ -448,7 +448,7 @@ TEST_F(TestAap, StateMachine_9) {
 
    Ip4Address service_vlan_rt = Ip4Address::from_string("11.1.1.253");
    VmInterface *vm_intf = VmInterfaceGet(1);
-   Inet4UnicastRouteEntry *rt =
+   InetUnicastRouteEntry *rt =
        RouteGet("vrf1", service_vlan_rt, 32);
    const AgentPath *path = rt->FindPath(vm_intf->peer());
    EXPECT_TRUE(path->path_preference().sequence() == 0);

@@ -25,40 +25,40 @@
 
 struct icmp_packet {
     struct ether_header eth;
-    struct ip  ip;
+    struct ip ip;
     struct icmp icmp;
 } __attribute__((packed));
 
 struct tcp_packet {
     struct ether_header eth;
-    struct ip  ip;
+    struct ip ip;
     struct tcphdr tcp;
     char   payload[TCP_PAYLOAD_SIZE];
 }__attribute__((packed));
 
 struct udp_packet {
     struct ether_header eth;
-    struct ip  ip;
+    struct ip ip;
     struct udphdr udp;
     uint8_t payload[];
 }__attribute__((packed));
 
 struct icmp6_packet {
-    struct ethhdr eth;
-    struct ip6_hdr  ip; 
-    struct icmphdr icmp;
+    struct ether_header eth;
+    struct ip6_hdr  ip;
+    struct icmp icmp;
 } __attribute__((packed));
 
 struct tcp6_packet {
-    struct ethhdr eth;
-    struct ip6_hdr  ip; 
+    struct ether_header eth;
+    struct ip6_hdr  ip;
     struct tcphdr tcp;
     char   payload[TCP_PAYLOAD_SIZE];
 }__attribute__((packed));
 
 struct udp6_packet {
-    struct ethhdr eth;
-    struct ip6_hdr  ip; 
+    struct ether_header eth;
+    struct ip6_hdr  ip;
     struct udphdr udp;
     uint8_t payload[];
 }__attribute__((packed));
@@ -93,7 +93,7 @@ public:
         return ans;
     }
 
-    static void IpInit(struct iphdr *ip, uint8_t proto, uint16_t len,
+    static void IpInit(struct ip *ip, uint8_t proto, uint16_t len,
                        uint32_t sip, uint32_t dip) {
         ip->ip_src.s_addr = htonl(sip);
         ip->ip_dst.s_addr = htonl(dip);
@@ -119,13 +119,12 @@ public:
         ip->ip6_ctlun.ip6_un1.ip6_un1_hlim = 255;
     }
 
-    static void EthInit(ether_header *eth, unsigned short proto) {
+    static void EthInit(struct ether_header *eth, unsigned short proto) {
         eth->ether_type = proto;
         eth->ether_dhost[5] = 5;
         eth->ether_shost[5] = 4;
     }
-
-    static void EthInit(ether_header *eth, uint8_t *smac, uint8_t *dmac, unsigned short proto) {
+    static void EthInit(struct ether_header *eth, uint8_t *smac, uint8_t *dmac, unsigned short proto) {
         eth->ether_type = htons(proto);
         memcpy(eth->ether_dhost, dmac, 6);
         memcpy(eth->ether_shost, smac, 6);
@@ -139,7 +138,7 @@ public:
         Init(sp, dp);
         len = sizeof(pkt.ip) + sizeof(pkt.tcp) + sizeof(pkt.payload);
         IpUtils::IpInit(&pkt.ip, IPPROTO_TCP, len, sip, dip);
-        IpUtils::EthInit(&pkt.eth, ETHERTYPE_IP);
+        IpUtils::EthInit(&pkt.eth, ETH_P_IP);
     }
     unsigned char *GetPacket() const { return (unsigned char *)&pkt; }
 private:
@@ -209,8 +208,8 @@ public:
         pkt.icmp.icmp_type = ICMP_ECHO;
         pkt.icmp.icmp_code = 0;
         pkt.icmp.icmp_cksum = IpUtils::IPChecksum((uint16_t *)&pkt.icmp, sizeof(icmp_packet));
-        pkt.icmp.icmp_hun.ih_idseq.icd_id = 0;
-        pkt.icmp.icmp_hun.ih_idseq.icd_seq = 0;
+        pkt.icmp.icmp_id = 0;
+        pkt.icmp.icmp_seq = 0;
     }
     unsigned char *GetPacket() const { return (unsigned char *)&pkt; }
 private:
@@ -226,7 +225,7 @@ public:
         IpUtils::Ip6Init(&pkt.ip, IPPROTO_TCP, len, sip, dip);
         IpUtils::EthInit(&pkt.eth, ETH_P_IPV6);
     }
-    unsigned char *GetPacket() const { return (unsigned char *)&pkt; } 
+    unsigned char *GetPacket() const { return (unsigned char *)&pkt; }
 private:
     void Init(uint16_t sport, uint16_t dport) {
         pkt.tcp.source = htons(sport);
@@ -260,32 +259,32 @@ public:
         IpUtils::Ip6Init(&pkt.ip, IPPROTO_UDP, len, sip, dip);
         IpUtils::EthInit(&pkt.eth, ETH_P_IPV6);
     }
-    unsigned char *GetPacket() const { return (unsigned char *)&pkt; } 
+    unsigned char *GetPacket() const { return (unsigned char *)&pkt; }
 private:
     void Init(uint16_t sport, uint16_t dport) {
         pkt.udp.source = htons(sport);
         pkt.udp.dest = htons(dport);
         pkt.udp.len = htons(sizeof(pkt.payload));
         pkt.udp.check = htons(0); //ignoring checksum for now.
-        
+
     }
     struct udp6_packet pkt;
 };
 
 class Icmp6Packet {
-public:        
+public:
     Icmp6Packet(uint8_t *smac, uint8_t *dmac, uint32_t sip, uint32_t dip) {
         uint16_t len;
         len = sizeof(pkt.ip) + sizeof(pkt.icmp);
         IpUtils::Ip6Init(&(pkt.ip), IPPROTO_ICMPV6, len, sip, dip);
         IpUtils::EthInit(&(pkt.eth), smac, dmac, ETH_P_IPV6);
-        pkt.icmp.type = ICMP_ECHO; 
-        pkt.icmp.code = 0;
-        pkt.icmp.checksum = IpUtils::IPChecksum((uint16_t *)&pkt.icmp, sizeof(icmp_packet));
-        pkt.icmp.un.echo.id = 0;
-        pkt.icmp.un.echo.sequence = 0; 
+        pkt.icmp.icmp_type = ICMP_ECHO;
+        pkt.icmp.icmp_code = 0;
+        pkt.icmp.icmp_cksum = IpUtils::IPChecksum((uint16_t *)&pkt.icmp, sizeof(icmp_packet));
+        pkt.icmp.icmp_id = 0;
+        pkt.icmp.icmp_seq = 0;
     }
-    unsigned char *GetPacket() const { return (unsigned char *)&pkt; } 
+    unsigned char *GetPacket() const { return (unsigned char *)&pkt; }
 private:
     icmp6_packet pkt;
 };
@@ -296,13 +295,13 @@ public:
     PktGen() : len(0) { memset(buff, 0, kMaxPktLen);};
     virtual ~PktGen() {};
 
-    void AddEthHdr(const char *dmac, const char *smac, uint16_t proto) {
-        struct ether_header *eth = (struct ether_header*)(buff + len);
+    void AddEthHdr(const std::string &dmac, const std::string &smac, uint16_t proto) {
+        struct ether_header *eth = (struct ether_header *)(buff + len);
 
-        memcpy(eth->ether_dhost, ether_aton(dmac), sizeof(ether_addr));
-        memcpy(eth->ether_shost, ether_aton(smac), sizeof(ether_addr));
+        MacAddress::FromString(dmac).ToArray(eth->ether_dhost, sizeof(eth->ether_dhost));
+        MacAddress::FromString(smac).ToArray(eth->ether_shost, sizeof(eth->ether_shost));
         eth->ether_type = htons(proto);
-        len += sizeof(ether_header);
+        len += sizeof(struct ether_header);
     };
 
     void AddIpHdr(const char *sip, const char *dip, uint16_t proto) {
@@ -352,8 +351,8 @@ public:
     void AddIcmpHdr() {
         struct icmp *icmp = (struct icmp *)(buff + len);
         icmp->icmp_type = 0;
-        icmp->icmp_hun.ih_idseq.icd_id = 0;
-        len += sizeof(icmphdr) + len;
+        icmp->icmp_id = 0;
+        len += sizeof(struct icmp) + len;
     };
 
     void AddGreHdr(uint16_t proto) {

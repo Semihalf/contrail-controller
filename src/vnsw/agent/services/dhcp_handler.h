@@ -263,17 +263,17 @@ public:
 
     struct DhcpRequestData {
         DhcpRequestData() : xid(-1), flags(0), ip_addr(0) {
-            mac_addr = MacAddress();
+            memset(mac_addr, 0, ETHER_ADDR_LEN);
         }
         void UpdateData(uint32_t id, uint16_t fl, uint8_t *mac) {
             xid = id;
             flags = fl;
-            mac_addr = MacAddress(mac);
+            memcpy(mac_addr, mac, ETHER_ADDR_LEN);
         }
 
         uint32_t  xid;
         uint16_t  flags;
-        struct ether_addr mac_addr;
+        uint8_t   mac_addr[ETH_ALEN];
         in_addr_t ip_addr;
     };
 
@@ -329,7 +329,7 @@ private:
     uint16_t DhcpHdr(in_addr_t, in_addr_t);
     uint16_t AddIP(uint16_t opt_len, const std::string &input);
     uint16_t AddDomainNameOption(uint16_t opt_len);
-    uint16_t FillDhcpResponse(MacAddress &dest_mac,
+    uint16_t FillDhcpResponse(const MacAddress &dest_mac,
                               in_addr_t src_ip, in_addr_t dest_ip,
                               in_addr_t siaddr, in_addr_t yiaddr);
     void SendDhcpResponse();

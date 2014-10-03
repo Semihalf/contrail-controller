@@ -31,8 +31,8 @@
 #define CLIENT_REQ_GW "1.2.3.1"
 #define MAX_WAIT_COUNT 500
 #define BUF_SIZE 8192
-char src_mac[MAC_LEN] = { 0x00, 0x01, 0x02, 0x03, 0x04, 0x05 };
-char dest_mac[MAC_LEN] = { 0x00, 0x11, 0x12, 0x13, 0x14, 0x15 };
+MacAddress src_mac(0x00, 0x01, 0x02, 0x03, 0x04, 0x05);
+MacAddress dest_mac(0x00, 0x11, 0x12, 0x13, 0x14, 0x15);
 #define DHCP_RESPONSE_STRING "Server : 1.1.1.200; Lease time : 4294967295; Subnet mask : 255.255.255.0; Broadcast : 1.1.1.255; Gateway : 1.1.1.200; Host Name : vm1; DNS : 1.1.1.200; Domain Name : test.contrail.juniper.net; "
 #define HOST_ROUTE_STRING "Host Routes : 10.1.1.0/24 -> 1.1.1.200;10.1.2.0/24 -> 1.1.1.200;150.25.75.0/24 -> 1.1.1.200;192.168.1.128/28 -> 1.1.1.200;"
 #define CHANGED_HOST_ROUTE_STRING "Host Routes : 150.2.2.0/24 -> 1.1.1.200;192.1.1.1/28 -> 1.1.1.200;"
@@ -186,7 +186,7 @@ public:
         dhcp->yiaddr = htonl(yiaddr);
         dhcp->siaddr = 0;
         dhcp->giaddr = 0;
-        memcpy(dhcp->chaddr, src_mac, ETHER_ADDR_LEN);
+        src_mac.ToArray(dhcp->chaddr, sizeof(dhcp->chaddr));
         memset(dhcp->sname, 0, DHCP_NAME_LEN);
         memset(dhcp->file, 0, DHCP_FILE_LEN);
         len = DHCP_FIXED_LEN;
@@ -203,22 +203,22 @@ public:
         uint8_t *buf = new uint8_t[len];
         memset(buf, 0, len);
 
-        ether_header *eth = (ether_header *)buf;
+        struct ether_header *eth = (struct ether_header *)buf;
         eth->ether_dhost[5] = 1;
         eth->ether_shost[5] = 2;
-        eth->ether_type = htons(0x800);
+        eth->ether_type = htons(ETHERTYPE_IP);
 
         agent_hdr *agent = (agent_hdr *)(eth + 1);
         agent->hdr_ifindex = htons(ifindex);
         agent->hdr_vrf = htons(0);
         agent->hdr_cmd = htons(AgentHdr::TRAP_NEXTHOP);
 
-        eth = (ether_header *) (agent + 1);
-        memcpy(eth->ether_dhost, dest_mac, ETHER_ADDR_LEN);
-        memcpy(eth->ether_shost, src_mac, ETHER_ADDR_LEN);
+        eth = (struct ether_header *) (agent + 1);
+        dest_mac.ToArray(eth->ether_dhost, sizeof(eth->ether_dhost));
+        src_mac.ToArray(eth->ether_shost, sizeof(eth->ether_shost));
         eth->ether_type = htons(ETHERTYPE_IP);
 
-        ip *ip = (struct ip *) (eth + 1);
+        struct ip *ip = (struct ip *) (eth + 1);
         ip->ip_hl = 5;
         ip->ip_v = 4;
         ip->ip_tos = 0;
@@ -261,7 +261,7 @@ public:
         dhcp->yiaddr = htonl(yiaddr);
         dhcp->siaddr = 0;
         dhcp->giaddr = 0;
-        memcpy(dhcp->chaddr, src_mac, ETHER_ADDR_LEN);
+        src_mac.ToArray(dhcp->chaddr, sizeof(dhcp->chaddr));
         memset(dhcp->sname, 0, DHCP_NAME_LEN);
         memset(dhcp->file, 0, DHCP_FILE_LEN);
         len = sizeof(udphdr) + DHCP_FIXED_LEN;
@@ -272,8 +272,8 @@ public:
         }
 
         udp->uh_ulen = htons(len);
-        ip->ip_len = htons(len + sizeof(*ip));
-        len += sizeof(struct ip) + sizeof(ether_header) +
+        ip->ip_len = htons(len + sizeof(struct ip));
+        len += sizeof(struct ip) + sizeof(struct ether_header) +
                 Agent::GetInstance()->pkt()->pkt_handler()->EncapHeaderLen();
         TestPkt0Interface *tap = (TestPkt0Interface *)
                 (Agent::GetInstance()->pkt()->control_interface());

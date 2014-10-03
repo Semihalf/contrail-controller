@@ -24,7 +24,7 @@ using namespace std;
 
 void KSyncInterfaceCreate(Interface::Type type, const char *if_name,
                           uint32_t vrf_id, uint32_t &ifindex, uint32_t &fd,
-                          struct ether_addr &mac);
+                          MacAddress &mac);
 void KSyncInterfaceDelete(Interface::Type type, const char *if_name,
                           uint32_t vrf_id, uint32_t ifindex, uint32_t fd);
 void GetPhyMac(const char *ifname, char *mac);
@@ -39,7 +39,7 @@ public:
     InterfaceKSyncEntry(InterfaceKSyncObject *obj, const Interface *intf);
     virtual ~InterfaceKSyncEntry();
 
-    const MacAddress& mac() const {
+	const MacAddress &mac() const {
         if (parent_.get() == NULL) {
             return mac_;
         } else {

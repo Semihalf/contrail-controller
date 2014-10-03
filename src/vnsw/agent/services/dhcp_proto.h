@@ -38,7 +38,7 @@ public:
     struct DhcpStats {
         DhcpStats() { Reset(); }
         void Reset() {
-            discover = request = inform = decline = other = 
+            discover = request = inform = decline = other =
             offers = acks = nacks = errors = relay_req = relay_resp = 0;
         }
 
@@ -70,11 +70,9 @@ public:
     void set_ip_fabric_interface_index(uint16_t ind) {
         ip_fabric_interface_index_ = ind;
     }
-
     const MacAddress &ip_fabric_interface_mac() const {
         return ip_fabric_interface_mac_;
     }
-
     void set_ip_fabric_interface_mac(const MacAddress &mac) {
         ip_fabric_interface_mac_ = mac;
     }

@@ -362,8 +362,9 @@ int InterfaceKSyncEntry::Encode(sandesh_op::type op, char *buf, int buf_len) {
             mac = parent->mac();
 
         }
-        encoder.set_vifr_mac(std::vector<int8_t>((int8_t *)mac,
-                                                 (int8_t *)mac + mac.size()));
+        std::vector<int8_t> intf_mac((int8_t *)mac,
+                                     (int8_t *)mac + mac.size());
+        encoder.set_vifr_mac(intf_mac);
 
         break;
     }

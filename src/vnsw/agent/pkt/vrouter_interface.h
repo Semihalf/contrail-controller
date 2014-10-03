@@ -100,9 +100,9 @@ public:
         bzero(buff, sizeof(agent_hdr));
 
         // Add outer ethernet header
-        struct ether_header *eth = (ether_header *)buff;
-        eth->ether_shost[ETHER_ADDR_LEN-1] = 1;
-        eth->ether_dhost[ETHER_ADDR_LEN-1] = 2;
+        struct ether_header *eth = (struct ether_header *)buff;
+        eth->ether_shost[ETHER_ADDR_LEN - 1] = 1;
+        eth->ether_dhost[ETHER_ADDR_LEN - 1] = 2;
         eth->ether_type = htons(ETHERTYPE_IP);
 
         // Fill agent_hdr

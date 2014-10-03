@@ -93,8 +93,7 @@ void ArpEntry::SendGratuitousArp() {
     ArpProto *arp_proto = agent->GetArpProto();
     if (agent->router_id_configured()) {
         handler_->SendArp(ARPOP_REQUEST, arp_proto->ip_fabric_interface_mac(),
-                          agent->router_id().to_ulong(),
-                          MacAddress(),
+                          agent->router_id().to_ulong(), MacAddress(),
                           agent->router_id().to_ulong(),
                           arp_proto->ip_fabric_interface_index(),
                           key_.vrf->vrf_id());
@@ -130,10 +129,9 @@ void ArpEntry::SendArpRequest() {
     VrfEntry *vrf =
         agent->vrf_table()->FindVrfFromName(agent->fabric_vrf_name());
     if (vrf) {
-        handler_->SendArp(ARPOP_REQUEST,
-                          arp_proto->ip_fabric_interface_mac(),
-                          ip.to_ulong(), MacAddress(), key_.ip,
-                          itf_index, vrf->vrf_id());
+        handler_->SendArp(ARPOP_REQUEST, arp_proto->ip_fabric_interface_mac(),
+                          ip.to_ulong(), MacAddress(), key_.ip, itf_index,
+                          vrf->vrf_id());
     }
 
     StartTimer(arp_proto->retry_timeout(), ArpProto::RETRY_TIMER_EXPIRED);
@@ -152,17 +150,14 @@ void ArpEntry::AddArpRoute(bool resolved) {
     ArpNH *arp_nh = static_cast<ArpNH *>(handler_->agent()->nexthop_table()->
                                          FindActiveEntry(&nh_key));
 
-    MacAddress mac(mac_address_);
+    MacAddress mac = mac_address_;
     if (arp_nh && arp_nh->GetResolveState() &&
-        mac == arp_nh->GetMac()) {
+        mac.CompareTo(arp_nh->GetMac()) == 0) {
         // MAC address unchanged, ignore
         return;
     }
 
-    stringstream mac_string;
-    mac_string << mac.ToString();
-    //mac_string << ether_ntoa((struct ether_addr *)&mac);
-    ARP_TRACE(Trace, "Add", ip.to_string(), vrf_name, mac_string.str());
+    ARP_TRACE(Trace, "Add", ip.to_string(), vrf_name, mac.ToString());
 
     Interface *itf = handler_->agent()->GetArpProto()->ip_fabric_interface();
     handler_->agent()->fabric_inet4_unicast_table()->ArpRoute(
@@ -183,10 +178,8 @@ bool ArpEntry::DeleteArpRoute() {
     if (!arp_nh)
         return true;
 
-    MacAddress mac(mac_address_);
-    stringstream mac_string;
-    mac_string  << mac.ToString();
-    ARP_TRACE(Trace, "Delete", ip.to_string(), vrf_name, mac_string.str());
+    MacAddress mac = mac_address_;
+    ARP_TRACE(Trace, "Delete", ip.to_string(), vrf_name, mac.ToString());
 
     Interface *itf = handler_->agent()->GetArpProto()->ip_fabric_interface();
     handler_->agent()->fabric_inet4_unicast_table()->ArpRoute(

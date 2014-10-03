@@ -20,7 +20,7 @@ IcmpErrorHandler::~IcmpErrorHandler() {
 }
 
 bool IcmpErrorHandler::ValidatePacket() {
-    if (pkt_info_->len < (sizeof(ether_header) + sizeof(struct ip)))
+    if (pkt_info_->len < (sizeof(struct ether_header) + sizeof(struct ip)))
         return false;
     return true;
 }
@@ -84,8 +84,8 @@ bool IcmpErrorHandler::SendIcmpError(VmInterface *intf) {
     char *ptr = (char *)pkt_info_->pkt;
     len += EthHdr(ptr + len, buf_len - len,
                   agent()->vhost_interface()->mac(),
-                  MacAddress(pkt_info_->eth->ether_shost), IP_PROTOCOL,
-                  intf->vlan_id());
+                  MacAddress(pkt_info_->eth->ether_shost),
+                  ETHERTYPE_IP, intf->vlan_id());
 
     uint16_t ip_len = sizeof(struct ip) + sizeof(struct icmp) + data_len;
     len += IpHdr(ptr + len, buf_len - len, ip_len,

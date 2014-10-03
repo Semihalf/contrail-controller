@@ -14,7 +14,7 @@ struct PseudoUdpHdr {
     uint8_t   res;
     uint8_t   prot;
     uint16_t  len;
-    PseudoUdpHdr(in_addr_t s, in_addr_t d, uint8_t p, uint16_t l) : 
+    PseudoUdpHdr(in_addr_t s, in_addr_t d, uint8_t p, uint16_t l) :
         src(s), dest(d), res(0), prot(p), len(l) { }
 };
 
@@ -38,10 +38,8 @@ public:
     uint16_t EthHdr(char *buff, uint8_t len, const MacAddress &src,
                     const MacAddress &dest, const uint16_t proto,
                     uint16_t vlan_id);
-
     void EthHdr(const MacAddress &, const MacAddress &,
                     const uint16_t);
-
     void VlanHdr(uint8_t *ptr, uint16_t tci);
     void IpHdr(uint16_t, in_addr_t, in_addr_t, uint8_t);
     uint16_t IpHdr(char *, uint16_t, uint16_t, in_addr_t, in_addr_t, uint8_t);

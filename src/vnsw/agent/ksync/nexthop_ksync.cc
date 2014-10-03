@@ -31,7 +31,6 @@
 #include "ksync_init.h"
 #include "vr_types.h"
 
-
 NHKSyncEntry::NHKSyncEntry(NHKSyncObject *obj, const NHKSyncEntry *entry,
                            uint32_t index) :
     KSyncNetlinkDBEntry(index), ksync_obj_(obj), type_(entry->type_),
@@ -57,7 +56,6 @@ NHKSyncEntry::NHKSyncEntry(NHKSyncObject *obj, const NextHop *nh) :
     tunnel_type_(TunnelType::INVALID), prefix_len_(32), nh_id_(nh->id()) {
 
     sip_.s_addr = 0;
-    memset(&dmac_, 0, sizeof(dmac_));
     switch (type_) {
     case NextHop::ARP: {
         const ArpNH *arp = static_cast<const ArpNH *>(nh);
@@ -139,7 +137,7 @@ NHKSyncEntry::NHKSyncEntry(NHKSyncObject *obj, const NextHop *nh) :
         dport_ = mirror_nh->GetDPort();
         break;
     }
- 
+
     case NextHop::COMPOSITE: {
         const CompositeNH *comp_nh = static_cast<const CompositeNH *>(nh);
         component_nh_list_.clear();
@@ -449,7 +447,7 @@ bool NHKSyncEntry::Sync(DBEntry *e) {
         // present, just return
         if (valid_ == false) {
             interface_ = NULL;
-            memset(&dmac_, 0, sizeof(dmac_));
+            dmac_.Zero();
             break;
         }
 
@@ -458,7 +456,7 @@ bool NHKSyncEntry::Sync(DBEntry *e) {
         if (active_nh->GetType() != NextHop::ARP) {
             valid_ = false;
             interface_ = NULL;
-            memset(&dmac_, 0, sizeof(dmac_));
+            dmac_.Zero();
             break;
         }
         const ArpNH *arp_nh = static_cast<const ArpNH *>(active_nh);
@@ -476,7 +474,7 @@ bool NHKSyncEntry::Sync(DBEntry *e) {
         // present, just return
         if (valid_ == false || (vrf_id_ == (uint32_t)-1)) {
             interface_ = NULL;
-            memset(&dmac_, 0, sizeof(dmac_));
+            dmac_.Zero();
             break;
         }
 
@@ -489,7 +487,6 @@ bool NHKSyncEntry::Sync(DBEntry *e) {
             InterfaceKSyncEntry if_ksync(interface_object,
                                          arp_nh->GetInterface());
             interface_ = interface_object->GetReference(&if_ksync);
-            //dmac_ = *(arp_nh->GetMac());
             dmac_ = arp_nh->GetMac();
         } else if (active_nh->GetType() == NextHop::RECEIVE) {
             const ReceiveNH *rcv_nh = static_cast<const ReceiveNH *>(active_nh);
@@ -499,11 +496,11 @@ bool NHKSyncEntry::Sync(DBEntry *e) {
                                          rcv_nh->GetInterface());
             interface_ = interface_object->GetReference(&if_ksync);
             Agent *agent = ksync_obj_->ksync()->agent();
-            memcpy(&dmac_, &agent->vhost_interface()->mac(), sizeof(dmac_));
+            dmac_ = agent->vhost_interface()->mac();
         } else if (active_nh->GetType() == NextHop::DISCARD) {
             valid_ = false;
             interface_ = NULL;
-            memset(&dmac_, 0, sizeof(dmac_));
+            dmac_.Zero();
         }
         break;
     }
@@ -954,24 +951,24 @@ void NHKSyncEntry::SetEncap(InterfaceKSyncEntry *if_ksync,
         return;
     }
 
-    MacAddress smac;
+    const MacAddress *smac = &MacAddress::ZeroMac();
     /* DMAC encode */
-    for (size_t i = 0; i < smac.size(); i++) {
-        encap.push_back((int8_t)smac[i]);
+    for (size_t i = 0 ; i < dmac_.size(); i++) {
+        encap.push_back(dmac_[i]);
     }
     /* SMAC encode */
     if (type_ == NextHop::VLAN) {
-        smac = smac_;
+        smac = &smac_;
     } else if ((type_ == NextHop::INTERFACE || type_ == NextHop::ARP)
                && if_ksync) {
-    smac = if_ksync->mac();
+	    smac = &if_ksync->mac();
 
     } else {
         Agent *agent = ksync_obj_->ksync()->agent();
-        smac = agent->vhost_interface()->mac();
+        smac = &agent->vhost_interface()->mac();
     }
-    for (size_t i = 0 ; i < smac.size(); i++) {
-        encap.push_back((int8_t)smac[i]);
+    for (size_t i = 0 ; i < smac->size(); i++) {
+        encap.push_back((*smac)[i]);
     }
 
     // Add 802.1q header if

@@ -277,7 +277,7 @@ uint16_t ServicesSandesh::FillVrouterHdr(PktTrace::Pkt &pkt, VrouterHdr &resp) {
     return sizeof(AgentHdr);
 }
 
-void ServicesSandesh::FillMacHdr(ether_header *eth, MacHdr &resp) {
+void ServicesSandesh::FillMacHdr(struct ether_header *eth, MacHdr &resp) {
     MacToString(eth->ether_dhost, resp.dest_mac);
     MacToString(eth->ether_shost, resp.src_mac);
     uint16_t type = ntohs(eth->ether_type);
@@ -312,7 +312,7 @@ void ServicesSandesh::FillArpHdr(ether_arp *arp, ArpHdr &resp) {
     resp.target_ip = tpa.to_string();
 }
 
-void ServicesSandesh::FillIpv4Hdr(ip *ip, Ipv4Hdr &resp) {
+void ServicesSandesh::FillIpv4Hdr(struct ip *ip, Ipv4Hdr &resp) {
     resp.vers = ip->ip_v;
     resp.hdrlen = ip->ip_hl;
     resp.tos = ip->ip_tos;
@@ -346,7 +346,7 @@ void ServicesSandesh::FillIpv6Hdr(ip6_hdr *ip, Ipv6Hdr &resp) {
     resp.dest_ip = dest.to_string(ec);
 }
 
-void ServicesSandesh::FillIcmpv4Hdr(icmp *icmp, Icmpv4Hdr &resp) {
+void ServicesSandesh::FillIcmpv4Hdr(struct icmp *icmp, Icmpv4Hdr &resp) {
     resp.type = (icmp->icmp_type == ICMP_ECHO) ? "echo request":
                  (icmp->icmp_type == ICMP_ECHOREPLY) ? "echo reply" :
                  IntToString(icmp->icmp_type);
@@ -610,8 +610,8 @@ void ServicesSandesh::ArpPktTrace(PktTrace::Pkt &pkt, ArpPktSandesh *resp) {
     FillPktData(pkt, data.info);
     uint16_t hdr_len = FillVrouterHdr(pkt, data.agent_hdr);
     uint8_t *ptr = pkt.pkt + hdr_len;
-    FillMacHdr((ether_header *)ptr, data.mac_hdr);
-    ptr += sizeof(ether_header);
+    FillMacHdr((struct ether_header *)ptr, data.mac_hdr);
+    ptr += sizeof(struct ether_header);
     FillArpHdr((ether_arp *)ptr, data.arp_hdr);
     std::vector<ArpPkt> &list =
         const_cast<std::vector<ArpPkt>&>(resp->get_pkt_list());
@@ -623,16 +623,16 @@ void ServicesSandesh::DhcpPktTrace(PktTrace::Pkt &pkt, DhcpPktSandesh *resp) {
     FillPktData(pkt, data.info);
     uint16_t hdr_len = FillVrouterHdr(pkt, data.agent_hdr);
     uint8_t *ptr = pkt.pkt + hdr_len;
-    FillMacHdr((ether_header*)ptr, data.mac_hdr);
-    ptr += sizeof(ether_header);
-    FillIpv4Hdr((ip *)ptr, data.ip_hdr);
+    FillMacHdr((struct ether_header *)ptr, data.mac_hdr);
+    ptr += sizeof(struct ether_header);
+    FillIpv4Hdr((struct ip *)ptr, data.ip_hdr);
     ptr += (data.ip_hdr.hdrlen * 4);
     FillUdpHdr((udphdr *)ptr, data.udp_hdr);
     ptr += sizeof(udphdr);
     PktHandler *pkt_handler = Agent::GetInstance()->pkt()->pkt_handler();
     std::size_t trace_size = pkt_handler->PktTraceSize(PktHandler::DHCP);
     int32_t remaining = std::min(pkt.len, trace_size) -
-                        (sizeof(ether_header) +
+                        (sizeof(struct ether_header) +
                          data.ip_hdr.hdrlen * 4 + sizeof(udphdr));
     FillDhcpv4Hdr((dhcphdr *)ptr, data.dhcp_hdr, remaining);
     std::vector<DhcpPkt> &list =
@@ -645,8 +645,8 @@ void ServicesSandesh::Dhcpv6PktTrace(PktTrace::Pkt &pkt, Dhcpv6PktSandesh *resp)
     FillPktData(pkt, data.info);
     uint16_t hdr_len = FillVrouterHdr(pkt, data.agent_hdr);
     uint8_t *ptr = pkt.pkt + hdr_len;
-    FillMacHdr((ethhdr *)ptr, data.mac_hdr);
-    ptr += sizeof(ethhdr);
+    FillMacHdr((struct ether_header *)ptr, data.mac_hdr);
+    ptr += sizeof(struct ether_header);
     FillIpv6Hdr((ip6_hdr *)ptr, data.ip_hdr);
     ptr += sizeof(ip6_hdr);
     FillUdpHdr((udphdr *)ptr, data.udp_hdr);
@@ -654,7 +654,7 @@ void ServicesSandesh::Dhcpv6PktTrace(PktTrace::Pkt &pkt, Dhcpv6PktSandesh *resp)
     PktHandler *pkt_handler = Agent::GetInstance()->pkt()->pkt_handler();
     std::size_t trace_size = pkt_handler->PktTraceSize(PktHandler::DHCPV6);
     int32_t remaining = std::min(pkt.len, trace_size) -
-                        (sizeof(ethhdr) + sizeof(ip6_hdr) + sizeof(udphdr));
+                        (sizeof(struct ether_header) + sizeof(ip6_hdr) + sizeof(udphdr));
     FillDhcpv6Hdr((Dhcpv6Hdr *)ptr, data.dhcp_hdr, remaining);
     std::vector<Dhcpv6Pkt> &list =
         const_cast<std::vector<Dhcpv6Pkt>&>(resp->get_pkt_list());
@@ -666,16 +666,16 @@ void ServicesSandesh::DnsPktTrace(PktTrace::Pkt &pkt, DnsPktSandesh *resp) {
     FillPktData(pkt, data.info);
     uint16_t hdr_len = FillVrouterHdr(pkt, data.agent_hdr);
     uint8_t *ptr = pkt.pkt + hdr_len;
-    FillMacHdr((ether_header *)ptr, data.mac_hdr);
-    ptr += sizeof(ether_header);
-    FillIpv4Hdr((ip *)ptr, data.ip_hdr);
+    FillMacHdr((struct ether_header *)ptr, data.mac_hdr);
+    ptr += sizeof(struct ether_header);
+    FillIpv4Hdr((struct ip *)ptr, data.ip_hdr);
     ptr += (data.ip_hdr.hdrlen * 4);
     FillUdpHdr((udphdr *)ptr, data.udp_hdr);
     ptr += sizeof(udphdr);
     PktHandler *pkt_handler = Agent::GetInstance()->pkt()->pkt_handler();
     std::size_t trace_size = pkt_handler->PktTraceSize(PktHandler::DNS);
     int32_t remaining = std::min(pkt.len, trace_size) -
-                        (sizeof(ether_header) +
+                        (sizeof(struct ether_header) +
                          data.ip_hdr.hdrlen * 4 + sizeof(udphdr));
     FillDnsHdr((dnshdr *)ptr, data.dns_hdr, remaining);
     std::vector<DnsPkt> &list =
@@ -688,11 +688,11 @@ void ServicesSandesh::IcmpPktTrace(PktTrace::Pkt &pkt, IcmpPktSandesh *resp) {
     FillPktData(pkt, data.info);
     uint16_t hdr_len = FillVrouterHdr(pkt, data.agent_hdr);
     uint8_t *ptr = pkt.pkt + hdr_len;
-    FillMacHdr((ether_header *)ptr, data.mac_hdr);
-    ptr += sizeof(ether_header);
-    FillIpv4Hdr((ip *)ptr, data.ip_hdr);
+    FillMacHdr((struct ether_header *)ptr, data.mac_hdr);
+    ptr += sizeof(struct ether_header);
+    FillIpv4Hdr((struct ip *)ptr, data.ip_hdr);
     ptr += (data.ip_hdr.hdrlen * 4);
-    FillIcmpv4Hdr((icmp *)ptr, data.icmp_hdr);
+    FillIcmpv4Hdr((struct icmp *)ptr, data.icmp_hdr);
     std::vector<IcmpPkt> &list =
         const_cast<std::vector<IcmpPkt>&>(resp->get_pkt_list());
     list.push_back(data);
@@ -703,15 +703,15 @@ void ServicesSandesh::Icmpv6PktTrace(PktTrace::Pkt &pkt, Icmpv6PktSandesh *resp)
     FillPktData(pkt, data.info);
     uint16_t hdr_len = FillVrouterHdr(pkt, data.agent_hdr);
     uint8_t *ptr = pkt.pkt + hdr_len;
-    FillMacHdr((ethhdr *)ptr, data.mac_hdr);
-    ptr += sizeof(ethhdr);
+    FillMacHdr((struct ether_header *)ptr, data.mac_hdr);
+    ptr += sizeof(struct ether_header);
     FillIpv6Hdr((ip6_hdr *)ptr, data.ip_hdr);
     ptr += sizeof(ip6_hdr);
     PktHandler *pkt_handler = Agent::GetInstance()->pkt()->pkt_handler();
     std::size_t trace_size = pkt_handler->PktTraceSize(PktHandler::ICMPV6);
     int32_t remaining = std::min(pkt.len, trace_size) -
-                        (sizeof(ethhdr) + sizeof(ip6_hdr));
-    FillIcmpv6Hdr((icmp6_hdr *)ptr, data.icmp_hdr, remaining); 
+                        (sizeof(struct ether_header) + sizeof(ip6_hdr));
+    FillIcmpv6Hdr((icmp6_hdr *)ptr, data.icmp_hdr, remaining);
     std::vector<Icmpv6Pkt> &list =
         const_cast<std::vector<Icmpv6Pkt>&>(resp->get_pkt_list());
     list.push_back(data);
@@ -722,11 +722,11 @@ void ServicesSandesh::OtherPktTrace(PktTrace::Pkt &pkt, PktSandesh *resp) {
     FillPktData(pkt, data.info);
     uint16_t hdr_len = FillVrouterHdr(pkt, data.agent_hdr);
     uint8_t *ptr = pkt.pkt + hdr_len;
-    FillMacHdr((ether_header *)ptr, data.mac_hdr);
-    ptr += sizeof(ether_header);
+    FillMacHdr((struct ether_header *)ptr, data.mac_hdr);
+    ptr += sizeof(struct ether_header);
     PktHandler *pkt_handler = Agent::GetInstance()->pkt()->pkt_handler();
     std::size_t trace_size = pkt_handler->PktTraceSize(PktHandler::FLOW);
-    int32_t remaining = std::min(pkt.len, trace_size) - sizeof(ether_header);
+    int32_t remaining = std::min(pkt.len, trace_size) - sizeof(struct ether_header);
     PktToHexString(ptr, remaining, data.pkt);
     std::vector<PktDump> &list =
         const_cast<std::vector<PktDump>&>(resp->get_pkt_list());

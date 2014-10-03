@@ -40,7 +40,7 @@ const std::string Agent::link_local_vn_name_ =
     "default-domain:default-project:__link_local__";
 const std::string Agent::link_local_vrf_name_ =
     "default-domain:default-project:__link_local__:__link_local__";
-const MacAddress Agent::vrrp_mac_ = MacAddress::FromString("00:00:5E:00:01:00");
+const MacAddress Agent::vrrp_mac_(0x00, 0x00, 0x5E, 0x00, 0x01, 0x00);
 const MacAddress Agent::bcast_mac_(MacAddress::BroadcastMac());
 const std::string Agent::config_file_ = "/etc/contrail/contrail-vrouter-agent.conf";
 const std::string Agent::log_file_ = "/var/log/contrail/vrouter.log";

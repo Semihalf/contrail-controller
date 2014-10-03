@@ -328,7 +328,7 @@ bool ArpNH::Change(const DBRequest *req) {
         ret = true;
     }
 
-    if (mac_ != data->mac_) {
+    if (mac_.CompareTo(data->mac_) != 0) {
         mac_ = data->mac_;
         ret = true;
     }
@@ -364,7 +364,7 @@ void ArpNH::SendObjectLog(AgentLogEvent::type event) const {
     const Ip4Address *ip = GetIp();
     info.set_dest_ip(ip->to_string());
 
-    const unsigned char *m = (const unsigned char *)GetMac();
+    const unsigned char *m = GetMac().GetData();
     FillObjectLogMac(m, info);
 
     OPER_TRACE(NextHop, info);
@@ -435,13 +435,12 @@ bool InterfaceNH::Change(const DBRequest *req) {
         vrf_ = vrf;
         ret = true;
     }
-
-    if (dmac_ != data->dmac_) {
+    if (dmac_.CompareTo(data->dmac_) != 0) {
         dmac_ = data->dmac_;
         ret = true;
     }
     if (is_multicastNH()) {
-        dmac_.Broadcast();
+        dmac_ = MacAddress::BroadcastMac();
     }
 
     return ret;
@@ -530,7 +529,6 @@ void InterfaceNH::CreateInetInterfaceNextHop(const string &ifname,
 
     MacAddress mac;
     mac.last_octet() = 1;
-
     InterfaceNHData *data = new InterfaceNHData(vrf_name, mac);
     req.data.reset(data);
     NextHopTable::GetInstance()->Process(req);
@@ -580,7 +578,7 @@ void InterfaceNH::SendObjectLog(AgentLogEvent::type event) const {
     const Interface *intf = GetInterface();
     FillObjectLogIntf(intf, info);
 
-    const unsigned char *m = (const unsigned char *)&GetDMac();
+    const unsigned char *m = (unsigned char *)GetDMac().GetData();
     FillObjectLogMac(m, info);
 
     OPER_TRACE(NextHop, info);
@@ -709,10 +707,9 @@ bool TunnelNH::Change(const DBRequest *req) {
     bool ret = false;
     bool valid = false;
 
-    Inet4UnicastAgentRouteTable *rt_table =
-        static_cast<Inet4UnicastAgentRouteTable *>
+    InetUnicastAgentRouteTable *rt_table =
         (GetVrf()->GetInet4UnicastRouteTable());
-    Inet4UnicastRouteEntry *rt = rt_table->FindLPM(dip_);
+    InetUnicastRouteEntry *rt = rt_table->FindLPM(dip_);
     if (!rt) {
         //No route to reach destination, add to unresolved list
         valid = false;
@@ -721,7 +718,7 @@ bool TunnelNH::Change(const DBRequest *req) {
         //Trigger ARP resolution
         valid = false;
         rt_table->AddUnresolvedNH(this);
-        Inet4UnicastAgentRouteTable::AddArpReq(GetVrf()->GetName(), dip_);
+        InetUnicastAgentRouteTable::AddArpReq(GetVrf()->GetName(), dip_);
         rt = NULL;
     } else {
         valid = rt->GetActiveNextHop()->IsValid();
@@ -739,8 +736,7 @@ bool TunnelNH::Change(const DBRequest *req) {
 }
 
 void TunnelNH::Delete(const DBRequest *req) {
-    Inet4UnicastAgentRouteTable *rt_table =
-        static_cast<Inet4UnicastAgentRouteTable *>
+    InetUnicastAgentRouteTable *rt_table =
         (GetVrf()->GetInet4UnicastRouteTable());
     rt_table->RemoveUnresolvedNH(this);
 }
@@ -816,10 +812,9 @@ bool MirrorNH::Change(const DBRequest *req) {
         valid_ = true;
         return true;
     }
-    Inet4UnicastAgentRouteTable *rt_table =
-        static_cast<Inet4UnicastAgentRouteTable *>
+    InetUnicastAgentRouteTable *rt_table =
         (GetVrf()->GetInet4UnicastRouteTable());
-    Inet4UnicastRouteEntry *rt = rt_table->FindLPM(dip_);
+    InetUnicastRouteEntry *rt = rt_table->FindLPM(dip_);
     if (!rt) {
         //No route to reach destination, add to unresolved list
         valid = false;
@@ -829,7 +824,7 @@ bool MirrorNH::Change(const DBRequest *req) {
         //Trigger ARP resolution
         valid = false;
         rt_table->AddUnresolvedNH(this);
-        Inet4UnicastAgentRouteTable::AddArpReq(GetVrf()->GetName(), dip_);
+        InetUnicastAgentRouteTable::AddArpReq(GetVrf()->GetName(), dip_);
         rt = NULL;
     } else {
         valid = rt->GetActiveNextHop()->IsValid();
@@ -850,8 +845,7 @@ void MirrorNH::Delete(const DBRequest *req) {
     if (!GetVrf()) {
         return;
     }
-    Inet4UnicastAgentRouteTable *rt_table =
-        static_cast<Inet4UnicastAgentRouteTable *>
+    InetUnicastAgentRouteTable *rt_table =
         (GetVrf()->GetInet4UnicastRouteTable());
     rt_table->RemoveUnresolvedNH(this);
 }
@@ -1030,12 +1024,12 @@ bool VlanNH::Change(const DBRequest *req) {
         ret = true;
     }
 
-    if (smac_ != data->smac_) {
+    if (smac_.CompareTo(data->smac_) != 0) {
         smac_ = data->smac_;
         ret = true;
     }
 
-    if (dmac_ != data->dmac_) {
+    if (dmac_.CompareTo(data->dmac_) != 0) {
         dmac_ = data->dmac_;
         ret = true;
     }
@@ -1108,7 +1102,7 @@ void VlanNH::SendObjectLog(AgentLogEvent::type event) const {
     const Interface *intf = GetInterface();
     FillObjectLogIntf(intf, info);
 
-    const unsigned char *m = (const unsigned char *)&GetDMac();
+    const unsigned char *m = GetDMac().GetData();
     FillObjectLogMac(m, info);
 
     info.set_vlan_tag((short int)GetVlanTag());
@@ -2058,7 +2052,7 @@ void NextHop::SetNHSandeshData(NhSandeshData &data) const {
                 break;
             }
             data.set_itf(arp->GetInterface()->name());
-            const unsigned char *m = (const unsigned char *)arp->GetMac();
+            const unsigned char *m = arp->GetMac().GetData();
             char mstr[32];
             snprintf(mstr, 32, "%x:%x:%x:%x:%x:%x",
                      m[0], m[1], m[2], m[3], m[4], m[5]);
@@ -2076,7 +2070,7 @@ void NextHop::SetNHSandeshData(NhSandeshData &data) const {
             data.set_type("interface");
             const InterfaceNH *itf = static_cast<const InterfaceNH *>(this);
             data.set_itf(itf->GetInterface()->name());
-            const unsigned char *m = (const unsigned char *)&itf->GetDMac();
+            const unsigned char *m = itf->GetDMac().GetData();
             char mstr[32];
             snprintf(mstr, 32, "%x:%x:%x:%x:%x:%x",
                      m[0], m[1], m[2], m[3], m[4], m[5]);
@@ -2100,7 +2094,7 @@ void NextHop::SetNHSandeshData(NhSandeshData &data) const {
                                   (tun->GetRt()->GetActiveNextHop());
                 if (nh->GetType() == NextHop::ARP) {
                     const ArpNH *arp_nh = static_cast<const ArpNH *>(nh);
-                    const unsigned char *m = (const unsigned char *)arp_nh->GetMac();
+                    const unsigned char *m = arp_nh->GetMac().GetData();
                     char mstr[32];
                     snprintf(mstr, 32, "%x:%x:%x:%x:%x:%x",
                             m[0], m[1], m[2], m[3], m[4], m[5]);
@@ -2124,7 +2118,7 @@ void NextHop::SetNHSandeshData(NhSandeshData &data) const {
                 if (nh->GetType() == NextHop::ARP) {
                     const ArpNH *arp_nh = static_cast<const ArpNH *>(nh);
                     (mir_nh->GetRt()->GetActiveNextHop());
-                    const unsigned char *m = (const unsigned char *)arp_nh->GetMac();
+                    const unsigned char *m = arp_nh->GetMac().GetData();
                     char mstr[32];
                     snprintf(mstr, 32, "%x:%x:%x:%x:%x:%x",
                             m[0], m[1], m[2], m[3], m[4], m[5]);
@@ -2148,7 +2142,7 @@ void NextHop::SetNHSandeshData(NhSandeshData &data) const {
             const VlanNH *itf = static_cast<const VlanNH *>(this);
             data.set_itf(itf->GetInterface()->name());
             data.set_vlan_tag(itf->GetVlanTag());
-            const unsigned char *m = (const unsigned char *)&itf->GetDMac();
+            const unsigned char *m = itf->GetDMac().GetData();
             char mstr[32];
             snprintf(mstr, 32, "%x:%x:%x:%x:%x:%x",
                     m[0], m[1], m[2], m[3], m[4], m[5]);

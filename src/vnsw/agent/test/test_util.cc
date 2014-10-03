@@ -1110,11 +1110,10 @@ bool RouteFind(const string &vrf_name, const Ip4Address &addr, int plen) {
     if (vrf == NULL)
         return false;
 
-    Inet4UnicastRouteKey key(NULL, vrf_name, addr, plen);
-    Inet4UnicastRouteEntry* route = 
-        static_cast<Inet4UnicastRouteEntry *>
-        (static_cast<Inet4UnicastAgentRouteTable *>(vrf->
-            GetInet4UnicastRouteTable())->FindActiveEntry(&key));
+    InetUnicastRouteKey key(NULL, vrf_name, addr, plen);
+    InetUnicastRouteEntry* route =
+        static_cast<InetUnicastRouteEntry *>
+        (vrf->GetInet4UnicastRouteTable()->FindActiveEntry(&key));
     return (route != NULL);
 }
 
@@ -1127,11 +1126,10 @@ bool RouteFindV6(const string &vrf_name, const Ip6Address &addr, int plen) {
     if (vrf == NULL)
         return false;
 
-    Inet6UnicastRouteKey key(NULL, vrf_name, addr, plen);
-    Inet6UnicastRouteEntry* route = 
-        static_cast<Inet6UnicastRouteEntry *>
-        (static_cast<Inet6UnicastAgentRouteTable *>(vrf->
-            GetInet6UnicastRouteTable())->FindActiveEntry(&key));
+    InetUnicastRouteKey key(NULL, vrf_name, addr, plen);
+    InetUnicastRouteEntry* route =
+        static_cast<InetUnicastRouteEntry *>
+        (vrf->GetInet6UnicastRouteTable()->FindActiveEntry(&key));
     return (route != NULL);
 }
 
@@ -1139,9 +1137,7 @@ bool RouteFindV6(const string &vrf_name, const string &addr, int plen) {
     return RouteFindV6(vrf_name, Ip6Address::from_string(addr), plen);
 }
 
-
-
-bool L2RouteFind(const string &vrf_name, const struct ether_addr &mac) {
+bool L2RouteFind(const string &vrf_name, const MacAddress &mac) {
     Layer2RouteEntry *route =
         Layer2AgentRouteTable::FindRoute(Agent::GetInstance(), vrf_name, mac);
     return (route != NULL);
@@ -1154,7 +1150,7 @@ bool MCRouteFind(const string &vrf_name, const Ip4Address &grp_addr,
         return false;
 
     Inet4MulticastRouteKey key(vrf_name, src_addr, grp_addr);
-    Inet4MulticastRouteEntry *route = 
+    Inet4MulticastRouteEntry *route =
         static_cast<Inet4MulticastRouteEntry *>
         (static_cast<Inet4MulticastAgentRouteTable *>(vrf->
              GetInet4MulticastRouteTable())->FindActiveEntry(&key));
@@ -1173,7 +1169,7 @@ bool MCRouteFind(const string &vrf_name, const Ip4Address &grp_addr) {
         return false;
 
     Inet4MulticastRouteKey key(vrf_name, grp_addr);
-    Inet4MulticastRouteEntry *route = 
+    Inet4MulticastRouteEntry *route =
         static_cast<Inet4MulticastRouteEntry *>
         (static_cast<Inet4MulticastAgentRouteTable *>(vrf->
              GetInet4MulticastRouteTable())->FindActiveEntry(&key));
@@ -1185,43 +1181,41 @@ bool MCRouteFind(const string &vrf_name, const string &grp_addr) {
 
 }
 
-Layer2RouteEntry *L2RouteGet(const string &vrf_name, 
-                             const struct ether_addr &mac) {
+Layer2RouteEntry *L2RouteGet(const string &vrf_name,
+                             const MacAddress &mac) {
     VrfEntry *vrf = Agent::GetInstance()->vrf_table()->FindVrfFromName(vrf_name);
     if (vrf == NULL)
         return NULL;
 
     Layer2RouteKey key(Agent::GetInstance()->local_vm_peer(), vrf_name, mac, 0);
-    Layer2RouteEntry *route = 
+    Layer2RouteEntry *route =
         static_cast<Layer2RouteEntry *>
         (static_cast<Layer2AgentRouteTable *>(vrf->
              GetLayer2RouteTable())->FindActiveEntry(&key));
     return route;
 }
 
-Inet4UnicastRouteEntry* RouteGet(const string &vrf_name, const Ip4Address &addr, int plen) {
+InetUnicastRouteEntry* RouteGet(const string &vrf_name, const Ip4Address &addr, int plen) {
     VrfEntry *vrf = Agent::GetInstance()->vrf_table()->FindVrfFromName(vrf_name);
     if (vrf == NULL)
         return NULL;
 
-    Inet4UnicastRouteKey key(NULL, vrf_name, addr, plen);
-    Inet4UnicastRouteEntry* route = 
-        static_cast<Inet4UnicastRouteEntry *>
-        (static_cast<Inet4UnicastAgentRouteTable *>(vrf->
-            GetInet4UnicastRouteTable())->FindActiveEntry(&key));
+    InetUnicastRouteKey key(NULL, vrf_name, addr, plen);
+    InetUnicastRouteEntry* route =
+        static_cast<InetUnicastRouteEntry *>
+        (vrf->GetInet4UnicastRouteTable()->FindActiveEntry(&key));
     return route;
 }
 
-Inet6UnicastRouteEntry* RouteGetV6(const string &vrf_name, const Ip6Address &addr, int plen) {
+InetUnicastRouteEntry* RouteGetV6(const string &vrf_name, const Ip6Address &addr, int plen) {
     VrfEntry *vrf = Agent::GetInstance()->vrf_table()->FindVrfFromName(vrf_name);
     if (vrf == NULL)
         return NULL;
 
-    Inet6UnicastRouteKey key(NULL, vrf_name, addr, plen);
-    Inet6UnicastRouteEntry* route = 
-        static_cast<Inet6UnicastRouteEntry *>
-        (static_cast<Inet6UnicastAgentRouteTable *>(vrf->
-            GetInet6UnicastRouteTable())->FindActiveEntry(&key));
+    InetUnicastRouteKey key(NULL, vrf_name, addr, plen);
+    InetUnicastRouteEntry* route =
+        static_cast<InetUnicastRouteEntry *>
+        (vrf->GetInet6UnicastRouteTable()->FindActiveEntry(&key));
     return route;
 }
 
@@ -1275,9 +1269,9 @@ bool VlanNhFind(int id, uint16_t tag) {
     return (nh != NULL);
 }
 
-bool Layer2TunnelRouteAdd(const Peer *peer, const string &vm_vrf, 
+bool Layer2TunnelRouteAdd(const Peer *peer, const string &vm_vrf,
                           TunnelType::TypeBmap bmap, const Ip4Address &server_ip,
-                          uint32_t label, struct ether_addr &remote_vm_mac,
+                          uint32_t label, MacAddress &remote_vm_mac,
                           const Ip4Address &vm_addr, uint8_t plen) {
     ControllerVmRoute *data =
         ControllerVmRoute::MakeControllerVmRoute(peer,
@@ -1291,9 +1285,9 @@ bool Layer2TunnelRouteAdd(const Peer *peer, const string &vm_vrf,
     return true;
 }
 
-bool Layer2TunnelRouteAdd(const Peer *peer, const string &vm_vrf, 
+bool Layer2TunnelRouteAdd(const Peer *peer, const string &vm_vrf,
                           TunnelType::TypeBmap bmap, const char *server_ip,
-                          uint32_t label, struct ether_addr &remote_vm_mac,
+                          uint32_t label, MacAddress &remote_vm_mac,
                           const char *vm_addr, uint8_t plen) {
     boost::system::error_code ec;
     Layer2TunnelRouteAdd(peer, vm_vrf, bmap,
@@ -1317,7 +1311,7 @@ bool EcmpTunnelRouteAdd(const Peer *peer, const string &vrf_name, const Ip4Addre
     ControllerEcmpRoute *data =
         new ControllerEcmpRoute(peer, vm_ip, plen, vn_name, -1, false, vrf_name,
                                 sg, path_preference, nh_req);
-    Inet4UnicastAgentRouteTable::AddRemoteVmRouteReq(peer, vrf_name, vm_ip, plen, data);
+    InetUnicastAgentRouteTable::AddRemoteVmRouteReq(peer, vrf_name, vm_ip, plen, data);
 }
 
 bool Inet4TunnelRouteAdd(const Peer *peer, const string &vm_vrf, const Ip4Address &vm_addr,
@@ -1331,7 +1325,7 @@ bool Inet4TunnelRouteAdd(const Peer *peer, const string &vm_vrf, const Ip4Addres
                               Agent::GetInstance()->router_id(),
                               vm_vrf, server_ip,
                               bmap, label, dest_vn_name, sg, path_preference);
-    Inet4UnicastAgentRouteTable::AddRemoteVmRouteReq(peer, vm_vrf,
+    InetUnicastAgentRouteTable::AddRemoteVmRouteReq(peer, vm_vrf,
                                         vm_addr, plen, data);
     return true;
 }
@@ -1357,7 +1351,7 @@ bool TunnelRouteAdd(const char *server, const char *vmip, const char *vm_vrf,
                               vm_vrf, Ip4Address::from_string(server, ec),
                               TunnelType::AllType(), label, "",
                               SecurityGroupList(), PathPreference());
-    Inet4UnicastAgentRouteTable::AddRemoteVmRouteReq(bgp_peer_, vm_vrf,
+    InetUnicastAgentRouteTable::AddRemoteVmRouteReq(bgp_peer_, vm_vrf,
                                         Ip4Address::from_string(vmip, ec),
                                         32, data);
     return true;
@@ -1370,14 +1364,13 @@ bool TunnelRouteAdd(const char *server, const char *vmip, const char *vm_vrf,
 }
 
 bool AddArp(const char *ip, const char *mac_str, const char *ifname) {
-    struct ether_addr mac = *ether_aton(mac_str);
+    MacAddress mac(mac_str);
     Interface *intf;
     PhysicalInterfaceKey key(ifname);
     intf = static_cast<Interface *>(Agent::GetInstance()->interface_table()->FindActiveEntry(&key));
     boost::system::error_code ec;
-    Inet4UnicastAgentRouteTable::ArpRoute(DBRequest::DB_ENTRY_ADD_CHANGE,
-                              Ip4Address::from_string(ip, ec),
-                              MacAddress(mac),
+    InetUnicastAgentRouteTable::ArpRoute(DBRequest::DB_ENTRY_ADD_CHANGE,
+                              Ip4Address::from_string(ip, ec), mac,
                               Agent::GetInstance()->fabric_vrf_name(),
                               *intf, true, 32);
 
@@ -1385,14 +1378,14 @@ bool AddArp(const char *ip, const char *mac_str, const char *ifname) {
 }
 
 bool DelArp(const string &ip, const char *mac_str, const string &ifname) {
-    struct ether_addr mac = *ether_aton(mac_str);
+    MacAddress mac(mac_str);
     Interface *intf;
     PhysicalInterfaceKey key(ifname);
     intf = static_cast<Interface *>(Agent::GetInstance()->interface_table()->FindActiveEntry(&key));
     boost::system::error_code ec;
-    Inet4UnicastAgentRouteTable::ArpRoute(DBRequest::DB_ENTRY_DELETE,
+    InetUnicastAgentRouteTable::ArpRoute(DBRequest::DB_ENTRY_DELETE,
                               Ip4Address::from_string(ip, ec),
-                              MacAddress(mac), Agent::GetInstance()->fabric_vrf_name(), *intf, false, 32);
+                              mac, Agent::GetInstance()->fabric_vrf_name(), *intf, false, 32);
     return true;
 }
 
@@ -2844,10 +2837,10 @@ bool ResolvRouteFind(const string &vrf_name, const Ip4Address &addr, int plen) {
         return false;
     }
 
-    Inet4UnicastRouteKey key(NULL, vrf_name, addr, plen);
-    Inet4UnicastRouteEntry *route = 
-        static_cast<Inet4UnicastRouteEntry *>
-        (static_cast<Inet4UnicastAgentRouteTable *>(vrf->
+    InetUnicastRouteKey key(NULL, vrf_name, addr, plen);
+    InetUnicastRouteEntry *route =
+        static_cast<InetUnicastRouteEntry *>
+        (static_cast<InetUnicastAgentRouteTable *>(vrf->
             GetInet4UnicastRouteTable())->FindActiveEntry(&key));
     if (route == NULL) {
         LOG(DEBUG, "Resolve route not found");
@@ -2876,10 +2869,10 @@ bool VhostRecvRouteFind(const string &vrf_name, const Ip4Address &addr,
         return false;
     }
 
-    Inet4UnicastRouteKey key(NULL, vrf_name, addr, plen);
-    Inet4UnicastRouteEntry* route = 
-        static_cast<Inet4UnicastRouteEntry *>
-        (static_cast<Inet4UnicastAgentRouteTable *>(vrf->
+    InetUnicastRouteKey key(NULL, vrf_name, addr, plen);
+    InetUnicastRouteEntry* route =
+        static_cast<InetUnicastRouteEntry *>
+        (static_cast<InetUnicastAgentRouteTable *>(vrf->
             GetInet4UnicastRouteTable())->FindActiveEntry(&key));
     if (route == NULL) {
         LOG(DEBUG, "Vhost Receive route not found");
@@ -2904,11 +2897,11 @@ bool VhostRecvRouteFind(const string &vrf_name, const Ip4Address &addr,
 uint32_t PathCount(const string vrf_name, const Ip4Address &addr, int plen) {
 
     VrfEntry *vrf = Agent::GetInstance()->vrf_table()->FindVrfFromName(vrf_name);
-    Inet4UnicastRouteKey key(NULL, vrf_name, addr, plen);
+    InetUnicastRouteKey key(NULL, vrf_name, addr, plen);
 
-    Inet4UnicastRouteEntry* route = 
-        static_cast<Inet4UnicastRouteEntry *>
-        (static_cast<Inet4UnicastAgentRouteTable *>(vrf->
+    InetUnicastRouteEntry* route =
+        static_cast<InetUnicastRouteEntry *>
+        (static_cast<InetUnicastAgentRouteTable *>(vrf->
             GetInet4UnicastRouteTable())->FindActiveEntry(&key));
     if (route == NULL) {
         return 0;
@@ -3013,4 +3006,10 @@ void FlushEvpnNextHop(BgpPeer *peer, std::string vrf_name,
                                         evpn_olist_map, tag,
                                         ControllerPeerPath::kInvalidPeerIdentifier);
     client->WaitForIdle();
+}
+
+Layer2RouteEntry *GetL2FloodRoute(const std::string &vrf_name) {
+    MacAddress broadcast_mac("ff:ff:ff:ff:ff:ff");
+    Layer2RouteEntry *rt = L2RouteGet("vrf1", broadcast_mac);
+    return rt;
 }

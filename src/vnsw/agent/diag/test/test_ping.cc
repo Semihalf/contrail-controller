@@ -91,10 +91,9 @@ public:
         memcpy(buf, msg, length);
 
         // Change the agent header
-        ether_header *eth = (ether_header *)buf;
+        struct ether_header *eth = (struct ether_header *)buf;
         MacAddress mac(eth->ether_dhost);
-        MacAddress(eth->ether_shost).ToArray(eth->ether_dhost,
-                   sizeof(eth->ether_dhost));
+        memcpy(eth->ether_dhost, eth->ether_shost, sizeof(eth->ether_dhost));
         mac.ToArray(eth->ether_shost, sizeof(eth->ether_shost));
 
         agent_hdr *agent = (agent_hdr *)(eth + 1);
@@ -116,9 +115,9 @@ public:
         agent->hdr_cmd = htons(AgentHdr::TRAP_DIAG);
         agent->hdr_cmd_param = htonl(ntohs(agent->hdr_ifindex));
 
-        const MacAddress smac(0x00, 0x25, 0x90, 0xc4, 0x82, 0x2c);
-        const MacAddress dmac(0x02, 0xce, 0xa0, 0x6c, 0x96, 0x34);
-        eth = (ether_header *) (agent + 1);
+        MacAddress smac(0x00, 0x25, 0x90, 0xc4, 0x82, 0x2c);
+        MacAddress dmac(0x02, 0xce, 0xa0, 0x6c, 0x96, 0x34);
+        eth = (struct ether_header *) (agent + 1);
         dmac.ToArray(eth->ether_dhost, sizeof(eth->ether_dhost));
         smac.ToArray(eth->ether_shost, sizeof(eth->ether_shost));
 

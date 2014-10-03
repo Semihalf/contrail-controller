@@ -92,10 +92,6 @@ public:
     void set_ip_fabric_interface_index(uint16_t ind) {
         ip_fabric_interface_index_ = ind;
     }
-    void set_ip_fabric_interface_mac(const u_int8_t *mac) {
-        ip_fabric_interface_mac_ = mac;
-    }
-
     void set_ip_fabric_interface_mac(const MacAddress &mac) {
         ip_fabric_interface_mac_ = mac;
     }
@@ -173,7 +169,7 @@ public:
                 AgentRouteTable *table);
     void RouteUpdate(DBTablePartBase *part, DBEntryBase *entry);
     void ManagedDelete() { deleted = true;}
-    void SendArpRequestForVm(Inet4UnicastRouteEntry *route);
+    void SendArpRequestForVm(InetUnicastRouteEntry *route);
     void Delete();
     bool DeleteRouteState(DBTablePartBase *part, DBEntryBase *entry);
     void WalkDone(DBTableBase *partition, ArpVrfState *state);

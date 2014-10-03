@@ -26,7 +26,7 @@ bool IcmpHandler::Run() {
         return true;
     }
     VmInterface *vm_itf = static_cast<VmInterface *>(itf);
-    if (!vm_itf->layer3_forwarding()) { 
+    if (!vm_itf->layer3_forwarding()) {
         return true;
     }
     switch (icmp_->icmp_type) {
@@ -45,7 +45,7 @@ bool IcmpHandler::Run() {
 }
 
 bool IcmpHandler::CheckPacket() {
-    if (pkt_info_->len < (sizeof(ether_header) + ntohs(pkt_info_->ip->ip_len)))
+    if (pkt_info_->len < (sizeof(struct ether_header) + ntohs(pkt_info_->ip->ip_len)))
         return false;
 
     uint16_t checksum = icmp_->icmp_cksum;
@@ -73,11 +73,12 @@ void IcmpHandler::SendResponse(VmInterface *vm_intf) {
     // EthHdr - IP Header - ICMP Header
     len += EthHdr(ptr + len, buf_len - len,
                   agent()->vhost_interface()->mac(),
-                  MacAddress(pkt_info_->eth->ether_shost), ETHERTYPE_IP, vm_intf->vlan_id());
+                  MacAddress(pkt_info_->eth->ether_shost),
+                  ETHERTYPE_IP, vm_intf->vlan_id());
 
     uint16_t ip_len = sizeof(struct ip) + icmp_len_;
 
-    len += IpHdr(ptr + len, buf_len - len, ip_len, 
+    len += IpHdr(ptr + len, buf_len - len, ip_len,
                  htonl(pkt_info_->ip_daddr.to_v4().to_ulong()),
                  htonl(pkt_info_->ip_saddr.to_v4().to_ulong()), IPPROTO_ICMP);
 

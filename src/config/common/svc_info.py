@@ -17,7 +17,6 @@ _VN_SNAT_PREFIX_NAME = 'snat-si-left'
 _VN_SNAT_SUBNET_CIDR = '100.64.0.0/29'
 
 _CHECK_SVC_VM_HEALTH_INTERVAL = 30
-_CHECK_CLEANUP_INTERVAL = 5
 
 _VM_INSTANCE_TYPE = 'virtual-machine'
 _NETNS_INSTANCE_TYPE = 'network-namespace'
@@ -25,32 +24,8 @@ _NETNS_INSTANCE_TYPE = 'network-namespace'
 _SNAT_SVC_TYPE = 'source-nat'
 _LB_SVC_TYPE = 'loadbalancer'
 
-def get_left_vn(parent_str, vn):
-    if vn is None:
-        return None
-    if vn == "":
-        return(parent_str + ':' + _SVC_VN_LEFT)
-    else:
-        return vn
-# end get_left_vn
-
-def get_right_vn(parent_str, vn):
-    if vn is None:
-        return None
-    if vn == "":
-        return(parent_str + ':' + _SVC_VN_RIGHT)
-    else:
-        return vn
-# end get_right_vn
-
-def get_management_vn(parent_str, vn):
-    if vn is None:
-        return None
-    if vn == "":
-        return(parent_str + ':' + _SVC_VN_MGMT)
-    else:
-        return vn
-# end get_management_vn
+_ACTIVE_LOCAL_PREFERENCE = 200
+_STANDBY_LOCAL_PREFERENCE = 100
 
 def get_management_if_str():
     return _MGMT_STR
@@ -114,5 +89,8 @@ def get_lb_service_type():
 def get_vm_health_interval():
     return _CHECK_SVC_VM_HEALTH_INTERVAL
 
-def get_cleanup_interval():
-    return _CHECK_CLEANUP_INTERVAL
+def get_active_preference():
+    return _ACTIVE_LOCAL_PREFERENCE
+
+def get_standby_preference():
+    return _STANDBY_LOCAL_PREFERENCE

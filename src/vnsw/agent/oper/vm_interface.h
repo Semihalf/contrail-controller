@@ -29,7 +29,7 @@ public:
 
     struct ListEntry {
         ListEntry() : installed_(false), del_pending_(false) { }
-        ListEntry(bool installed, bool del_pending) : 
+        ListEntry(bool installed, bool del_pending) :
             installed_(installed), del_pending_(del_pending) { }
         virtual ~ListEntry()  {}
 

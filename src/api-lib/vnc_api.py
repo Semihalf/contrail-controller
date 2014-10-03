@@ -81,18 +81,24 @@ class VncApi(VncApiClientGen):
                  api_server_host='127.0.0.1', api_server_port='8082',
                  api_server_url=None, conf_file=None, user_info=None,
                  auth_token=None, auth_host=None, auth_port=None,
-                 auth_protocol = None, auth_url=None):
+                 auth_protocol = None, auth_url=None, auth_type=None):
         # TODO allow for username/password to be present in creds file
 
         super(VncApi, self).__init__(self._obj_serializer_diff)
 
         cfg_parser = ConfigParser.ConfigParser()
-        clen = len(cfg_parser.read(conf_file or
-                                   "/etc/contrail/vnc_api_lib.ini"))
-
+        try:
+            cfg_parser.read(conf_file or
+                            "/etc/contrail/vnc_api_lib.ini")
+        except Exception as e:
+            logger = logging.getLogger(__name__)
+            logger.warn("Exception: %s", str(e))
+            
         # keystone
-        self._authn_type = _read_cfg(cfg_parser, 'auth', 'AUTHN_TYPE',
-                                     self._DEFAULT_AUTHN_TYPE)
+        self._authn_type = auth_type or \
+            _read_cfg(cfg_parser, 'auth', 'AUTHN_TYPE',
+                      self._DEFAULT_AUTHN_TYPE)
+
         if self._authn_type == 'keystone':
             self._authn_protocol = auth_protocol or \
                 _read_cfg(cfg_parser, 'auth', 'AUTHN_PROTOCOL',
@@ -318,7 +324,9 @@ class VncApi(VncApiClientGen):
             return (True, self.ifmap_to_id(ifmap_id))
     #end _read_args_to_id
 
-    def _request_server(self, op, url, data=None, retry_on_error=True, retry_after_authn=False):
+    def _request_server(self, op, url, data=None, retry_on_error=True,
+                        retry_after_authn=False, retry_count=10):
+        retried = 0
         while True:
             try:
                 if (op == rest.OP_GET):
@@ -360,7 +368,13 @@ class VncApi(VncApiClientGen):
                 raise PermissionDenied(content)
             elif status == 409:
                 raise RefsExistError(content)
-            elif status == 503 or status == 504:
+            elif status == 504:
+                raise TimeOutError('Gateway Timeout 504')
+            elif status == 503:
+                retried += 1
+                if retried >= retry_count:
+                    raise TimeOutError('Service Unavailable Timeout 503')
+
                 time.sleep(1)
                 continue
             else:  # Unknown Error

@@ -127,6 +127,15 @@ protected:
     AgentXmppUnitTest() : thread_(&evm_), agent_(Agent::GetInstance()) {}
  
     virtual void SetUp() {
+        //TestInit initilaizes the controller and xmpp, so disconnect that
+        //and again spawn a new one. Its required since the receive path 
+        //is overridden by mock class.
+        //TODO later use the agent initializer
+        Agent::GetInstance()->controller()->Cleanup();
+        client->WaitForIdle();
+        Agent::GetInstance()->controller()->DisConnect();
+        client->WaitForIdle();
+
         xs = new XmppServer(&evm_, XmppInit::kControlNodeJID);
         xc = new XmppClient(&evm_);
         Agent::GetInstance()->set_controller_ifmap_xmpp_server("127.0.0.1", 0);
@@ -135,6 +144,7 @@ protected:
         xs->Initialize(0, false);
         
         thread_.Start();
+        client->WaitForIdle();
     }
 
     virtual void TearDown() {
@@ -148,6 +158,7 @@ protected:
         client->WaitForIdle();
 
         ShutdownAgentController(Agent::GetInstance());
+        client->WaitForIdle();
         TcpServerManager::DeleteServer(xs);
         TcpServerManager::DeleteServer(xc);
         delete xmpp_init;
@@ -357,7 +368,6 @@ protected:
 
 
     void XmppConnectionSetUp() {
-
         Agent::GetInstance()->controller()->increment_multicast_sequence_number();
         Agent::GetInstance()->set_cn_mcast_builder(NULL);
 
@@ -415,6 +425,9 @@ protected:
 
 namespace {
 
+TEST_F(AgentXmppUnitTest, dummy) {
+}
+
 TEST_F(AgentXmppUnitTest, Connection) {
 
     client->Reset();
@@ -454,10 +467,10 @@ TEST_F(AgentXmppUnitTest, Connection) {
 
     VxLanNetworkIdentifierMode(false);
     client->WaitForIdle();
-    //Create vn,vrf,vm,vm-port and route entry in vrf1 
+    //Create vn,vrf,vm,vm-port and route entry in vrf1
     CreateVmportEnv(input, 1);
     //expect subscribe message+route at the mock server
-    WAIT_FOR(1000, 10000, (mock_peer.get()->Count() == 7));
+    WAIT_FOR(1000, 10000, (mock_peer.get()->Count() == 6));
     client->WaitForIdle();
 
     VrfAddReq("vrf2");
@@ -468,29 +481,29 @@ TEST_F(AgentXmppUnitTest, Connection) {
     Ip4Address addr = Ip4Address::from_string("1.1.1.1");
     EXPECT_TRUE(VmPortActive(input, 0));
     EXPECT_TRUE(RouteFind("vrf1", addr, 32));
-    Inet4UnicastRouteEntry *rt = RouteGet("vrf1", addr, 32);
+    InetUnicastRouteEntry *rt = RouteGet("vrf1", addr, 32);
     EXPECT_STREQ(rt->dest_vn_name().c_str(), "vn1");
 
-    const struct ether_addr *mac = ether_aton("00:00:00:01:01:01");
-    EXPECT_TRUE(L2RouteFind("vrf1", *mac));
+    MacAddress mac("00:00:00:01:01:01");
+    EXPECT_TRUE(L2RouteFind("vrf1", mac));
 
     // Send route, back to vrf1
-    SendRouteMessage(mock_peer.get(), "vrf1", "1.1.1.1/32", 
+    SendRouteMessage(mock_peer.get(), "vrf1", "1.1.1.1/32",
                      MplsTable::kStartLabel);
-    SendL2RouteMessage(mock_peer.get(), "vrf1", "00:00:00:01:01:01", 
+    SendL2RouteMessage(mock_peer.get(), "vrf1", "00:00:00:01:01:01",
                      "1.1.1.1/24", MplsTable::kStartLabel + 1);
     // Route reflected to vrf1; Ipv4 and L2
     WAIT_FOR(1000, 10000, (bgp_peer.get()->Count() == 2));
 
     // Send route, leak to vrf2
-    SendRouteMessage(mock_peer.get(), "vrf2", "1.1.1.1/32", 
+    SendRouteMessage(mock_peer.get(), "vrf2", "1.1.1.1/32",
                      MplsTable::kStartLabel);
     // Route reflected to vrf2; IPv4 route
     WAIT_FOR(1000, 10000, (bgp_peer.get()->Count() == 3));
 
     // Route leaked to vrf2, check entry in route-table
     WAIT_FOR(1000, 10000, (RouteFind("vrf2", addr, 32) == true));
-    Inet4UnicastRouteEntry *rt2 = RouteGet("vrf2", addr, 32);
+    InetUnicastRouteEntry *rt2 = RouteGet("vrf2", addr, 32);
     WAIT_FOR(1000, 10000, (rt2->GetActivePath() != NULL));
     WAIT_FOR(1000, 10000, rt2->dest_vn_name().size() > 0);
     EXPECT_STREQ(rt2->dest_vn_name().c_str(), "vn1");
@@ -531,21 +544,21 @@ TEST_F(AgentXmppUnitTest, Connection) {
 
     //Send route delete
     SendRouteDeleteMessage(mock_peer.get(), "vrf1");
-    SendL2RouteDeleteMessage(mock_peer.get(), "00:00:00:01:01:01", 
+    SendL2RouteDeleteMessage(mock_peer.get(), "00:00:00:01:01:01",
                              "vrf1", "1.1.1.1");
-    // Route delete for vrf1 
+    // Route delete for vrf1
     WAIT_FOR(1000, 10000, (bgp_peer.get()->Count() == 6));
 
     //Send route delete
     SendRouteDeleteMessage(mock_peer.get(), "vrf2");
-    // Route delete for vrf2 
+    // Route delete for vrf2
     WAIT_FOR(1000, 10000, (bgp_peer.get()->Count() == 7));
 
     //Confirm route has been cleaned up
     WAIT_FOR(1000, 10000, (RouteFind("vrf1", addr, 32) == false));
     WAIT_FOR(1000, 10000, (RouteFind("vrf2", addr, 32) == false));
-    WAIT_FOR(1000, 10000, (L2RouteFind("vrf1", *mac) == false));
-    
+    WAIT_FOR(1000, 10000, (L2RouteFind("vrf1", mac) == false));
+
     DeleteVmportEnv(input, 1, true);
     //Confirm Vmport is deleted
     EXPECT_FALSE(VmPortFind(input, 0));
@@ -605,7 +618,7 @@ TEST_F(AgentXmppUnitTest, Del_db_req_by_deleted_peer_non_hv) {
     Ip4Address addr = Ip4Address::from_string("1.1.1.10");
     WAIT_FOR(1000, 10000, (VmPortActive(input, 0)));
     WAIT_FOR(1000, 10000, (RouteFind("vrf10", addr, 32)));
-    Inet4UnicastRouteEntry *rt = RouteGet("vrf10", addr, 32);
+    InetUnicastRouteEntry *rt = RouteGet("vrf10", addr, 32);
     const BgpPeer *old_bgp_peer = Agent::GetInstance()->controller_xmpp_channel(0)->
         bgp_peer_id();
 
@@ -675,7 +688,7 @@ TEST_F(AgentXmppUnitTest, resync_db_req_by_deleted_peer_non_hv) {
     Ip4Address addr = Ip4Address::from_string("1.1.1.10");
     WAIT_FOR(1000, 10000, (VmPortActive(input, 0)));
     WAIT_FOR(1000, 10000, (RouteFind("vrf10", addr, 32)));
-    Inet4UnicastRouteEntry *rt = RouteGet("vrf10", addr, 32);
+    InetUnicastRouteEntry *rt = RouteGet("vrf10", addr, 32);
     const BgpPeer *old_bgp_peer = Agent::GetInstance()->controller_xmpp_channel(0)->
         bgp_peer_id();
     const AgentXmppChannel *channel = old_bgp_peer->GetBgpXmppPeerConst();
@@ -694,8 +707,8 @@ TEST_F(AgentXmppUnitTest, resync_db_req_by_deleted_peer_non_hv) {
                               100, "vn10", SecurityGroupList(),
                               PathPreference());
     DBRequest req(DBRequest::DB_ENTRY_ADD_CHANGE);
-    Inet4UnicastRouteKey *key =
-        new Inet4UnicastRouteKey(old_bgp_peer, "vrf10", addr, 32);
+    InetUnicastRouteKey *key =
+        new InetUnicastRouteKey(old_bgp_peer, "vrf10", addr, 32);
     key->sub_op_ = AgentKey::RESYNC;
     req.key.reset(key);
     req.data.reset(data);
@@ -719,7 +732,7 @@ TEST_F(AgentXmppUnitTest, resync_db_req_by_deleted_peer_non_hv) {
                                    sequence_number,
                                    channel);
     DBRequest localvm_req(DBRequest::DB_ENTRY_ADD_CHANGE);
-    key = new Inet4UnicastRouteKey(old_bgp_peer, "vrf10", addr, 32);
+    key = new InetUnicastRouteKey(old_bgp_peer, "vrf10", addr, 32);
     key->sub_op_ = AgentKey::RESYNC;
     localvm_req.key.reset(key);
     localvm_req.data.reset(local_vm_route);
@@ -734,7 +747,7 @@ TEST_F(AgentXmppUnitTest, resync_db_req_by_deleted_peer_non_hv) {
         new ControllerVlanNhRoute(intf_key, 10, 11, "", SecurityGroupList(),
                                   PathPreference(), sequence_number, channel);
     DBRequest vlanrt_req(DBRequest::DB_ENTRY_ADD_CHANGE);
-    key = new Inet4UnicastRouteKey(old_bgp_peer, "vrf10",
+    key = new InetUnicastRouteKey(old_bgp_peer, "vrf10",
                                    Ip4Address::from_string("2.2.2.0"), 24);
     key->sub_op_ = AgentKey::RESYNC;
     vlanrt_req.key.reset(key);
@@ -753,7 +766,7 @@ TEST_F(AgentXmppUnitTest, resync_db_req_by_deleted_peer_non_hv) {
                                          TunnelType::GREType(), "",
                                          sequence_number, channel);
     DBRequest inet_rt_req(DBRequest::DB_ENTRY_ADD_CHANGE);
-    key = new Inet4UnicastRouteKey(old_bgp_peer, "vrf10",
+    key = new InetUnicastRouteKey(old_bgp_peer, "vrf10",
                                    Ip4Address::from_string("3.3.3.3"), 32);
     key->sub_op_ = AgentKey::RESYNC;
     inet_rt_req.key.reset(key);
@@ -809,7 +822,7 @@ TEST_F(AgentXmppUnitTest, Add_db_inetinterface_req_by_deleted_peer_non_hv) {
     Ip4Address addr = Ip4Address::from_string("1.1.1.10");
     WAIT_FOR(1000, 10000, (VmPortActive(input, 0)));
     WAIT_FOR(1000, 10000, (RouteFind("vrf10", addr, 32)));
-    Inet4UnicastRouteEntry *rt = RouteGet("vrf10", addr, 32);
+    InetUnicastRouteEntry *rt = RouteGet("vrf10", addr, 32);
     const BgpPeer *old_bgp_peer = Agent::GetInstance()->controller_xmpp_channel(0)->
         bgp_peer_id();
     const AgentXmppChannel *channel = old_bgp_peer->GetBgpXmppPeerConst();
@@ -965,21 +978,21 @@ TEST_F(AgentXmppUnitTest, ConnectionUpDown) {
         {"vnet2", 2, "1.1.1.2", "00:00:00:01:01:02", 1, 2},
     };
 
-    //Create vn,vrf,vm,vm-port and route entry in vrf1 
+    //Create vn,vrf,vm,vm-port and route entry in vrf1
     CreateVmportEnv(input, 1);
     //expect subscribe message+route at the mock server
-    WAIT_FOR(1000, 10000, (mock_peer.get()->Count() == 7));
+    WAIT_FOR(1000, 10000, (mock_peer.get()->Count() == 6));
     client->WaitForIdle();
 
     Ip4Address addr = Ip4Address::from_string("1.1.1.2");
     EXPECT_TRUE(VmPortActive(input, 0));
     EXPECT_TRUE(RouteFind("vrf1", addr, 32));
-    Inet4UnicastRouteEntry *rt = RouteGet("vrf1", addr, 32);
+    InetUnicastRouteEntry *rt = RouteGet("vrf1", addr, 32);
     EXPECT_STREQ(rt->dest_vn_name().c_str(), "vn1");
 
-    const struct ether_addr *mac = ether_aton("00:00:00:01:01:02");
-    EXPECT_TRUE(L2RouteFind("vrf1", *mac));
-    Layer2RouteEntry *l2_rt = L2RouteGet("vrf1", *mac);
+    const MacAddress mac("00:00:00:01:01:02");
+    EXPECT_TRUE(L2RouteFind("vrf1", mac));
+    Layer2RouteEntry *l2_rt = L2RouteGet("vrf1", mac);
 
     //ensure active path is local-vm
     EXPECT_TRUE(rt->GetActivePath()->peer()->GetType() == Peer::LOCAL_VM_PORT_PEER);
@@ -1031,7 +1044,7 @@ TEST_F(AgentXmppUnitTest, ConnectionUpDown) {
 
     //expect subscribe for __default__, vrf1,route
     //at the mock server
-    WAIT_FOR(1000, 10000, (mock_peer.get()->Count() == 14));
+    WAIT_FOR(1000, 10000, (mock_peer.get()->Count() == 12));
 
     VxLanNetworkIdentifierMode(false);
     client->WaitForIdle();
@@ -1045,12 +1058,12 @@ TEST_F(AgentXmppUnitTest, ConnectionUpDown) {
     Ip4Address addr2 = Ip4Address::from_string("1.1.1.3");
     EXPECT_TRUE(VmPortActive(input2, 0));
     EXPECT_TRUE(RouteFind("vrf1", addr2, 32));
-    Inet4UnicastRouteEntry *rt2 = RouteGet("vrf1", addr2, 32);
+    InetUnicastRouteEntry *rt2 = RouteGet("vrf1", addr2, 32);
     EXPECT_STREQ(rt2->dest_vn_name().c_str(), "vn1");
 
-    const struct ether_addr *mac2 = ether_aton("00:00:00:02:01:03");
-    EXPECT_TRUE(L2RouteFind("vrf1", *mac2));
-    Layer2RouteEntry *l2_rt2 = L2RouteGet("vrf1", *mac2);
+    const MacAddress mac2("00:00:00:02:01:03");
+    EXPECT_TRUE(L2RouteFind("vrf1", mac2));
+    Layer2RouteEntry *l2_rt2 = L2RouteGet("vrf1", mac2);
 
     //ensure active path is local-vm
     EXPECT_TRUE(rt2->GetActivePath()->peer()->GetType() == Peer::LOCAL_VM_PORT_PEER);
@@ -1060,13 +1073,13 @@ TEST_F(AgentXmppUnitTest, ConnectionUpDown) {
     DeleteVmportEnv(input, 1, false);
     client->WaitForIdle();
     //Confirm Vmport is deleted
-    EXPECT_FALSE(VmPortFind(input, 0)); 
+    EXPECT_FALSE(VmPortFind(input, 0));
 
     //Delete vm-port and route entry in vrf1
     DeleteVmportEnv(input2, 1, true);
     client->WaitForIdle();
     //Confirm Vmport is deleted
-    EXPECT_FALSE(VmPortFind(input2, 0)); 
+    EXPECT_FALSE(VmPortFind(input2, 0));
 
     EXPECT_EQ(0U, Agent::GetInstance()->vn_table()->Size());
 
@@ -1158,7 +1171,7 @@ TEST_F(AgentXmppUnitTest, SgList) {
 
     VxLanNetworkIdentifierMode(false);
     client->WaitForIdle();
-    //Create vn,vrf,vm,vm-port and route entry in vrf1 
+    //Create vn,vrf,vm,vm-port and route entry in vrf1
     CreateVmportEnv(input, 1);
     //expect subscribe message+route at the mock server
     //Message expected
@@ -1167,41 +1180,41 @@ TEST_F(AgentXmppUnitTest, SgList) {
     //3> Layer 2 route add
     //4> All broadcast route
     //5> Broadcast layer 2 route
-    WAIT_FOR(1000, 10000, (mock_peer.get()->Count() == 7));
+    WAIT_FOR(1000, 10000, (mock_peer.get()->Count() == 6));
     client->WaitForIdle();
 
     VrfAddReq("vrf2");
     VnAddReq(2, "vn2", 0, "vrf2");
     //expect subscribe message at the mock server
-    WAIT_FOR(1000, 10000, (mock_peer.get()->Count() == 7));
+    WAIT_FOR(1000, 10000, (mock_peer.get()->Count() == 6));
 
     Ip4Address addr = Ip4Address::from_string("1.1.1.1");
     EXPECT_TRUE(VmPortActive(input, 0));
     EXPECT_TRUE(RouteFind("vrf1", addr, 32));
-    Inet4UnicastRouteEntry *rt = RouteGet("vrf1", addr, 32);
+    InetUnicastRouteEntry *rt = RouteGet("vrf1", addr, 32);
     EXPECT_STREQ(rt->dest_vn_name().c_str(), "vn1");
 
     // Send route, back to vrf1
-    SendRouteMessage(mock_peer.get(), "vrf1", "1.1.1.1/32", 
+    SendRouteMessage(mock_peer.get(), "vrf1", "1.1.1.1/32",
                      MplsTable::kStartLabel);
     // Route reflected to vrf1
     WAIT_FOR(1000, 10000, (bgp_peer.get()->Count() == 1));
 
     // Send route, leak to vrf2
-    SendRouteMessageSg(mock_peer.get(), "vrf2", "1.1.1.1/32", 
+    SendRouteMessageSg(mock_peer.get(), "vrf2", "1.1.1.1/32",
                        MplsTable::kStartLabel);
     // Route leaked to vrf2
     WAIT_FOR(1000, 10000, (bgp_peer.get()->Count() == 2));
 
     // Route leaked to vrf2, check entry in route-table
     WAIT_FOR(1000, 10000, (RouteFind("vrf2", addr, 32) == true));
-    Inet4UnicastRouteEntry *rt2 = RouteGet("vrf2", addr, 32);
+    InetUnicastRouteEntry *rt2 = RouteGet("vrf2", addr, 32);
     WAIT_FOR(1000, 10000, (rt2->GetActivePath() != NULL));
     WAIT_FOR(1000, 10000, rt2->dest_vn_name().size() > 0);
     EXPECT_STREQ(rt2->dest_vn_name().c_str(), "vn1");
     const SecurityGroupList sglist = rt2->GetActivePath()->sg_list();
     EXPECT_TRUE(sglist.size() == 2);
-    
+
 
     //Delete vm-port and route entry in vrf1
     IntfCfgDel(input, 0);
@@ -1209,19 +1222,19 @@ TEST_F(AgentXmppUnitTest, SgList) {
 
     //Send route delete
     SendRouteDeleteMessage(mock_peer.get(), "vrf1");
-    // Route delete for vrf1 
+    // Route delete for vrf1
     WAIT_FOR(1000, 10000, (bgp_peer.get()->Count() == 3));
 
     //Send route delete
     SendRouteDeleteMessage(mock_peer.get(), "vrf2");
-    // Route delete for vrf2 
+    // Route delete for vrf2
     WAIT_FOR(1000, 10000, (bgp_peer.get()->Count() == 4));
     //WAIT_FOR(1000, 10000, (bgp_peer.get()->Count() == 5));
 
     //Confirm route has been cleaned up
     WAIT_FOR(1000, 10000, (RouteFind("vrf1", addr, 32) == false));
     WAIT_FOR(1000, 10000, (RouteFind("vrf2", addr, 32) == false));
-    
+
     DeleteVmportEnv(input, 1, true);
     //Confirm Vmport is deleted
     EXPECT_FALSE(VmPortFind(input, 0));
@@ -1273,13 +1286,13 @@ TEST_F(AgentXmppUnitTest, TransparentSISgList) {
     //Create vn,vrf,vm,vm-port and route entry in vrf1
     CreateVmportEnv(input, 1);
     //expect subscribe message+route at the mock server
-    WAIT_FOR(1000, 10000, (mock_peer.get()->Count() == 7));
+    WAIT_FOR(1000, 10000, (mock_peer.get()->Count() == 6));
     client->WaitForIdle();
 
     AddVrf("vrf2");
     AddVn("vn2", 2);
     //expect subscribe message at the mock server
-    WAIT_FOR(1000, 10000, (mock_peer.get()->Count() == 7));
+    WAIT_FOR(1000, 10000, (mock_peer.get()->Count() == 6));
 
     AddVmPortVrf("ser1", "11.1.1.1", 1);
     AddLink("virtual-machine-interface-routing-instance", "ser1",
@@ -1288,28 +1301,28 @@ TEST_F(AgentXmppUnitTest, TransparentSISgList) {
             "virtual-machine-interface", "vnet1");
     client->WaitForIdle();
     //expect subscribe message+route at the mock server
-    WAIT_FOR(1000, 10000, (mock_peer.get()->Count() == 9));
+    WAIT_FOR(1000, 10000, (mock_peer.get()->Count() == 8));
 
     Ip4Address addr = Ip4Address::from_string("11.1.1.1");
     EXPECT_TRUE(VmPortActive(input, 0));
     EXPECT_TRUE(RouteFind("vrf2", addr, 32));
-    Inet4UnicastRouteEntry *rt = RouteGet("vrf2", addr, 32);
+    InetUnicastRouteEntry *rt = RouteGet("vrf2", addr, 32);
     EXPECT_STREQ(rt->dest_vn_name().c_str(), "vn1");
 
     // Send route, back to vrf2
     SendRouteMessageSg(mock_peer.get(), "vrf2", "11.1.1.1/32",
-                       MplsTable::kStartLabel + 2);
+                       MplsTable::kStartLabel);
     // Route reflected to vrf2
     WAIT_FOR(1000, 10000, (bgp_peer.get()->Count() == 1));
 
     // Route leaked to vrf2, check entry in route-table
     WAIT_FOR(1000, 10000, (RouteFind("vrf2", addr, 32) == true));
-    Inet4UnicastRouteEntry *rt2 = RouteGet("vrf2", addr, 32);
+    InetUnicastRouteEntry *rt2 = RouteGet("vrf2", addr, 32);
     WAIT_FOR(1000, 10000, (rt2->GetActivePath() != NULL));
     WAIT_FOR(1000, 10000, rt2->dest_vn_name().size() > 0);
     EXPECT_STREQ(rt2->dest_vn_name().c_str(), "vn1");
     const SecurityGroupList sglist = rt2->GetActivePath()->sg_list();
-    EXPECT_TRUE(sglist.size() == 2);
+    WAIT_FOR(1000, 10000, (rt2->GetActivePath()->sg_list().size() == 2));
 
     //Cleanup
     DelLink("virtual-machine-interface-routing-instance", "ser1",
@@ -1356,7 +1369,7 @@ TEST_F(AgentXmppUnitTest, vxlan_peer_l2route_add) {
     result.push_back("127.0.0.1");
     result.push_back("Yes");
     result.push_back("Established");
-    Sandesh::set_response_callback(boost::bind(ValidateSandeshResponse, _1, result)); 
+    Sandesh::set_response_callback(boost::bind(ValidateSandeshResponse, _1, result));
     xmpp_req->HandleRequest();
     client->WaitForIdle();
     xmpp_req->Release();
@@ -1366,7 +1379,7 @@ TEST_F(AgentXmppUnitTest, vxlan_peer_l2route_add) {
 
     VxLanNetworkIdentifierMode(false);
     client->WaitForIdle();
-    // Create vm-port in vn1 
+    // Create vm-port in vn1
     struct PortInfo input[] = {
         {"vnet2", 2, "1.1.1.2", "00:00:00:01:01:02", 1, 2},
     };
@@ -1374,18 +1387,18 @@ TEST_F(AgentXmppUnitTest, vxlan_peer_l2route_add) {
     //Create vn,vrf,vm,vm-port and route entry in vrf1
     CreateVmportEnv(input, 1);
     //expect subscribe message+route at the mock server
-    WAIT_FOR(1000, 10000, (mock_peer.get()->Count() == 7));
+    WAIT_FOR(1000, 10000, (mock_peer.get()->Count() == 6));
     client->WaitForIdle();
 
     Ip4Address addr = Ip4Address::from_string("1.1.1.2");
     EXPECT_TRUE(VmPortActive(input, 0));
     EXPECT_TRUE(RouteFind("vrf1", addr, 32));
-    Inet4UnicastRouteEntry *rt = RouteGet("vrf1", addr, 32);
+    InetUnicastRouteEntry *rt = RouteGet("vrf1", addr, 32);
     EXPECT_STREQ(rt->dest_vn_name().c_str(), "vn1");
 
-    const struct ether_addr *mac = ether_aton("00:00:00:01:01:02");
-    EXPECT_TRUE(L2RouteFind("vrf1", *mac));
-    Layer2RouteEntry *l2_rt = L2RouteGet("vrf1", *mac);
+    const MacAddress mac("00:00:00:01:01:02");
+    EXPECT_TRUE(L2RouteFind("vrf1", mac));
+    Layer2RouteEntry *l2_rt = L2RouteGet("vrf1", mac);
 
     //ensure active path is local-vm
     EXPECT_TRUE(rt->GetActivePath()->peer()->GetType() == Peer::LOCAL_VM_PORT_PEER);
@@ -1409,7 +1422,7 @@ TEST_F(AgentXmppUnitTest, vxlan_peer_l2route_add) {
         EXPECT_TRUE(path->vxlan_id() == vxlan_id);
     }
     ASSERT_TRUE(path_count == 2);
- 
+
     client->WaitForIdle(5);
 
     //Delete vm-port and route entry in vrf1
@@ -1421,7 +1434,7 @@ TEST_F(AgentXmppUnitTest, vxlan_peer_l2route_add) {
     client->WaitForIdle();
 
     //Confirm Vmport is deleted
-    EXPECT_FALSE(VmPortFind(input, 0)); 
+    EXPECT_FALSE(VmPortFind(input, 0));
 
     TaskScheduler::GetInstance()->Stop();
     Agent::GetInstance()->controller()->unicast_cleanup_timer().cleanup_timer_->Fire();
@@ -1452,7 +1465,7 @@ TEST_F(AgentXmppUnitTest, mpls_peer_l2route_add) {
     result.push_back("127.0.0.1");
     result.push_back("Yes");
     result.push_back("Established");
-    Sandesh::set_response_callback(boost::bind(ValidateSandeshResponse, _1, result)); 
+    Sandesh::set_response_callback(boost::bind(ValidateSandeshResponse, _1, result));
     xmpp_req->HandleRequest();
     client->WaitForIdle();
     xmpp_req->Release();
@@ -1462,26 +1475,26 @@ TEST_F(AgentXmppUnitTest, mpls_peer_l2route_add) {
 
     VxLanNetworkIdentifierMode(false);
     client->WaitForIdle();
-    // Create vm-port in vn1 
+    // Create vm-port in vn1
     struct PortInfo input[] = {
         {"vnet2", 2, "1.1.1.2", "00:00:00:01:01:02", 1, 2},
     };
 
-    //Create vn,vrf,vm,vm-port and route entry in vrf1 
+    //Create vn,vrf,vm,vm-port and route entry in vrf1
     CreateVmportEnv(input, 1);
     //expect subscribe message+route at the mock server
-    WAIT_FOR(1000, 10000, (mock_peer.get()->Count() == 7));
+    WAIT_FOR(1000, 10000, (mock_peer.get()->Count() == 6));
     client->WaitForIdle();
 
     Ip4Address addr = Ip4Address::from_string("1.1.1.2");
     EXPECT_TRUE(VmPortActive(input, 0));
     EXPECT_TRUE(RouteFind("vrf1", addr, 32));
-    Inet4UnicastRouteEntry *rt = RouteGet("vrf1", addr, 32);
+    InetUnicastRouteEntry *rt = RouteGet("vrf1", addr, 32);
     EXPECT_STREQ(rt->dest_vn_name().c_str(), "vn1");
 
-    const struct ether_addr *mac = ether_aton("00:00:00:01:01:02");
-    EXPECT_TRUE(L2RouteFind("vrf1", *mac));
-    Layer2RouteEntry *l2_rt = L2RouteGet("vrf1", *mac);
+    const MacAddress mac("00:00:00:01:01:02");
+    EXPECT_TRUE(L2RouteFind("vrf1", mac));
+    Layer2RouteEntry *l2_rt = L2RouteGet("vrf1", mac);
 
     //ensure active path is local-vm
     EXPECT_TRUE(rt->GetActivePath()->peer()->GetType() == Peer::LOCAL_VM_PORT_PEER);
@@ -1491,7 +1504,7 @@ TEST_F(AgentXmppUnitTest, mpls_peer_l2route_add) {
 
     // Send route, back to vrf1
     SendL2RouteMessage(mock_peer.get(), "vrf1", "00:00:00:01:01:02",
-                     "1.1.1.2/24", l2_rt->GetActivePath()->label(), 
+                     "1.1.1.2/24", l2_rt->GetActivePath()->label(),
                      "vn1", false);
     // Route reflected to vrf1
     WAIT_FOR(1000, 1000, (l2_rt->GetPathList().size() == 2));
@@ -1505,7 +1518,7 @@ TEST_F(AgentXmppUnitTest, mpls_peer_l2route_add) {
         EXPECT_TRUE(path->label() == label);
     }
     ASSERT_TRUE(path_count == 2);
- 
+
     client->WaitForIdle(5);
 
     //Delete vm-port and route entry in vrf1
@@ -1513,7 +1526,7 @@ TEST_F(AgentXmppUnitTest, mpls_peer_l2route_add) {
     client->WaitForIdle();
 
     //Confirm Vmport is deleted
-    EXPECT_FALSE(VmPortFind(input, 0)); 
+    EXPECT_FALSE(VmPortFind(input, 0));
 
     WAIT_FOR(1000, 1000, (agent_->vn_table()->Size() == 0));
 

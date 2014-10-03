@@ -258,7 +258,7 @@ void Interface::GetOsParams(Agent *agent) {
     int fd = socket(AF_LOCAL, SOCK_STREAM, 0);
     assert(fd >= 0);
     if (ioctl(fd, SIOCGIFHWADDR, (void *)&ifr) < 0) {
-        LOG(ERROR, "Error <" << errno << ": " << strerror(errno) << 
+        LOG(ERROR, "Error <" << errno << ": " << strerror(errno) <<
             "> querying mac-address for interface <" << name_ << ">");
         os_oper_state_ = false;
         close(fd);
@@ -267,7 +267,7 @@ void Interface::GetOsParams(Agent *agent) {
 
 
     if (ioctl(fd, SIOCGIFFLAGS, (void *)&ifr) < 0) {
-        LOG(ERROR, "Error <" << errno << ": " << strerror(errno) << 
+        LOG(ERROR, "Error <" << errno << ": " << strerror(errno) <<
             "> querying mac-address for interface <" << name_ << ">");
         os_oper_state_ = false;
         close(fd);

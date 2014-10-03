@@ -40,7 +40,11 @@ bool DiagPktHandler::Run() {
 
     if (!ad) {
         //Ignore if packet doesnt have proper L4 header
-               return true;
+        return true;
+    }
+    if (pkt_info_->ether_type == ETHERTYPE_IPV6) {
+        //Ignore IPv6 packets until it is supported
+        return true;
     }
     if (ntohl(ad->op_) == AgentDiagPktData::DIAG_REQUEST) {
         //Request received swap the packet
@@ -122,13 +126,13 @@ void DiagPktHandler::SwapL4() {
 
 void DiagPktHandler::SwapIpHdr() {
     //IpHdr expects IP address to be in network format
-    ip *ip = pkt_info_->ip;
+    struct ip *ip = pkt_info_->ip;
     IpHdr(ntohs(ip->ip_len), ip->ip_dst.s_addr, ip->ip_src.s_addr, ip->ip_p);
 }
 
 void DiagPktHandler::SwapEthHdr() {
-    ether_header *eth = pkt_info_->eth;
-    EthHdr(MacAddress(eth->ether_dhost), MacAddress(eth->ether_shost),
+    struct ether_header *eth = pkt_info_->eth;
+    EthHdr(MacAddress(eth->ether_dhost), MacAddress(eth->ether_shost), ntohs(eth->ether_type));
            ntohs(eth->ether_type));
 }
 

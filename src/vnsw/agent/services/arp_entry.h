@@ -37,8 +37,7 @@ public:
     const MacAddress &mac_address() const { return mac_address_; }
 
     bool HandleArpRequest();
-//    void HandleArpReply(uint8_t *mac);
-    void HandleArpReply(const MacAddress &mac);
+    void HandleArpReply(const MacAddress &);
     bool RetryExpiry();
     bool AgingExpiry();
     void SendGratuitousArp();

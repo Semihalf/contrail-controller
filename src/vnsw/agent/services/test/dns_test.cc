@@ -212,22 +212,22 @@ public:
         uint8_t *buf  = new uint8_t[len];
         memset(buf, 0, len);
 
-        ether_header *eth = (ether_header *)buf;
+        struct ether_header *eth = (struct ether_header *)buf;
         eth->ether_dhost[5] = 1;
         eth->ether_shost[5] = 2;
-        eth->ether_type = htons(ETHERTYPE_IP);
+        eth->ether_type = htons(0x800);
 
         agent_hdr *agent = (agent_hdr *)(eth + 1);
         agent->hdr_ifindex = htons(itf_index);
         agent->hdr_vrf = htons(0);
         agent->hdr_cmd = htons(AgentHdr::TRAP_NEXTHOP);
 
-        eth = (ether_header *) (agent + 1);
-        memcpy(eth->ether_dhost, dest_mac, ETHER_ADDR_LEN);
-        memcpy(eth->ether_shost, src_mac, ETHER_ADDR_LEN);
-        eth->ether_type = htons(ETHERTYPE_IP);
+        eth = (struct ether_header *) (agent + 1);
+        memcpy(eth->ether_dhost, dest_mac, MAC_LEN);
+        memcpy(eth->ether_shost, src_mac, MAC_LEN);
+        eth->ether_type = htons(0x800);
 
-        ip *ip = (struct ip *) (eth + 1);
+        struct ip *ip = (struct ip *) (eth + 1);
         ip->ip_hl = 5;
         ip->ip_v = 4;
         ip->ip_tos = 0;
@@ -257,9 +257,9 @@ public:
 
         len += sizeof(udphdr);
         udp->uh_ulen = htons(len);
-        ip->ip_len = htons(len + sizeof(*ip));
+        ip->ip_len = htons(len + sizeof(struct ip));
 
-        len += sizeof(struct ip) + sizeof(ether_header) + Agent::GetInstance()->pkt()->pkt_handler()->EncapHeaderLen();
+        len += sizeof(struct ip) + sizeof(struct ether_header) + Agent::GetInstance()->pkt()->pkt_handler()->EncapHeaderLen();
         TestPkt0Interface *tap = (TestPkt0Interface *)
                 (Agent::GetInstance()->pkt()->control_interface());
         tap->TxPacket(buf, len);

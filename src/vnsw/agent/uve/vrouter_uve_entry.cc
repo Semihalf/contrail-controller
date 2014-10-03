@@ -721,7 +721,7 @@ void VrouterUveEntry::SendVrouterUve() {
     }
 }
 
-std::string VrouterUveEntry::GetMacAddress(const MacAddress &mac) const {
+string VrouterUveEntry::GetMacAddress(const MacAddress &mac) const {
     return mac.ToString();
 }
 

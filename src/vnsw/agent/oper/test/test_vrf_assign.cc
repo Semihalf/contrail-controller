@@ -73,7 +73,7 @@ public:
         client->WaitForIdle();
         EXPECT_TRUE(VmPortActive(1));
         VmInterface *interface = static_cast<VmInterface *>(VmPortGet(1));
-        ether_addr mac;
+        MacAddress mac;
         VlanNH::CreateReq(interface->GetUuid(), 1, "vrf1", MacAddress(mac),
                           MacAddress(mac));
         client->WaitForIdle();

@@ -114,7 +114,7 @@ bool ArpHandler::HandlePacket() {
 
     //Look for subnet broadcast
     AgentRoute *route =
-        static_cast<Inet4UnicastAgentRouteTable *>(vrf->
+        static_cast<InetUnicastAgentRouteTable *>(vrf->
             GetInet4UnicastRouteTable())->FindLPM(arp_addr);
     if (route) {
         if (route->is_multicast()) {
@@ -283,9 +283,9 @@ uint16_t ArpHandler::ArpHdr(const MacAddress &smac, in_addr_t sip,
     return sizeof(ether_arp);
 }
 
-void ArpHandler::SendArp(uint16_t op, const MacAddress &smac,
-                         in_addr_t sip, const MacAddress &tmac,
-                         in_addr_t tip, uint16_t itf, uint16_t vrf) {
+void ArpHandler::SendArp(uint16_t op, const MacAddress &smac, in_addr_t sip,
+                         const MacAddress &tmac, in_addr_t tip,
+                         uint16_t itf, uint16_t vrf) {
 
     if (pkt_info_->packet_buffer() == NULL) {
         pkt_info_->AllocPacketBuffer(agent(), PktHandler::ARP, MIN_ETH_PKT_LEN,
@@ -294,13 +294,13 @@ void ArpHandler::SendArp(uint16_t op, const MacAddress &smac,
 
     uint8_t *buf = pkt_info_->packet_buffer()->data();
     memset(buf, 0, pkt_info_->packet_buffer()->data_len());
-    pkt_info_->eth = (ether_header *)buf;
+    pkt_info_->eth = (struct ether_header *)buf;
     arp_ = pkt_info_->arp = (ether_arp *) (pkt_info_->eth + 1);
     arp_tpa_ = tip;
 
     ArpHdr(smac, sip, tmac, tip, op);
-    EthHdr(smac, MacAddress::BroadcastMac(), 0x806);
-    pkt_info_->set_len(sizeof(ether_header) + sizeof(ether_arp));
+    EthHdr(smac, MacAddress::BroadcastMac(), ETHERTYPE_ARP);
+    pkt_info_->set_len(sizeof(struct ether_header) + sizeof(ether_arp));
 
     Send(itf, vrf, AgentHdr::TX_SWITCH, PktHandler::ARP);
 }
