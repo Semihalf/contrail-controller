@@ -48,18 +48,16 @@ struct PortInfo input[] = {
 };
 
 class TunnelEncapTest : public ::testing::Test {
-public:    
-    TunnelEncapTest() : default_tunnel_type_(TunnelType::MPLS_GRE) { 
+public:
+    TunnelEncapTest() : default_tunnel_type_(TunnelType::MPLS_GRE) {
         vrf_name_ = "vrf1";
         server1_ip_ = Ip4Address::from_string("10.1.1.11");
         server2_ip_ = Ip4Address::from_string("10.1.1.12");
         local_vm_ip_ = Ip4Address::from_string("1.1.1.10");
         remote_vm_ip_ = Ip4Address::from_string("1.1.1.11");
         remote_ecmp_vm_ip_ = Ip4Address::from_string("1.1.1.12");
-        memcpy(&local_vm_mac_, ether_aton("00:00:01:01:01:10"),
-               sizeof(struct ether_addr));
-        memcpy(&remote_vm_mac_, ether_aton("00:00:01:01:01:11"),
-               sizeof(struct ether_addr));
+        local_vm_mac_ = MacAddress::FromString("00:00:01:01:01:10");
+        remote_vm_mac_ = MacAddress::FromString("00:00:01:01:01:11");
     };
     ~TunnelEncapTest() {
     }
@@ -217,7 +215,7 @@ public:
     }
 
     void VerifyInet4UnicastRoutes(TunnelType::Type type) {
-        Inet4UnicastRouteEntry *route = RouteGet(vrf_name_, local_vm_ip_, 32);
+        InetUnicastRouteEntry *route = RouteGet(vrf_name_, local_vm_ip_, 32);
         for(Route::PathList::iterator it = route->GetPathList().begin();
             it != route->GetPathList().end(); it++) {
             const AgentPath *path =
@@ -302,7 +300,7 @@ public:
         ASSERT_TRUE(tnh->GetTunnelType().GetType() == type);
 
         Ip4Address subnet_broadcast = Ip4Address::from_string("1.1.1.255");
-        Inet4UnicastRouteEntry *uc_rt =
+        InetUnicastRouteEntry *uc_rt =
             RouteGet("vrf1", subnet_broadcast, 32);
         const CompositeNH *subnet_cnh =
             static_cast<const CompositeNH *>(mc_rt->GetActiveNextHop());
@@ -321,8 +319,8 @@ public:
     Ip4Address  server1_ip_;
     Ip4Address  server2_ip_;
     Ip4Address  remote_ecmp_vm_ip_;
-    struct ether_addr local_vm_mac_;
-    struct ether_addr remote_vm_mac_;
+    MacAddress  local_vm_mac_;
+    MacAddress  remote_vm_mac_;
     static TunnelType::Type type_;
 };
 

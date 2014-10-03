@@ -100,7 +100,7 @@ FlowEntry::FlowEntry(const FlowKey &k) :
     alloc_count_.fetch_and_increment();
 }
 
-void FlowEntry::GetSourceRouteInfo(const Inet4UnicastRouteEntry *rt) {
+void FlowEntry::GetSourceRouteInfo(const InetUnicastRouteEntry *rt) {
     const AgentPath *path = NULL;
     if (rt) {
         path = rt->GetActivePath();
@@ -116,7 +116,7 @@ void FlowEntry::GetSourceRouteInfo(const Inet4UnicastRouteEntry *rt) {
     }
 }
 
-void FlowEntry::GetDestRouteInfo(const Inet4UnicastRouteEntry *rt) {
+void FlowEntry::GetDestRouteInfo(const InetUnicastRouteEntry *rt) {
     const AgentPath *path = NULL;
     if (rt) {
         path = rt->GetActivePath();
@@ -1253,8 +1253,8 @@ bool FlowEntry::SetRpfNH(const AgentRoute *rt) {
             //  If there are multiple instances of ECMP in local server
             //  then RPF NH would point to local composite NH(containing 
             //  local members only)
-        const Inet4UnicastRouteEntry *route =
-            static_cast<const Inet4UnicastRouteEntry *>(rt);
+        const InetUnicastRouteEntry *route =
+            static_cast<const InetUnicastRouteEntry *>(rt);
         nh = route->GetLocalNextHop();
     }
 
@@ -1393,10 +1393,10 @@ void FlowEntry::InitFwdFlow(const PktFlowInfo *info, const PktInfo *pkt,
     }
 
     if (key_.family == Address::INET) {
-        const Inet4UnicastRouteEntry* inet4_rt =
-            static_cast<const Inet4UnicastRouteEntry*>(ctrl->rt_);
-        const Inet4UnicastRouteEntry* inet4_rev_rt =
-            static_cast<const Inet4UnicastRouteEntry*>(rev_ctrl->rt_);
+        const InetUnicastRouteEntry* inet4_rt =
+            static_cast<const InetUnicastRouteEntry*>(ctrl->rt_);
+        const InetUnicastRouteEntry* inet4_rev_rt =
+            static_cast<const InetUnicastRouteEntry*>(rev_ctrl->rt_);
         GetSourceRouteInfo(inet4_rt);
         GetDestRouteInfo(inet4_rev_rt);
     } else {
@@ -1446,10 +1446,10 @@ void FlowEntry::InitRevFlow(const PktFlowInfo *info,
     }
 
     if (key_.family == Address::INET) {
-        const Inet4UnicastRouteEntry* inet4_rt =
-            static_cast<const Inet4UnicastRouteEntry*>(ctrl->rt_);
-        const Inet4UnicastRouteEntry* inet4_rev_rt =
-            static_cast<const Inet4UnicastRouteEntry*>(rev_ctrl->rt_);
+        const InetUnicastRouteEntry* inet4_rt =
+            static_cast<const InetUnicastRouteEntry*>(ctrl->rt_);
+        const InetUnicastRouteEntry* inet4_rev_rt =
+            static_cast<const InetUnicastRouteEntry*>(rev_ctrl->rt_);
         GetSourceRouteInfo(inet4_rt);
         GetDestRouteInfo(inet4_rev_rt);
     } else {
@@ -1794,7 +1794,7 @@ void FlowTable::AclNotify(DBTablePartBase *part, DBEntryBase *e)
     }
 }
 
-Inet4RouteUpdate::Inet4RouteUpdate(Inet4UnicastAgentRouteTable *rt_table):
+Inet4RouteUpdate::Inet4RouteUpdate(InetUnicastAgentRouteTable *rt_table):
     rt_table_(rt_table), marked_delete_(false), 
     table_delete_ref_(this, rt_table->deleter()) {
 }
@@ -1855,7 +1855,7 @@ void NhListener::Notify(DBTablePartBase *part, DBEntryBase *e) {
 
 void Inet4RouteUpdate::UnicastNotify(DBTablePartBase *partition, DBEntryBase *e)
 {
-    Inet4UnicastRouteEntry *route = static_cast<Inet4UnicastRouteEntry *>(e);
+    InetUnicastRouteEntry *route = static_cast<InetUnicastRouteEntry *>(e);
     State *state = static_cast<State *>(e->GetState(partition->parent(), id_));
 
     if (route->is_multicast()) {
@@ -1916,7 +1916,7 @@ void Inet4RouteUpdate::UnicastNotify(DBTablePartBase *partition, DBEntryBase *e)
 }
 
 Inet4RouteUpdate *Inet4RouteUpdate::UnicastInit(
-                              Inet4UnicastAgentRouteTable *table)
+                              InetUnicastAgentRouteTable *table)
 {
     Inet4RouteUpdate *rt_update = new Inet4RouteUpdate(table);
     rt_update->id_ = table->Register(
@@ -1943,7 +1943,7 @@ void FlowTable::VrfNotify(DBTablePartBase *part, DBEntryBase *e)
         state = new VrfFlowHandlerState();
         state->inet4_unicast_update_ = 
             Inet4RouteUpdate::UnicastInit(
-            static_cast<Inet4UnicastAgentRouteTable *>(vrf->
+            static_cast<InetUnicastAgentRouteTable *>(vrf->
             GetInet4UnicastRouteTable()));
         vrf->SetState(part->parent(), vrf_listener_id_, state);
     }

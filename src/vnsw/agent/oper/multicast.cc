@@ -459,10 +459,8 @@ void MulticastHandler::RebakeSubnetRoute(const Peer *peer,
         const Ip4Address &subnet_addr = (*it).GetSubnetAddress();
         DBRequest req;
 
-        req.key.reset(new Inet4UnicastRouteKey(peer,
-                                               vrf_name,
-                                               subnet_addr,
-                                               (*it).plen));
+        req.key.reset(new InetUnicastRouteKey(peer, vrf_name, subnet_addr,
+                                              (*it).plen));
         if (del_op == false) {
             DBRequest nh_req;
             nh_req.oper = DBRequest::DB_ENTRY_ADD_CHANGE;
@@ -644,18 +642,14 @@ void MulticastHandler::Shutdown() {
     const Agent *agent = MulticastHandler::GetInstance()->agent();
     //Delete all route mpls and trigger cnh change
 
-    struct ether_addr flood_mac;
-
-    memcpy(&flood_mac, ether_aton("ff:ff:ff:ff:ff:ff"),
-           sizeof(struct ether_addr));
     for (std::set<MulticastGroupObject *>::iterator it =
-         MulticastHandler::GetInstance()->GetMulticastObjList().begin(); 
+         MulticastHandler::GetInstance()->GetMulticastObjList().begin();
          it != MulticastHandler::GetInstance()->GetMulticastObjList().end();
          it++) {
         MulticastGroupObject *obj = (*it);
         AgentRoute *route = Layer2AgentRouteTable::FindRoute(agent,
                                                              obj->vrf_name(),
-                                                             flood_mac);
+                                                             MacAddress::BroadcastMac());
         if (route == NULL)
             return;
 

@@ -65,11 +65,11 @@ public:
         vrf_table_->CreateVrfReq(VRF_GW);
         client->WaitForIdle();
 
-        vhost_rt_table_ = static_cast<Inet4UnicastAgentRouteTable *> 
+        vhost_rt_table_ = static_cast<InetUnicastAgentRouteTable *>
             (vrf_table_->GetInet4UnicastRouteTable(VRF_VHOST));
-        ll_rt_table_ = static_cast<Inet4UnicastAgentRouteTable *> 
+        ll_rt_table_ = static_cast<InetUnicastAgentRouteTable *>
             (vrf_table_->GetInet4UnicastRouteTable(VRF_LL));
-        gw_rt_table_ = static_cast<Inet4UnicastAgentRouteTable *> 
+        gw_rt_table_ = static_cast<InetUnicastAgentRouteTable *>
             (vrf_table_->GetInet4UnicastRouteTable(VRF_GW));
     }
 
@@ -92,9 +92,9 @@ public:
     Agent *agent_;
     InterfaceTable *interface_table_;
     NextHopTable *nh_table_;
-    Inet4UnicastAgentRouteTable *vhost_rt_table_;
-    Inet4UnicastAgentRouteTable *ll_rt_table_;
-    Inet4UnicastAgentRouteTable *gw_rt_table_;
+    InetUnicastAgentRouteTable *vhost_rt_table_;
+    InetUnicastAgentRouteTable *ll_rt_table_;
+    InetUnicastAgentRouteTable *gw_rt_table_;
     VrfTable *vrf_table_;
     const Peer *peer_;
 };

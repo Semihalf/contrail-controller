@@ -39,13 +39,13 @@ bool ArpHandler::HandlePacket() {
     ArpProto *arp_proto = agent()->GetArpProto();
     uint16_t arp_cmd;
     if (pkt_info_->ip) {
-        arp_tpa_ = ntohl(pkt_info_->ip->daddr);
+        arp_tpa_ = ntohl(pkt_info_->ip->ip_dst.s_addr);
         arp_cmd = ARPOP_REQUEST;
     } else if (pkt_info_->arp) {
         arp_ = pkt_info_->arp;
-        if ((ntohs(arp_->ea_hdr.ar_hrd) != ARPHRD_ETHER) || 
-            (ntohs(arp_->ea_hdr.ar_pro) != 0x800) ||
-            (arp_->ea_hdr.ar_hln != ETH_ALEN) || 
+        if ((ntohs(arp_->ea_hdr.ar_hrd) != ARPHRD_ETHER) ||
+            (ntohs(arp_->ea_hdr.ar_pro) != ETHERTYPE_IP) ||
+            (arp_->ea_hdr.ar_hln != ETHER_ADDR_LEN) ||
             (arp_->ea_hdr.ar_pln != IPv4_ALEN)) {
             arp_proto->IncrementStatsInvalidPackets();
             ARP_TRACE(Error, "Received Invalid ARP packet");
@@ -114,7 +114,7 @@ bool ArpHandler::HandlePacket() {
 
     //Look for subnet broadcast
     AgentRoute *route = 
-        static_cast<Inet4UnicastAgentRouteTable *>(vrf->
+        static_cast<InetUnicastAgentRouteTable *>(vrf->
             GetInet4UnicastRouteTable())->FindLPM(arp_addr);
     if (route) {
         if (route->is_multicast()) {
@@ -154,12 +154,12 @@ bool ArpHandler::HandlePacket() {
                                        vrf->vrf_id());
                 return true;
             } else if(entry) {
-                entry->HandleArpReply(arp_->arp_sha);
+                entry->HandleArpReply(MacAddress(arp_->arp_sha));
                 return true;
             } else {
                 entry = new ArpEntry(io_, this, key, ArpEntry::INITING);
                 arp_proto->AddArpEntry(entry);
-                entry->HandleArpReply(arp_->arp_sha);
+                entry->HandleArpReply(MacAddress(arp_->arp_sha));
                 arp_ = NULL;
                 return false;
             }
@@ -177,11 +177,11 @@ bool ArpHandler::HandlePacket() {
                                        vrf->vrf_id());
                 return true;
             } else if (entry) {
-                entry->HandleArpReply(arp_->arp_sha);
+                entry->HandleArpReply(MacAddress(arp_->arp_sha));
                 return true;
             } else {
                 entry = new ArpEntry(io_, this, key, ArpEntry::INITING);
-                entry->HandleArpReply(arp_->arp_sha);
+                entry->HandleArpReply(MacAddress(arp_->arp_sha));
                 arp_proto->AddArpEntry(entry);
                 arp_ = NULL;
                 return false;
@@ -267,24 +267,24 @@ void ArpHandler::EntryDelete(ArpKey &key) {
     }
 }
 
-uint16_t ArpHandler::ArpHdr(const unsigned char *smac, in_addr_t sip, 
-         const unsigned char *tmac, in_addr_t tip, uint16_t op) {
+uint16_t ArpHandler::ArpHdr(const MacAddress &smac, in_addr_t sip,
+         const MacAddress &tmac, in_addr_t tip, uint16_t op) {
     arp_->ea_hdr.ar_hrd = htons(ARPHRD_ETHER);
     arp_->ea_hdr.ar_pro = htons(0x800);
-    arp_->ea_hdr.ar_hln = ETH_ALEN;
+    arp_->ea_hdr.ar_hln = ETHER_ADDR_LEN;
     arp_->ea_hdr.ar_pln = IPv4_ALEN;
     arp_->ea_hdr.ar_op = htons(op);
-    memcpy(arp_->arp_sha, smac, ETHER_ADDR_LEN);
+    smac.ToArray(arp_->arp_sha, sizeof(arp_->arp_sha));
     sip = htonl(sip);
     memcpy(arp_->arp_spa, &sip, sizeof(in_addr_t));
-    memcpy(arp_->arp_tha, tmac, ETHER_ADDR_LEN);
+    tmac.ToArray(arp_->arp_tha, sizeof(arp_->arp_tha));
     tip = htonl(tip);
     memcpy(arp_->arp_tpa, &tip, sizeof(in_addr_t));
     return sizeof(ether_arp);
 }
 
-void ArpHandler::SendArp(uint16_t op, const unsigned char *smac, in_addr_t sip, 
-                         const unsigned char *tmac, in_addr_t tip, 
+void ArpHandler::SendArp(uint16_t op, const MacAddress &smac, in_addr_t sip,
+                         const MacAddress &tmac, in_addr_t tip,
                          uint16_t itf, uint16_t vrf) {
 
     if (pkt_info_->packet_buffer() == NULL) {
@@ -294,14 +294,13 @@ void ArpHandler::SendArp(uint16_t op, const unsigned char *smac, in_addr_t sip,
 
     uint8_t *buf = pkt_info_->packet_buffer()->data();
     memset(buf, 0, pkt_info_->packet_buffer()->data_len());
-    pkt_info_->eth = (ethhdr *)buf;
+    pkt_info_->eth = (struct ether_header *)buf;
     arp_ = pkt_info_->arp = (ether_arp *) (pkt_info_->eth + 1);
     arp_tpa_ = tip;
 
-    const unsigned char bcast_mac[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
     ArpHdr(smac, sip, tmac, tip, op);
-    EthHdr(smac, bcast_mac, 0x806);
-    pkt_info_->set_len(sizeof(ethhdr) + sizeof(ether_arp));
+    EthHdr(smac, MacAddress::BroadcastMac(), ETHERTYPE_ARP);
+    pkt_info_->set_len(sizeof(struct ether_header) + sizeof(ether_arp));
 
     Send(itf, vrf, AgentHdr::TX_SWITCH, PktHandler::ARP);
 }

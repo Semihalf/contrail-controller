@@ -335,7 +335,7 @@ static void BuildVrfAndServiceVlanInfo(Agent *agent,
             Ip4Address addr = Ip4Address::from_string
                 (rule.service_chain_address, ec);
             if (ec.value() != 0) {
-                LOG(DEBUG, "Error decoding Service VLAN IP address " 
+                LOG(DEBUG, "Error decoding Service VLAN IP address "
                     << rule.service_chain_address);
                 break;
             }
@@ -348,14 +348,13 @@ static void BuildVrfAndServiceVlanInfo(Agent *agent,
             LOG(DEBUG, "Add Service VLAN entry <" << rule.vlan_tag << " : "
                 << rule.service_chain_address << " : " << vrf_node->name());
 
-            ether_addr smac;
-            memcpy(smac.ether_addr_octet, agent->vrrp_mac(), ETHER_ADDR_LEN);
-            ether_addr dmac = *ether_aton(Agent::BcastMac().c_str());
+            MacAddress smac(agent->vrrp_mac());
+            MacAddress dmac = MacAddress::FromString(Agent::BcastMac());
             if (rule.src_mac != Agent::NullString()) {
-                smac = *ether_aton(rule.src_mac.c_str());
+                smac = MacAddress::FromString(rule.src_mac);
             }
             if (rule.src_mac != Agent::NullString()) {
-                dmac = *ether_aton(rule.dst_mac.c_str());
+                dmac = MacAddress::FromString(rule.dst_mac);
             }
             data->service_vlan_list_.list_.insert
                 (VmInterface::ServiceVlan(rule.vlan_tag, vrf_node->name(), addr,
@@ -932,8 +931,9 @@ bool VmInterface::CopyConfig(VmInterfaceConfigData *data, bool *sg_changed,
     }
 
     bool mac_set = true;
-    struct ether_addr *addrp = ether_aton(vm_mac_.c_str());
-    if (addrp == NULL) {
+    boost::system::error_code ec;
+    MacAddress addr(vm_mac_, &ec);
+    if (ec.value() != 0) {
         mac_set = false;
     }
     if (mac_set_ != mac_set) {
@@ -1245,7 +1245,7 @@ void VmInterface::GetOsParams(Agent *agent) {
     }
 
     os_index_ = Interface::kInvalidIndex;
-    memcpy(mac_.ether_addr_octet, agent->vrrp_mac(), ETHER_ADDR_LEN);
+    mac_ = agent->vrrp_mac();
     os_oper_state_ = true;
 }
 
@@ -1333,9 +1333,9 @@ bool VmInterface::WaitForTraffic() const {
     }
 
     //Get the instance ip route and its corresponding traffic seen status
-    Inet4UnicastRouteKey rt_key(peer_.get(), vrf_->GetName(), ip_addr_, 32);
-    const Inet4UnicastRouteEntry *rt =
-        static_cast<const Inet4UnicastRouteEntry *>(
+    InetUnicastRouteKey rt_key(peer_.get(), vrf_->GetName(), ip_addr_, 32);
+    const InetUnicastRouteEntry *rt =
+        static_cast<const InetUnicastRouteEntry *>(
         vrf_->GetInet4UnicastRouteTable()->FindActiveEntry(&rt_key));
      if (!rt) {
          return false;
@@ -1510,16 +1510,17 @@ bool VmInterface::Ipv6Deactivated(bool old_ipv6_active) {
 void VmInterface::UpdateMulticastNextHop(bool old_ipv4_active,
                                          bool old_l2_active) {
     if (Ipv4Activated(old_ipv4_active) || L2Activated(old_l2_active)) {
-        struct ether_addr *addrp = ether_aton(vm_mac_.c_str());
-        InterfaceNH::CreateMulticastVmInterfaceNH(GetUuid(), *addrp,
+        InterfaceNH::CreateMulticastVmInterfaceNH(GetUuid(),
+                                                  MacAddress::FromString(vm_mac_),
                                                   vrf_->GetName());
     }
 }
 
 void VmInterface::UpdateL2NextHop(bool old_l2_active) {
     if (L2Activated(old_l2_active)) {
-        struct ether_addr *addrp = ether_aton(vm_mac_.c_str());
-        InterfaceNH::CreateL2VmInterfaceNH(GetUuid(), *addrp, vrf_->GetName());
+        InterfaceNH::CreateL2VmInterfaceNH(GetUuid(),
+                                           MacAddress::FromString(vm_mac_),
+                                           vrf_->GetName());
     }
 }
 
@@ -1531,8 +1532,8 @@ void VmInterface::UpdateL3NextHop(bool old_ipv4_active, bool old_ipv6_active) {
         InterfaceTable *table = static_cast<InterfaceTable *>(get_table());
         Agent *agent = table->agent();
 
-        struct ether_addr *addrp = ether_aton(vm_mac_.c_str());
-        InterfaceNH::CreateL3VmInterfaceNH(GetUuid(), *addrp, vrf_->GetName());
+        InterfaceNH::CreateL3VmInterfaceNH(GetUuid(),
+                                           MacAddress::FromString(vm_mac_), vrf_->GetName());
         InterfaceNHKey key(new VmInterfaceKey(AgentKey::ADD_DEL_CHANGE,
                                               GetUuid(), ""), true,
                                               InterfaceNHFlags::INET4);
@@ -1591,7 +1592,7 @@ void VmInterface::UpdateIpv4InterfaceRoute(bool old_ipv4_active, bool force_upda
         } else if (policy_change == true) {
             // If old-l3-active and there is change in policy, invoke RESYNC of
             // route to account for change in NH policy
-            Inet4UnicastAgentRouteTable::ReEvaluatePaths(vrf_->GetName(),
+            InetUnicastAgentRouteTable::ReEvaluatePaths(vrf_->GetName(),
                                                         ip_addr_, 32);
         }
     }
@@ -1630,15 +1631,15 @@ void VmInterface::UpdateIpv6InterfaceRoute(bool old_ipv6_active, bool force_upda
             PathPreference path_preference;
             CopySgIdList(&sg_id_list);
             //TODO: change subnet_gw_ip to Ip6Address
-            Inet6UnicastAgentRouteTable::AddLocalVmRoute
+            InetUnicastAgentRouteTable::AddLocalVmRoute
                 (peer_.get(), vrf_->GetName(), ip6_addr_, 128, GetUuid(),
                  vn_->GetName(), label_, sg_id_list, false, path_preference,
                  vm_ip6_gw_addr_);
         } else if (policy_change == true) {
             // If old-l3-active and there is change in policy, invoke RESYNC of
             // route to account for change in NH policy
-            Inet6UnicastAgentRouteTable::ReEvaluatePaths(vrf_->GetName(),
-                                                         ip6_addr_, 128);
+            InetUnicastAgentRouteTable::ReEvaluatePaths(vrf_->GetName(),
+                                                        ip6_addr_, 128);
         }
     }
 
@@ -1661,8 +1662,8 @@ void VmInterface::DeleteIpv6InterfaceRoute(VrfEntry *old_vrf,
     if ((old_vrf == NULL) || (old_addr.is_unspecified()))
         return;
 
-    Inet6UnicastAgentRouteTable::Delete(peer_.get(), old_vrf->GetName(),
-                                        old_addr, 128);
+    InetUnicastAgentRouteTable::Delete(peer_.get(), old_vrf->GetName(),
+                                       old_addr, 128);
 }
 
 // Add meta-data route if linklocal_ip is needed
@@ -1678,7 +1679,7 @@ void VmInterface::UpdateMetadataRoute(bool old_ipv4_active, VrfEntry *old_vrf) {
     Agent *agent = table->agent();
     table->VmPortToMetaDataIp(id(), vrf_->vrf_id(), &mdata_addr_);
     PathPreference path_preference;
-    Inet4UnicastAgentRouteTable::AddLocalVmRoute
+    InetUnicastAgentRouteTable::AddLocalVmRoute
         (agent->link_local_peer(), agent->fabric_vrf_name(), mdata_addr_,
          32, GetUuid(), vn_->GetName(), label_, SecurityGroupList(), true,
          path_preference, Ip4Address(0));
@@ -1693,9 +1694,9 @@ void VmInterface::DeleteMetadataRoute(bool old_active, VrfEntry *old_vrf,
 
     InterfaceTable *table = static_cast<InterfaceTable *>(get_table());
     Agent *agent = table->agent();
-    Inet4UnicastAgentRouteTable::Delete(agent->link_local_peer(),
-                                        agent->fabric_vrf_name(),
-                                        mdata_addr_, 32);
+    InetUnicastAgentRouteTable::Delete(agent->link_local_peer(),
+                                       agent->fabric_vrf_name(),
+                                       mdata_addr_, 32);
 }
 
 void VmInterface::UpdateFipFamilyCount(const FloatingIp &fip) {
@@ -1985,28 +1986,26 @@ void VmInterface::UpdateL2InterfaceRoute(bool old_l2_active, bool force_update) 
     if (old_l2_active && force_update == false)
         return;
 
-    struct ether_addr *addrp = ether_aton(vm_mac().c_str());
     const string &vrf_name = vrf_.get()->GetName();
-
 
     assert(peer_.get());
     Layer2AgentRouteTable::AddLocalVmRoute(peer_.get(), GetUuid(),
                                            vn_->GetName(), vrf_name, l2_label_,
-                                           vxlan_id_, *addrp, ip_addr(), 0, 32);
+                                           vxlan_id_, MacAddress::FromString(vm_mac()),
+                                           ip_addr(), 0, 32);
 }
 
 void VmInterface::DeleteL2InterfaceRoute(bool old_l2_active, VrfEntry *old_vrf) {
     if (old_l2_active == false)
         return;
 
-    if ((vxlan_id_ != 0) && 
+    if ((vxlan_id_ != 0) &&
         (TunnelType::ComputeType(TunnelType::AllType()) == TunnelType::VXLAN)) {
         VxLanId::Delete(vxlan_id_);
         vxlan_id_ = 0;
     }
-    struct ether_addr *addrp = ether_aton(vm_mac_.c_str());
     Layer2AgentRouteTable::Delete(peer_.get(), old_vrf->GetName(),
-                                  vxlan_id_, *addrp);
+                                  vxlan_id_, MacAddress::FromString(vm_mac_));
 }
 
 // Copy the SG List for VM Interface. Used to add route for interface
@@ -2034,7 +2033,7 @@ void VmInterface::AddRoute(const std::string &vrf_name, const Ip4Address &addr,
         path_preference.set_preference(PathPreference::HIGH);
     }
 
-    Inet4UnicastAgentRouteTable::AddLocalVmRoute(peer_.get(), vrf_name, addr,
+    InetUnicastAgentRouteTable::AddLocalVmRoute(peer_.get(), vrf_name, addr,
                                                  plen, GetUuid(),
                                                  dest_vn, label_,
                                                  sg_id_list, false,
@@ -2045,7 +2044,7 @@ void VmInterface::AddRoute(const std::string &vrf_name, const Ip4Address &addr,
 
 void VmInterface::DeleteRoute(const std::string &vrf_name,
                               const Ip4Address &addr, uint32_t plen) {
-    Inet4UnicastAgentRouteTable::Delete(peer_.get(), vrf_name, addr, plen);
+    InetUnicastAgentRouteTable::Delete(peer_.get(), vrf_name, addr, plen);
     return;
 }
 
@@ -2056,19 +2055,19 @@ void VmInterface::AddRoute6(const std::string &vrf_name, const Ip6Address &addr,
     SecurityGroupList sg_id_list;
     CopySgIdList(&sg_id_list);
     PathPreference path_preference;
-    Inet6UnicastAgentRouteTable::AddLocalVmRoute(peer_.get(), vrf_name, addr,
-                                                 plen, GetUuid(),
-                                                 vn, label_,
-                                                 sg_id_list, false,
-                                                 path_preference,
-                                                 Ip6Address());
+    InetUnicastAgentRouteTable::AddLocalVmRoute(peer_.get(), vrf_name, addr,
+                                                plen, GetUuid(),
+                                                vn, label_,
+                                                sg_id_list, false,
+                                                path_preference,
+                                                Ip6Address());
 
     return;
 }
 
 void VmInterface::DeleteRoute6(const std::string &vrf_name,
                                const Ip6Address &addr, uint32_t plen) {
-    Inet6UnicastAgentRouteTable::Delete(peer_.get(), vrf_name, addr, plen);
+    InetUnicastAgentRouteTable::Delete(peer_.get(), vrf_name, addr, plen);
     return;
 }
 
@@ -2301,11 +2300,11 @@ void VmInterface::StaticRoute::Activate(VmInterface *interface,
 
     if (installed_ == true && policy_change) {
         if (addr_.is_v4()) {
-            Inet4UnicastAgentRouteTable::ReEvaluatePaths(vrf_, addr_.to_v4(),
-                                                         plen_);
+            InetUnicastAgentRouteTable::ReEvaluatePaths(vrf_, addr_.to_v4(),
+                                                        plen_);
         } else {
-            Inet6UnicastAgentRouteTable::ReEvaluatePaths(vrf_, addr_.to_v6(),
-                                                         plen_);
+            InetUnicastAgentRouteTable::ReEvaluatePaths(vrf_, addr_.to_v6(),
+                                                        plen_);
         }
     } else if (installed_ == false || force_update) {
         if (addr_.is_v4()) {
@@ -2405,7 +2404,7 @@ void VmInterface::AllowedAddressPair::Activate(VmInterface *interface,
     }
 
     if (installed_ == true && policy_change) {
-        Inet4UnicastAgentRouteTable::ReEvaluatePaths(vrf_, addr_, plen_);
+        InetUnicastAgentRouteTable::ReEvaluatePaths(vrf_, addr_, plen_);
     } else if (installed_ == false || force_update || gw_ip_ != ip) {
         gw_ip_ = ip;
         interface->AddRoute(vrf_, addr_, plen_, interface->vn_->GetName(),
@@ -2499,7 +2498,7 @@ void VmInterface::SecurityGroupEntryList::Remove
 /////////////////////////////////////////////////////////////////////////////
 // ServiceVlan routines
 /////////////////////////////////////////////////////////////////////////////
-VmInterface::ServiceVlan::ServiceVlan() : 
+VmInterface::ServiceVlan::ServiceVlan() :
     ListEntry(), tag_(0), vrf_name_(""), addr_(0), plen_(32), smac_(), dmac_(),
     vrf_(NULL), label_(MplsTable::kInvalidLabel) {
 }
@@ -2512,8 +2511,8 @@ VmInterface::ServiceVlan::ServiceVlan(const ServiceVlan &rhs) :
 
 VmInterface::ServiceVlan::ServiceVlan(uint16_t tag, const std::string &vrf_name,
                                       const Ip4Address &addr, uint8_t plen,
-                                      const struct ether_addr &smac,
-                                      const struct ether_addr &dmac) :
+                                      const MacAddress &smac,
+                                      const MacAddress &dmac) :
     ListEntry(), tag_(tag), vrf_name_(vrf_name), addr_(addr), plen_(plen),
     smac_(smac), dmac_(dmac), vrf_(NULL), label_(MplsTable::kInvalidLabel)
     {
@@ -2629,7 +2628,7 @@ void VmInterface::ServiceVlanRouteAdd(const ServiceVlan &entry) {
     if (ecmp()) {
         path_preference.set_preference(PathPreference::HIGH);
     }
-    Inet4UnicastAgentRouteTable::AddVlanNHRoute
+    InetUnicastAgentRouteTable::AddVlanNHRoute
         (peer_.get(), entry.vrf_->GetName(), entry.addr_, 32,
          GetUuid(), entry.tag_, entry.label_, vn()->GetName(), sg_id_list,
          path_preference);
@@ -2643,7 +2642,7 @@ void VmInterface::ServiceVlanRouteDel(const ServiceVlan &entry) {
         return;
     }
     
-    Inet4UnicastAgentRouteTable::Delete
+    InetUnicastAgentRouteTable::Delete
         (peer_.get(), entry.vrf_->GetName(), entry.addr_, 32);
 
     entry.installed_ = false;

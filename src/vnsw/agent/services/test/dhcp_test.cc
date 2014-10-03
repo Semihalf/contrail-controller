@@ -33,8 +33,8 @@
 #define CLIENT_REQ_GW "1.2.3.1"
 #define MAX_WAIT_COUNT 500
 #define BUF_SIZE 8192
-char src_mac[MAC_LEN] = { 0x00, 0x01, 0x02, 0x03, 0x04, 0x05 };
-char dest_mac[MAC_LEN] = { 0x00, 0x11, 0x12, 0x13, 0x14, 0x15 };
+MacAddress src_mac(0x00, 0x01, 0x02, 0x03, 0x04, 0x05);
+MacAddress dest_mac(0x00, 0x11, 0x12, 0x13, 0x14, 0x15);
 #define DHCP_RESPONSE_STRING "Server : 1.1.1.200; Lease time : 4294967295; Subnet mask : 255.255.255.0; Broadcast : 1.1.1.255; Gateway : 1.1.1.200; Host Name : vm1; DNS : 1.1.1.200; Domain Name : test.contrail.juniper.net; "
 #define HOST_ROUTE_STRING "Host Routes : 10.1.1.0/24 -> 1.1.1.200;10.1.2.0/24 -> 1.1.1.200;150.25.75.0/24 -> 1.1.1.200;192.168.1.128/28 -> 1.1.1.200;"
 #define CHANGED_HOST_ROUTE_STRING "Host Routes : 150.2.2.0/24 -> 1.1.1.200;192.1.1.1/28 -> 1.1.1.200;"
@@ -179,7 +179,7 @@ public:
         dhcphdr *dhcp = (dhcphdr *) buf;
         dhcp->op = BOOT_REPLY;
         dhcp->htype = HW_TYPE_ETHERNET;
-        dhcp->hlen = ETH_ALEN;
+        dhcp->hlen = ETHER_ADDR_LEN;
         dhcp->hops = 0;
         dhcp->xid = 0x01020304;
         dhcp->secs = 0;
@@ -188,7 +188,7 @@ public:
         dhcp->yiaddr = htonl(yiaddr);
         dhcp->siaddr = 0;
         dhcp->giaddr = 0;
-        memcpy(dhcp->chaddr, src_mac, ETH_ALEN);
+        src_mac.ToArray(dhcp->chaddr, sizeof(dhcp->chaddr));
         memset(dhcp->sname, 0, DHCP_NAME_LEN);
         memset(dhcp->file, 0, DHCP_FILE_LEN);
         len = DHCP_FIXED_LEN;
@@ -205,36 +205,36 @@ public:
         uint8_t *buf = new uint8_t[len];
         memset(buf, 0, len);
 
-        ethhdr *eth = (ethhdr *)buf;
-        eth->h_dest[5] = 1;
-        eth->h_source[5] = 2;
-        eth->h_proto = htons(0x800);
+        struct ether_header *eth = (struct ether_header *)buf;
+        eth->ether_dhost[5] = 1;
+        eth->ether_shost[5] = 2;
+        eth->ether_type = htons(ETHERTYPE_IP);
 
         agent_hdr *agent = (agent_hdr *)(eth + 1);
         agent->hdr_ifindex = htons(ifindex);
         agent->hdr_vrf = htons(0);
         agent->hdr_cmd = htons(AgentHdr::TRAP_NEXTHOP);
 
-        eth = (ethhdr *) (agent + 1);
-        memcpy(eth->h_dest, dest_mac, MAC_LEN);
-        memcpy(eth->h_source, src_mac, MAC_LEN);
-        eth->h_proto = htons(0x800);
+        eth = (struct ether_header *) (agent + 1);
+        dest_mac.ToArray(eth->ether_dhost, sizeof(eth->ether_dhost));
+        src_mac.ToArray(eth->ether_shost, sizeof(eth->ether_shost));
+        eth->ether_type = htons(ETHERTYPE_IP);
 
-        iphdr *ip = (iphdr *) (eth + 1);
-        ip->ihl = 5;
-        ip->version = 4;
-        ip->tos = 0;
-        ip->id = 0;
-        ip->frag_off = 0;
-        ip->ttl = 16;
-        ip->protocol = IPPROTO_UDP;
-        ip->check = 0;
+        struct ip *ip = (struct ip *) (eth + 1);
+        ip->ip_hl = 5;
+        ip->ip_v = 4;
+        ip->ip_tos = 0;
+        ip->ip_id = 0;
+        ip->ip_off = 0;
+        ip->ip_ttl = 16;
+        ip->ip_p = IPPROTO_UDP;
+        ip->ip_sum = 0;
         if (response) {
-            ip->saddr = inet_addr("1.2.3.254");
-            ip->daddr = 0;
+            ip->ip_src.s_addr = inet_addr("1.2.3.254");
+            ip->ip_dst.s_addr = 0;
         } else {
-            ip->saddr = 0;
-            ip->daddr = inet_addr("255.255.255.255");
+            ip->ip_src.s_addr = 0;
+            ip->ip_dst.s_addr = inet_addr("255.255.255.255");
         }
 
         udphdr *udp = (udphdr *) (ip + 1);
@@ -254,7 +254,7 @@ public:
             dhcp->op = BOOT_REQUEST;
         }
         dhcp->htype = HW_TYPE_ETHERNET;
-        dhcp->hlen = ETH_ALEN;
+        dhcp->hlen = ETHER_ADDR_LEN;
         dhcp->hops = 0;
         dhcp->xid = 0x01020304;
         dhcp->secs = 0;
@@ -263,7 +263,7 @@ public:
         dhcp->yiaddr = htonl(yiaddr);
         dhcp->siaddr = 0;
         dhcp->giaddr = 0;
-        memcpy(dhcp->chaddr, src_mac, ETH_ALEN);
+        src_mac.ToArray(dhcp->chaddr, sizeof(dhcp->chaddr));
         memset(dhcp->sname, 0, DHCP_NAME_LEN);
         memset(dhcp->file, 0, DHCP_FILE_LEN);
         len = sizeof(udphdr) + DHCP_FIXED_LEN;
@@ -274,8 +274,8 @@ public:
         }
 
         udp->uh_ulen = htons(len);
-        ip->tot_len = htons(len + sizeof(iphdr));
-        len += sizeof(iphdr) + sizeof(ethhdr) +
+        ip->ip_len = htons(len + sizeof(struct ip));
+        len += sizeof(struct ip) + sizeof(struct ether_header) +
                 Agent::GetInstance()->pkt()->pkt_handler()->EncapHeaderLen();
         TestPkt0Interface *tap = (TestPkt0Interface *)
                 (Agent::GetInstance()->pkt()->control_interface());

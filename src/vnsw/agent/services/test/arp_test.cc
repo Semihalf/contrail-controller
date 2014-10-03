@@ -34,9 +34,9 @@
 #define DIFF_NET_IP "3.2.6.9"
 #define MAX_WAIT_COUNT 50
 short req_ifindex = 1, reply_ifindex = 1;
-char src_mac[MAC_LEN] = { 0x00, 0x01, 0x02, 0x03, 0x04, 0x05 };
-char dest_mac[MAC_LEN] = { 0x00, 0x01, 0x02, 0x03, 0x04, 0x05 };
-unsigned char mac[MAC_LEN] = { 0x00, 0x05, 0x07, 0x09, 0x0a, 0x0b };
+MacAddress src_mac(0x00, 0x01, 0x02, 0x03, 0x04, 0x05);
+MacAddress dest_mac(0x00, 0x01, 0x02, 0x03, 0x04, 0x05);
+MacAddress mac(0x00, 0x05, 0x07, 0x09, 0x0a, 0x0b);
 ulong src_ip, dest_ip, target_ip, gw_ip, bcast_ip, static_ip;
 
 class ArpTest : public ::testing::Test {
@@ -63,34 +63,34 @@ public:
     }
 
     void SendArpReq(short ifindex, short vrf, uint32_t sip, uint32_t tip) {
-        int len = 2 * sizeof(ethhdr) + sizeof(agent_hdr) +
+        int len = 2 * sizeof(struct ether_header) + sizeof(agent_hdr) +
                   sizeof(ether_arp);
         uint8_t *ptr(new uint8_t[len]);
         uint8_t *buf  = ptr;
         memset(buf, 0, len);
 
-        ethhdr *eth = (ethhdr *)buf;
-        eth->h_dest[5] = 1;
-        eth->h_source[5] = 2;
-        eth->h_proto = htons(0x800);
+        struct ether_header *eth = (struct ether_header *)buf;
+        eth->ether_dhost[5] = 1;
+        eth->ether_shost[5] = 2;
+        eth->ether_type = htons(0x800);
 
         agent_hdr *agent = (agent_hdr *)(eth + 1);
         agent->hdr_ifindex = htons(ifindex);
         agent->hdr_vrf = htons(vrf);
         agent->hdr_cmd = htons(AgentHdr::TRAP_RESOLVE);
 
-        eth = (ethhdr *) (agent + 1);
-        memcpy(eth->h_dest, dest_mac, MAC_LEN);
-        memcpy(eth->h_source, src_mac, MAC_LEN);
-        eth->h_proto = htons(0x806);
+        eth = (struct ether_header *) (agent + 1);
+        dest_mac.ToArray(eth->ether_dhost, sizeof(eth->ether_dhost));
+        src_mac.ToArray(eth->ether_shost, sizeof(eth->ether_shost));
+        eth->ether_type = htons(0x806);
 
         ether_arp *arp = (ether_arp *) (eth + 1);
         arp->ea_hdr.ar_hrd = htons(ARPHRD_ETHER);
-        arp->ea_hdr.ar_pro = htons(0x800);
+        arp->ea_hdr.ar_pro = htons(ETHERTYPE_IP);
         arp->ea_hdr.ar_hln = 6;
         arp->ea_hdr.ar_pln = 4;
         arp->ea_hdr.ar_op = htons(ARPOP_REQUEST);
-        memcpy(arp->arp_sha, src_mac, ETH_ALEN);
+        src_mac.ToArray(arp->arp_sha, sizeof(arp->arp_sha));
 
         sip = htonl(sip);
         memcpy(arp->arp_spa, &sip, sizeof(in_addr_t));
@@ -103,25 +103,25 @@ public:
     }
 
     void SendArpReply(short ifindex, short vrf, uint32_t sip, uint32_t tip) {
-        int len = 2 * sizeof(ethhdr) + sizeof(agent_hdr) + sizeof(ether_arp);
+        int len = 2 * sizeof(struct ether_header) + sizeof(agent_hdr) + sizeof(ether_arp);
         uint8_t *ptr(new uint8_t[len]);
         uint8_t *buf  = ptr;
         memset(buf, 0, len);
 
-        ethhdr *eth = (ethhdr *)buf;
-        eth->h_dest[5] = 2;
-        eth->h_source[5] = 1;
-        eth->h_proto = htons(0x800);
+        struct ether_header *eth = (struct ether_header *)buf;
+        eth->ether_dhost[5] = 2;
+        eth->ether_shost[5] = 1;
+        eth->ether_type = htons(0x800);
 
         agent_hdr *agent = (agent_hdr *)(eth + 1);
         agent->hdr_ifindex = htons(ifindex);
         agent->hdr_vrf = htons(vrf);
         agent->hdr_cmd = htons(AgentHdr::TRAP_ARP);
 
-        eth = (ethhdr *) (agent + 1);
-        memcpy(eth->h_dest, src_mac, MAC_LEN);
-        memcpy(eth->h_source, dest_mac, MAC_LEN);
-        eth->h_proto = htons(0x806);
+        eth = (struct ether_header *) (agent + 1);
+        src_mac.ToArray(eth->ether_dhost, sizeof(eth->ether_dhost));
+        dest_mac.ToArray(eth->ether_shost, sizeof(eth->ether_shost));
+        eth->ether_type = htons(0x806);
 
         ether_arp *arp = (ether_arp *) (eth + 1);
         arp->ea_hdr.ar_hrd = htons(ARPHRD_ETHER);
@@ -129,8 +129,8 @@ public:
         arp->ea_hdr.ar_hln = 6;
         arp->ea_hdr.ar_pln = 4;
         arp->ea_hdr.ar_op = htons(ARPOP_REPLY);
-        memcpy(arp->arp_tha, src_mac, ETH_ALEN);
-        memcpy(arp->arp_sha, dest_mac, ETH_ALEN);
+        src_mac.ToArray(arp->arp_tha, sizeof(arp->arp_tha));
+        dest_mac.ToArray(arp->arp_sha, sizeof(arp->arp_sha));
 
         sip = htonl(sip);
         tip = htonl(tip);
@@ -141,7 +141,7 @@ public:
                 (Agent::GetInstance()->pkt()->control_interface());
         tap->TxPacket(ptr, len);
     }
-    
+
     PktGen *SendIpPacket(int ifindex, const char *sip, const char *dip,
                          int proto) {
         PktGen *pkt = new PktGen();
@@ -185,12 +185,12 @@ public:
     bool FindArpRoute(uint32_t addr, const string &vrf_name) {
         Agent *agent = Agent::GetInstance();
         Ip4Address ip(addr);
-        Inet4UnicastRouteKey rt_key(agent->local_peer(), vrf_name, ip, 32);
+        InetUnicastRouteKey rt_key(agent->local_peer(), vrf_name, ip, 32);
         VrfEntry *vrf = Agent::GetInstance()->vrf_table()->FindVrfFromName(vrf_name);
         if (!vrf || !(vrf->GetInet4UnicastRouteTable()))
             return false;
-        Inet4UnicastRouteEntry *rt = static_cast<Inet4UnicastRouteEntry *>
-            (static_cast<Inet4UnicastAgentRouteTable *>(vrf->
+        InetUnicastRouteEntry *rt = static_cast<InetUnicastRouteEntry *>
+            (static_cast<InetUnicastAgentRouteTable *>(vrf->
             GetInet4UnicastRouteTable())->FindActiveEntry(&rt_key));
         if (rt)
             return true;
@@ -200,9 +200,8 @@ public:
 
     void ArpNHUpdate(DBRequest::DBOperation op, in_addr_t addr) {
         Ip4Address ip(addr);
-        ether_addr mac;
-        Inet4UnicastAgentRouteTable::ArpRoute(op, ip, mac, 
-                          Agent::GetInstance()->fabric_vrf_name(), 
+        InetUnicastAgentRouteTable::ArpRoute(op, ip, MacAddress(),
+                          Agent::GetInstance()->fabric_vrf_name(),
                           *Agent::GetInstance()->GetArpProto()->ip_fabric_interface(),
                           false, 32);
     }

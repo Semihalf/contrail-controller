@@ -142,7 +142,7 @@ class AuthServiceKeystone(object):
                 self._conf_info['token_cache_time'] = args.token_cache_time
     # end __init__
 
-    def json_request(self, method, path):
+    def json_request(self, method, path, retry_after_authn=False):
         if self._auth_token is None or self._auth_middleware is None:
             return {}
         headers = {'X-Auth-Token': self._auth_token}
@@ -152,6 +152,16 @@ class AuthServiceKeystone(object):
             status_code = response.status_code
         except AttributeError:
             status_code = response.status
+
+        # avoid multiple reauth
+        if ((status_code == 401) and (not retry_after_authn)):
+            try:
+                self._auth_token = self._auth_middleware.get_admin_token()
+                return self.json_request(method, path, retry_after_authn=True)
+            except Exception as e:
+                self._server_mgr.config_log_error(
+                    "Error in getting admin token from keystone: " + str(e))
+                return {}
 
         return data if status_code == 200 else {}
     # end json_request
@@ -179,9 +189,11 @@ class AuthServiceKeystone(object):
                 self._auth_token = auth_middleware.get_admin_token()
                 break
             except auth_token.ServiceError as e:
-                self._server_mgr.config_log_error(
-                    "Error in getting admin token: " + str(e))
+                msg = "Error in getting admin token: " + str(e)
                 time.sleep(2)
+
+        self._server_mgr.config_log("Auth token fetched from keystone.",
+            level=SandeshLevel.SYS_NOTICE)
 
         # open access for troubleshooting
         admin_port = self._conf_info['admin_port']
