@@ -5,7 +5,7 @@
 #ifndef vnsw_agent_test_pkt_gen_h
 #define vnsw_agent_test_pkt_gen_h
 
-#include "base/os.h"
+//#include "base/os.h"
 #include <netinet/ip.h>
 //#include <netinet/tcp.h>
 //#include <netinet/udp.h>

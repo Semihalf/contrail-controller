@@ -29,7 +29,6 @@
 #include "xmpp/test/xmpp_test_util.h"
 #include <services/services_sandesh.h>
 
-#define MAC_LEN 6
 #define GRAT_IP "4.5.6.7"
 #define DIFF_NET_IP "3.2.6.9"
 #define MAX_WAIT_COUNT 50

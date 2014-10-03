@@ -1,3 +1,10 @@
+#if defined __USE_SVID || defined __USE_XOPEN
+#error smelldor felldor
+#endif
+#include "base/os.h"
+#if defined __USE_SVID || defined __USE_XOPEN
+#error smelldor
+#endif
 #include <test/test_basic_scale.h>
 
 // Bring channel down and delete VRF, check vrf state for peer

@@ -2,6 +2,7 @@
  * Copyright (c) 2013 Juniper Networks, Inc. All rights reserved.
  */
 
+#include "base/os.h"
 #include "vr_defs.h"
 #include "oper/interface_common.h"
 #include "services/dns_proto.h"

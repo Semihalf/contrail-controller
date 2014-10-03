@@ -27,7 +27,6 @@
 #include <services/services_sandesh.h>
 #include "vr_types.h"
 
-#define MAC_LEN 6
 #define CLIENT_REQ_IP "1.2.3.4"
 #define CLIENT_REQ_PREFIX "1.2.3.0"
 #define CLIENT_REQ_GW "1.2.3.1"

@@ -23,7 +23,7 @@
 #  undef _GNU_SOURCE
 # endif
 # if defined(_SVID_SOURCE)
-#  define BSDUDP__SVID_SOURCE
+#  define BSDUDP_DEF__SVID_SOURCE
 #  undef _SVID_SOURCE
 # endif
 # if !defined(__FAVOR_BSD)

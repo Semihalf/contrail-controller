@@ -272,7 +272,7 @@ uint8_t *PktHandler::ParseIpPacket(PktInfo *pkt_info,
 
         pkt_info->dport = ntohs(pkt_info->transp.tcp->th_dport);
         pkt_info->sport = ntohs(pkt_info->transp.tcp->th_sport);
-        pkt_info->tcp_ack = pkt_info->transp.tcp->th_ack;
+        pkt_info->tcp_ack = pkt_info->transp.tcp->th_flags & TH_ACK;
         pkt_type = PktType::TCP;
         break;
     }

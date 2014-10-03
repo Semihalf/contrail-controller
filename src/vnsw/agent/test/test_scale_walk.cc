@@ -1,4 +1,5 @@
 #include "base/os.h"
+#include <stdlib.h>
 #include <test/test_basic_scale.h>
 #include <controller/controller_route_walker.h>
 
@@ -113,9 +114,9 @@ int main(int argc, char **argv) {
     GETSCALEARGS();
     char wait_time_env[80];
     if (walker_wait_usecs) {
-        sprintf(wait_time_env, "DB_WALKER_WAIT_USECS=%d", walker_wait_usecs);
+        sprintf(wait_time_env, "%d", walker_wait_usecs);
     }
-    
+
     if ((num_vns * num_vms_per_vn) > MAX_INTERFACES) {
         LOG(DEBUG, "Max interfaces is 200");
         return false;
@@ -125,8 +126,9 @@ int main(int argc, char **argv) {
         return false;
     }
 
-    client = TestInit(init_file, ksync_init);
-    putenv(wait_time_env);
+    sprintf(iterations_env, "DB_ITERATION_TO_YIELD=%d", yield);
+    putenv(iterations_env);
+
 
     InitXmppServers();
 
