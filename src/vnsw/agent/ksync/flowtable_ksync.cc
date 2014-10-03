@@ -3,8 +3,9 @@
  */
 
 #include <sys/socket.h>
+#if defined(__linux__)
 #include <linux/netlink.h>
-#include <linux/rtnetlink.h>
+#endif
 #include <fcntl.h>
 #include <sys/mman.h>
 #include <asm/types.h>

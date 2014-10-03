@@ -4,10 +4,12 @@
 
 #include <asm/types.h>
 #include <sys/socket.h>
+#if defined(__linux__)
 #include <linux/netlink.h>
 #include <linux/rtnetlink.h>
 #include <linux/genetlink.h>
 #include <linux/sockios.h>
+#endif
 
 #include <boost/bind.hpp>
 
