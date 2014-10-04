@@ -24,6 +24,7 @@
 #include "ksync/route_ksync.h"
 
 #include "ksync_init.h"
+#include "vr_os.h"
 #include "vr_types.h"
 #include "vr_defs.h"
 #include "vr_nexthop.h"

@@ -2,7 +2,9 @@
  * Copyright (c) 2013 Juniper Networks, Inc. All rights reserved.
  sact*/
 
-#include <netinet/ether.h>
+#include "base/os.h"
+#include <sys/types.h>
+#include <net/ethernet.h>
 #include <boost/uuid/uuid_io.hpp>
 #include <tbb/mutex.h>
 

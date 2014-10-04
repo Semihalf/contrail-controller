@@ -2,7 +2,11 @@
  * Copyright (c) 2013 Juniper Networks, Inc. All rights reserved.
  */
 
-#include <netinet/ether.h>
+#include <sys/types.h>
+#include <net/ethernet.h>
+#if defined(__FreeBSD__)
+# include "vr_os.h"
+#endif
 #include <boost/asio.hpp>
 #include <boost/bind.hpp>
 
