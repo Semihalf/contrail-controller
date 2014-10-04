@@ -38,6 +38,19 @@
 #endif
 
 #if defined(__FreeBSD__)
+# if !defined(_KERNEL)
+#  define UNDEF__KERNEL
+#  define _KERNEL
+# endif
+
+# include <netinet/in.h>
+
+# if defined(UNDEF__KERNEL)
+#  undef _KERNEL
+# endif
+#endif
+
+#if defined(__FreeBSD__)
 # define SO_RCVBUFFORCE SO_RCVBUF
 # define SIOCGIFHWADDR SIOCGIFADDR
 #endif
