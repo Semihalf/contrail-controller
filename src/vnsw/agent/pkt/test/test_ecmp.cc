@@ -506,7 +506,6 @@ TEST_F(EcmpTest, EcmpTest_10) {
     const CompositeNH *composite_nh = static_cast<const CompositeNH *>(
                                           rt->GetActiveNextHop());
     ComponentNHKeyList comp_nh_list = composite_nh->component_nh_key_list();
-    std::reverse(comp_nh_list.begin(), comp_nh_list.end());
     AddRemoteEcmpRoute("vrf9", "2.1.1.1", 32, "vn2", 0, comp_nh_list);
     AddLocalVmRoute("vrf2", "9.1.1.1", 32, "vn9", 9);
     client->WaitForIdle();
@@ -606,7 +605,6 @@ TEST_F(EcmpTest, EcmpTest_11) {
     const CompositeNH *composite_nh = static_cast<const CompositeNH *>(
                                           rt->GetActiveNextHop());
     ComponentNHKeyList comp_nh_list = composite_nh->component_nh_key_list();
-    std::reverse(comp_nh_list.begin(), comp_nh_list.end());
     AddRemoteEcmpRoute("vrf9", "3.1.1.100", 32, "default-project:vn3", 0,
                        comp_nh_list);
     AddLocalVmRoute("default-project:vn3:vn3", "9.1.1.1", 32, "vn9", 9);
@@ -770,7 +768,263 @@ TEST_F(EcmpTest, EcmpTest_12) {
     DelVn("default-project:vn10");
     client->WaitForIdle();
     WAIT_FOR(100, 1000, VrfFind("default-project:vn10:vn10", true) == false);
-    //DeleteVmportEnv(input1, 1, true);
+    client->WaitForIdle();
+    EXPECT_TRUE(Agent::GetInstance()->pkt()->flow_table()->Size() == 0);
+    EXPECT_FALSE(VrfFind("vrf9", true));
+}
+
+//Add a test case to check if rpf NH of flow using floating IP
+//is set properly upon nexthop change of from 2 destination to 3
+//destinations
+TEST_F(EcmpTest, EcmpTest_13) {
+    struct PortInfo input1[] = {
+        {"vnet9", 9, "9.1.1.1", "00:00:00:01:01:01", 9, 9},
+    };
+    CreateVmportWithEcmp(input1, 1);
+    client->WaitForIdle();
+
+    VmInterface *intf = static_cast<VmInterface *>(VmPortGet(9));
+    uint32_t label = intf->label();
+
+    AddVn("default-project:vn10", 10);
+    AddVrf("default-project:vn10:vn10", 10);
+    AddLink("virtual-network", "default-project:vn10",
+            "routing-instance", "default-project:vn10:vn10");
+    AddFloatingIpPool("fip-pool9", 10);
+    AddFloatingIp("fip9", 10, "10.10.10.2");
+    AddLink("floating-ip", "fip9", "floating-ip-pool", "fip-pool9");
+    AddLink("floating-ip-pool", "fip-pool9", "virtual-network",
+            "default-project:vn10");
+    AddLink("virtual-machine-interface", "vnet9", "floating-ip", "fip9");
+    client->WaitForIdle();
+
+    Ip4Address gw_rt = Ip4Address::from_string("0.0.0.0");
+    Ip4Address remote_server_ip1 = Ip4Address::from_string("10.10.10.100");
+    Ip4Address remote_server_ip2 = Ip4Address::from_string("10.10.10.101");
+    Ip4Address remote_server_ip3 = Ip4Address::from_string("10.10.10.102");
+    Agent *agent = Agent::GetInstance();
+    ComponentNHKeyPtr nh_data1(new ComponentNHKey(30, agent->fabric_vrf_name(),
+                                                  agent->router_id(),
+                                                  remote_server_ip1,
+                                                  false,
+                                                  TunnelType::DefaultType()));
+    ComponentNHKeyPtr nh_data2(new ComponentNHKey(20, agent->fabric_vrf_name(),
+                                                  agent->router_id(),
+                                                  remote_server_ip2,
+                                                  false,
+                                                  TunnelType::DefaultType()));
+    ComponentNHKeyList comp_nh_list;
+    comp_nh_list.push_back(nh_data1);
+    comp_nh_list.push_back(nh_data2);
+    EcmpTunnelRouteAdd(bgp_peer, "default-project:vn10:vn10", gw_rt, 0,
+                       comp_nh_list, false, "default-project:vn10",
+                       SecurityGroupList(), PathPreference());
+    client->WaitForIdle();
+
+    TxIpPacket(VmPortGetId(9), "9.1.1.1", "10.1.1.1", 1);
+    client->WaitForIdle();
+    FlowEntry *entry;
+    entry = FlowGet(VrfGet("default-project:vn10:vn10")->vrf_id(),
+                    "9.1.1.1", "10.1.1.1", 1, 0, 0, GetFlowKeyNH(9));
+    EXPECT_TRUE(entry != NULL);
+    EXPECT_TRUE(entry->data().component_nh_idx !=
+                CompositeNH::kInvalidComponentNHIdx);
+    EXPECT_TRUE(entry->is_flags_set(FlowEntry::ShortFlow) == false);
+
+    uint32_t index;
+    uint32_t reverse_index = entry->reverse_flow_entry()->flow_handle();
+    if (entry->data().component_nh_idx == 0) {
+        TxIpMplsPacket(eth_intf_id_, "10.10.10.101",
+                       agent->router_id().to_string().c_str(),
+                       label, "10.1.1.1", "10.10.10.2", 1, reverse_index);
+        client->WaitForIdle();
+        EXPECT_TRUE(entry->data().component_nh_idx == 1);
+        index = 1;
+    } else {
+        TxIpMplsPacket(eth_intf_id_, "10.10.10.100",
+                       agent->router_id().to_string().c_str(),
+                       label, "10.1.1.1", "10.10.10.2", 1, reverse_index);
+        client->WaitForIdle();
+        EXPECT_TRUE(entry->data().component_nh_idx == 0);
+        index = 0;
+    }
+
+    //Update the route to make the composite NH point to new nexthop
+    ComponentNHKeyPtr nh_data3(new ComponentNHKey(20, agent->fabric_vrf_name(),
+                                                  agent->router_id(),
+                                                  remote_server_ip3,
+                                                  false,
+                                                  TunnelType::DefaultType()));
+    comp_nh_list.push_back(nh_data3);
+    EcmpTunnelRouteAdd(bgp_peer, "default-project:vn10:vn10", gw_rt, 0,
+                       comp_nh_list, false, "default-project:vn10",
+                       SecurityGroupList(), PathPreference());
+    client->WaitForIdle();
+    EXPECT_TRUE(entry->data().component_nh_idx == index);
+    //Make sure flow has the right nexthop set.
+    InetUnicastRouteEntry *rt = RouteGet("default-project:vn10:vn10", gw_rt, 0);
+    FlowEntry *rev_entry = entry->reverse_flow_entry();
+    EXPECT_TRUE(rev_entry->data().nh_state_->nh() == rt->GetActiveNextHop());
+
+    DeleteVmportEnv(input1, 1, true);
+    DeleteRemoteRoute("default-project:vn10:vn10", "0.0.0.0", 0);
+    DelLink("floating-ip", "fip9", "floating-ip-pool", "fip-pool9");
+    DelLink("floating-ip-pool", "fip-pool9",
+            "virtual-network", "default-project:vn10");
+    DelLink("virtual-machine-interface", "vnet9", "floating-ip", "fip9");
+    DelFloatingIp("fip9");
+    DelFloatingIpPool("fip-pool9");
+    client->WaitForIdle();
+    DelVrf("default-project:vn10:vn10");
+    DelVn("default-project:vn10");
+    client->WaitForIdle();
+    WAIT_FOR(100, 1000, VrfFind("default-project:vn10:vn10", true) == false);
+    client->WaitForIdle();
+    EXPECT_TRUE(Agent::GetInstance()->pkt()->flow_table()->Size() == 0);
+    EXPECT_FALSE(VrfFind("vrf9", true));
+}
+
+//Add a test case to check if rpf NH of flow using floating IP 
+//gets properly upon nexthop change from ecmp to unicast
+TEST_F(EcmpTest, EcmpTest_14) {
+    struct PortInfo input1[] = {
+        {"vnet9", 9, "9.1.1.1", "00:00:00:01:01:01", 9, 9},
+    };
+    CreateVmportWithEcmp(input1, 1);
+    client->WaitForIdle();
+
+    VmInterface *intf = static_cast<VmInterface *>(VmPortGet(9));
+    uint32_t label = intf->label();
+
+    AddVn("default-project:vn10", 10);
+    AddVrf("default-project:vn10:vn10", 10);
+    AddLink("virtual-network", "default-project:vn10",
+            "routing-instance", "default-project:vn10:vn10");
+    AddFloatingIpPool("fip-pool9", 10);
+    AddFloatingIp("fip9", 10, "10.10.10.2");
+    AddLink("floating-ip", "fip9", "floating-ip-pool", "fip-pool9");
+    AddLink("floating-ip-pool", "fip-pool9", "virtual-network",
+            "default-project:vn10");
+    AddLink("virtual-machine-interface", "vnet9", "floating-ip", "fip9");
+    client->WaitForIdle();
+
+    Ip4Address gw_rt = Ip4Address::from_string("0.0.0.0");
+    Ip4Address remote_server_ip1 = Ip4Address::from_string("10.10.10.100");
+    Ip4Address remote_server_ip2 = Ip4Address::from_string("10.10.10.101");
+    Agent *agent = Agent::GetInstance();
+    ComponentNHKeyPtr nh_data1(new ComponentNHKey(30, agent->fabric_vrf_name(),
+                                                  agent->router_id(),
+                                                  remote_server_ip1,
+                                                  false,
+                                                  TunnelType::DefaultType()));
+    ComponentNHKeyPtr nh_data2(new ComponentNHKey(20, agent->fabric_vrf_name(),
+                                                  agent->router_id(),
+                                                  remote_server_ip2,
+                                                  false,
+                                                  TunnelType::DefaultType()));
+    ComponentNHKeyList comp_nh_list;
+    comp_nh_list.push_back(nh_data1);
+    comp_nh_list.push_back(nh_data2);
+    EcmpTunnelRouteAdd(bgp_peer, "default-project:vn10:vn10", gw_rt, 0,
+                       comp_nh_list, false, "default-project:vn10",
+                       SecurityGroupList(), PathPreference());
+    client->WaitForIdle();
+
+    TxIpPacket(VmPortGetId(9), "9.1.1.1", "10.1.1.1", 1);
+    client->WaitForIdle();
+    FlowEntry *entry;
+    entry = FlowGet(VrfGet("default-project:vn10:vn10")->vrf_id(),
+                    "9.1.1.1", "10.1.1.1", 1, 0, 0, GetFlowKeyNH(9));
+    EXPECT_TRUE(entry != NULL);
+    EXPECT_TRUE(entry->data().component_nh_idx !=
+                CompositeNH::kInvalidComponentNHIdx);
+    EXPECT_TRUE(entry->is_flags_set(FlowEntry::ShortFlow) == false);
+
+    //Update the route to make the remote destination unicast
+    Inet4TunnelRouteAdd(bgp_peer, "default-project:vn10:vn10", gw_rt, 0,
+                        Ip4Address::from_string("8.8.8.8"),
+                        TunnelType::ComputeType(TunnelType::MplsType()),
+                        100, "default-project:vn10", SecurityGroupList(),
+                        PathPreference());
+    client->WaitForIdle();
+    //Make sure flow has the right nexthop set.
+    InetUnicastRouteEntry *rt = RouteGet("default-project:vn10:vn10", gw_rt, 0);
+    FlowEntry *rev_entry = entry->reverse_flow_entry();
+    EXPECT_TRUE(rev_entry->data().nh_state_->nh() == rt->GetActiveNextHop());
+
+    DeleteVmportEnv(input1, 1, true);
+    DeleteRemoteRoute("default-project:vn10:vn10", "0.0.0.0", 0);
+    DelLink("floating-ip", "fip9", "floating-ip-pool", "fip-pool9");
+    DelLink("floating-ip-pool", "fip-pool9",
+            "virtual-network", "default-project:vn10");
+    DelLink("virtual-machine-interface", "vnet9", "floating-ip", "fip9");
+    DelFloatingIp("fip9");
+    DelFloatingIpPool("fip-pool9");
+    client->WaitForIdle();
+    DelVrf("default-project:vn10:vn10");
+    DelVn("default-project:vn10");
+    client->WaitForIdle();
+    WAIT_FOR(100, 1000, VrfFind("default-project:vn10:vn10", true) == false);
+    client->WaitForIdle();
+    EXPECT_TRUE(Agent::GetInstance()->pkt()->flow_table()->Size() == 0);
+    EXPECT_FALSE(VrfFind("vrf9", true));
+}
+
+TEST_F(EcmpTest, EcmpTest_15) {
+    struct PortInfo input1[] = {
+        {"vnet9", 9, "9.1.1.1", "00:00:00:01:01:01", 9, 9},
+    };
+    CreateVmportWithEcmp(input1, 1);
+    client->WaitForIdle();
+
+    VmInterface *intf = static_cast<VmInterface *>(VmPortGet(9));
+    uint32_t label = intf->label();
+
+    Ip4Address gw_rt = Ip4Address::from_string("0.0.0.0");
+    Ip4Address remote_server_ip1 = Ip4Address::from_string("10.10.10.100");
+    Ip4Address remote_server_ip2 = Ip4Address::from_string("10.10.10.101");
+    Agent *agent = Agent::GetInstance();
+    ComponentNHKeyPtr nh_data1(new ComponentNHKey(30, agent->fabric_vrf_name(),
+                                                  agent->router_id(),
+                                                  remote_server_ip1,
+                                                  false,
+                                                  TunnelType::DefaultType()));
+    ComponentNHKeyPtr nh_data2(new ComponentNHKey(20, agent->fabric_vrf_name(),
+                                                  agent->router_id(),
+                                                  remote_server_ip2,
+                                                  false,
+                                                  TunnelType::DefaultType()));
+    ComponentNHKeyList comp_nh_list;
+    comp_nh_list.push_back(nh_data1);
+    comp_nh_list.push_back(nh_data2);
+    EcmpTunnelRouteAdd(bgp_peer, "vrf9", gw_rt, 0,
+                       comp_nh_list, false, "vn9",
+                       SecurityGroupList(), PathPreference());
+    client->WaitForIdle();
+
+    TxIpPacket(VmPortGetId(9), "9.1.1.1", "10.1.1.1", 1);
+    client->WaitForIdle();
+    FlowEntry *entry;
+    entry = FlowGet(VrfGet("vrf9")->vrf_id(),
+                    "9.1.1.1", "10.1.1.1", 1, 0, 0, GetFlowKeyNH(9));
+    EXPECT_TRUE(entry != NULL);
+    EXPECT_TRUE(entry->data().component_nh_idx !=
+                CompositeNH::kInvalidComponentNHIdx);
+    EXPECT_TRUE(entry->is_flags_set(FlowEntry::ShortFlow) == false);
+
+    //Update the route to make the remote destination unicast
+    Inet4TunnelRouteAdd(bgp_peer, "vrf9", gw_rt, 0,
+                        Ip4Address::from_string("8.8.8.8"),
+                        TunnelType::ComputeType(TunnelType::MplsType()),
+                        100, "vn9", SecurityGroupList(),
+                        PathPreference());
+    client->WaitForIdle();
+    //Make sure flow has the right nexthop set.
+    InetUnicastRouteEntry *rt = RouteGet("vrf9", gw_rt, 0);
+    FlowEntry *rev_entry = entry->reverse_flow_entry();
+    EXPECT_TRUE(rev_entry->data().nh_state_->nh() == rt->GetActiveNextHop());
+
+    DeleteVmportEnv(input1, 1, true);
     client->WaitForIdle();
     EXPECT_TRUE(Agent::GetInstance()->pkt()->flow_table()->Size() == 0);
     EXPECT_FALSE(VrfFind("vrf9", true));
@@ -1845,9 +2099,9 @@ TEST_F(EcmpTest,ServiceVlanTest_8) {
         EXPECT_TRUE(entry->data().vrf == service_vrf_id);
         //Packet destined to remote server, vrf has to be service vrf
         EXPECT_TRUE(entry->data().dest_vrf == service_vrf_id);
-
         EXPECT_TRUE(entry->data().source_vn == "vn10");
         EXPECT_TRUE(entry->data().dest_vn == "vn11");
+        EXPECT_TRUE(entry->data().nh_state_->nh()->GetType() == NextHop::VLAN);
 
         FlowEntry *rev_entry = entry->reverse_flow_entry();
         EXPECT_TRUE(entry->data().component_nh_idx ==
@@ -1872,6 +2126,48 @@ TEST_F(EcmpTest,ServiceVlanTest_8) {
     EXPECT_TRUE(Agent::GetInstance()->pkt()->flow_table()->Size() == 0);
     EXPECT_FALSE(VrfFind("vrf13"));
     EXPECT_FALSE(VrfFind("service-vrf1"));
+}
+
+TEST_F(EcmpTest, TrapFlag) {
+    AddRemoteVmRoute("vrf2", "10.1.1.1", 32, "vn2");
+    TxIpPacket(VmPortGetId(1), "1.1.1.1", "10.1.1.1", 1);
+    client->WaitForIdle();
+
+    FlowEntry *entry = FlowGet(VrfGet("vrf2")->vrf_id(),
+            "1.1.1.1", "10.1.1.1", 1, 0, 0, GetFlowKeyNH(1));
+    EXPECT_TRUE(entry != NULL);
+    EXPECT_TRUE(entry->data().component_nh_idx ==
+            CompositeNH::kInvalidComponentNHIdx);
+
+    //Reverse flow is no ECMP
+    FlowEntry *rev_entry = entry->reverse_flow_entry();
+    EXPECT_TRUE(rev_entry->data().component_nh_idx ==
+            CompositeNH::kInvalidComponentNHIdx);
+
+    ComponentNHKeyList local_comp_nh;
+    AddRemoteEcmpRoute("vrf2", "10.1.1.1", 32, "vn2", 2, local_comp_nh);
+    client->WaitForIdle();
+    EXPECT_TRUE(rev_entry->is_flags_set(FlowEntry::Trap) == true);
+
+    TxIpPacket(VmPortGetId(1), "1.1.1.1", "10.1.1.1", 1);
+    client->WaitForIdle();
+
+    entry = FlowGet(VrfGet("vrf2")->vrf_id(),
+            "1.1.1.1", "10.1.1.1", 1, 0, 0, GetFlowKeyNH(1));
+    EXPECT_TRUE(entry != NULL);
+    EXPECT_TRUE(entry->data().component_nh_idx !=
+            CompositeNH::kInvalidComponentNHIdx);
+
+    //Reverse flow is no ECMP
+    rev_entry = entry->reverse_flow_entry();
+    EXPECT_TRUE(rev_entry->data().component_nh_idx ==
+                CompositeNH::kInvalidComponentNHIdx);
+    EXPECT_TRUE(rev_entry->is_flags_set(FlowEntry::Trap) == false);
+    Ip4Address remote_vm = Ip4Address::from_string("10.1.1.1");
+    Agent::GetInstance()->fabric_inet4_unicast_table()->DeleteReq(NULL, "vrf2",
+                                                                  remote_vm,
+                                                                  32, NULL);
+    client->WaitForIdle();
 }
 
 int main(int argc, char *argv[]) {
