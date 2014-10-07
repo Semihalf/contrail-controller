@@ -1,5 +1,4 @@
 #include "base/os.h"
-#include <stdlib.h>
 #include <test/test_basic_scale.h>
 #include <controller/controller_route_walker.h>
 

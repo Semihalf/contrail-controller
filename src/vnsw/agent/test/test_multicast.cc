@@ -5,6 +5,7 @@
 #include <fstream>
 #include <stdio.h>
 #include <stdlib.h>
+#include "base/os.h"
 #include "testing/gunit.h"
 #include "test_cmn_util.h"
 #include "vr_types.h"

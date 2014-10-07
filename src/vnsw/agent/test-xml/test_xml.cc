@@ -6,6 +6,7 @@
 #include <pugixml/pugixml.hpp>
 #include <boost/uuid/uuid.hpp>
 #include <boost/uuid/string_generator.hpp>
+#include "base/os.h"
 
 #include <test/test_cmn_util.h>
 #include <pkt/test/test_pkt_util.h>
