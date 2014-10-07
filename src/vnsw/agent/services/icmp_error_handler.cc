@@ -113,8 +113,8 @@ bool IcmpErrorHandler::SendIcmpError(VmInterface *intf) {
             udp->uh_dport = ntohs(key.dst_port);
         } else if (ip->ip_p == IPPROTO_TCP) {
             tcphdr *tcp = (tcphdr *)(data + ip_hlen);
-            tcp->source = ntohs(key.src_port);
-            tcp->dest = ntohs(key.dst_port);
+            tcp->th_sport = ntohs(key.src_port);
+            tcp->th_dport = ntohs(key.dst_port);
         }
     }
     memcpy(ptr + len, data, data_len);
