@@ -1,10 +1,4 @@
-#if defined __USE_SVID || defined __USE_XOPEN
-#error smelldor felldor
-#endif
 #include "base/os.h"
-#if defined __USE_SVID || defined __USE_XOPEN
-#error smelldor
-#endif
 #include <test/test_basic_scale.h>
 
 // Bring channel down and delete VRF, check vrf state for peer
@@ -14,7 +8,7 @@ TEST_F(AgentBasicScaleTest, Del_peer_deleted_vrf_1) {
 
     XmppConnectionSetUp();
     BuildVmPortEnvironment();
-    
+
     //Get the vrf export id
     BgpPeer *peer = static_cast<BgpPeer *>(bgp_peer[0].get()->bgp_peer_id());
     uint32_t listener_id = peer->GetVrfExportListenerId();
@@ -41,7 +35,7 @@ TEST_F(AgentBasicScaleTest, Del_peer_deleted_vrf_2) {
 
     XmppConnectionSetUp();
     BuildVmPortEnvironment();
-    
+
     //Get the vrf export id
     BgpPeer *peer = static_cast<BgpPeer *>(bgp_peer[0].get()->bgp_peer_id());
     uint32_t listener_id = peer->GetVrfExportListenerId();
@@ -115,13 +109,13 @@ TEST_F(AgentBasicScaleTest, multicast_one_channel_down_up) {
 
     mc_addr = Ip4Address::from_string("1.1.1.255");
     EXPECT_TRUE(RouteFind("vrf1", mc_addr, 32));
-    
+
     //Store the src mpls label to verify it does not change after channel down
     MulticastGroupObject *mcobj = MulticastHandler::GetInstance()->
         FindGroupObject("vrf1", mc_addr);
     EXPECT_TRUE(mcobj != NULL);
 
-    uint32_t old_multicast_identifier = 
+    uint32_t old_multicast_identifier =
         Agent::GetInstance()->controller()->multicast_sequence_number();
     //WAIT_FOR(1000, 10000, (mcobj->GetSourceMPLSLabel() != 0));
     //uint32_t subnet_src_label = mcobj->GetSourceMPLSLabel();
@@ -138,7 +132,7 @@ TEST_F(AgentBasicScaleTest, multicast_one_channel_down_up) {
     mcobj = MulticastHandler::GetInstance()->FindGroupObject("vrf1", mc_addr);
     EXPECT_TRUE(mcobj != NULL);
     //EXPECT_TRUE(mcobj->GetSourceMPLSLabel() == subnet_src_label);
-    WAIT_FOR(1000, 10000, ((mcobj->peer_identifier() + 1) == 
+    WAIT_FOR(1000, 10000, ((mcobj->peer_identifier() + 1) ==
                 Agent::GetInstance()->controller()->multicast_sequence_number()));
 
     mc_addr = Ip4Address::from_string("255.255.255.255");
@@ -146,7 +140,7 @@ TEST_F(AgentBasicScaleTest, multicast_one_channel_down_up) {
     //uint32_t source_flood_label = mcobj->GetSourceMPLSLabel();
     EXPECT_TRUE(MCRouteFind("vrf1", mc_addr));
     //EXPECT_TRUE(mcobj->GetSourceMPLSLabel() != 0);
-    WAIT_FOR(1000, 10000, ((mcobj->peer_identifier() + 1) == 
+    WAIT_FOR(1000, 10000, ((mcobj->peer_identifier() + 1) ==
                 Agent::GetInstance()->controller()->multicast_sequence_number()));
 
     //Bring up the channel
@@ -159,16 +153,16 @@ TEST_F(AgentBasicScaleTest, multicast_one_channel_down_up) {
     EXPECT_TRUE(mcobj != NULL);
     //EXPECT_TRUE(mcobj->GetSourceMPLSLabel() != 0);
     //WAIT_FOR(1000, 1000, (mcobj->GetSourceMPLSLabel() != subnet_src_label));
-    EXPECT_TRUE(mcobj->peer_identifier() == 
+    EXPECT_TRUE(mcobj->peer_identifier() ==
                 Agent::GetInstance()->controller()->multicast_sequence_number());
     mc_addr = Ip4Address::from_string("255.255.255.255");
     mcobj = MulticastHandler::GetInstance()->FindGroupObject("vrf1", mc_addr);
     EXPECT_TRUE(MCRouteFind("vrf1", mc_addr));
     //EXPECT_TRUE(mcobj->GetSourceMPLSLabel() != 0);
     //WAIT_FOR(1000, 1000, (mcobj->GetSourceMPLSLabel() != source_flood_label));
-    EXPECT_TRUE(mcobj->peer_identifier() == 
+    EXPECT_TRUE(mcobj->peer_identifier() ==
                 Agent::GetInstance()->controller()->multicast_sequence_number());
-    EXPECT_TRUE(old_multicast_identifier != 
+    EXPECT_TRUE(old_multicast_identifier !=
                 Agent::GetInstance()->controller()->multicast_sequence_number());
 
     //Delete vm-port and route entry in vrf1
@@ -202,13 +196,13 @@ TEST_F(AgentBasicScaleTest, multicast_one_channel_down_up_skip_route_from_peer) 
     VerifyRoutes(false);
     mc_addr = Ip4Address::from_string("1.1.1.255");
     EXPECT_TRUE(RouteFind("vrf1", mc_addr, 32));
-    
+
     //Store the src mpls label to verify it does not change after channel down
     MulticastGroupObject *mcobj = MulticastHandler::GetInstance()->
         FindGroupObject("vrf1", mc_addr);
     EXPECT_TRUE(mcobj != NULL);
 
-    uint32_t old_multicast_identifier = 
+    uint32_t old_multicast_identifier =
         Agent::GetInstance()->controller()->multicast_sequence_number();
     //WAIT_FOR(1000, 1000, (mcobj->GetSourceMPLSLabel() != 0));
     //uint32_t subnet_src_label = mcobj->GetSourceMPLSLabel();
@@ -223,14 +217,14 @@ TEST_F(AgentBasicScaleTest, multicast_one_channel_down_up_skip_route_from_peer) 
     mcobj = MulticastHandler::GetInstance()->FindGroupObject("vrf1", mc_addr);
     EXPECT_TRUE(mcobj != NULL);
     //EXPECT_TRUE(mcobj->GetSourceMPLSLabel() == subnet_src_label);
-    EXPECT_TRUE((mcobj->peer_identifier() + 1) == 
+    EXPECT_TRUE((mcobj->peer_identifier() + 1) ==
                Agent::GetInstance()->controller()->multicast_sequence_number());
 
     //uint32_t source_flood_label = mcobj->GetSourceMPLSLabel();
     mc_addr = Ip4Address::from_string("255.255.255.255");
     EXPECT_TRUE(MCRouteFind("vrf1", mc_addr));
     //EXPECT_TRUE(mcobj->GetSourceMPLSLabel() != 0);
-    EXPECT_TRUE((mcobj->peer_identifier() + 1) == 
+    EXPECT_TRUE((mcobj->peer_identifier() + 1) ==
            Agent::GetInstance()->controller()->multicast_sequence_number());
 
     //Bring up the channel
@@ -244,15 +238,15 @@ TEST_F(AgentBasicScaleTest, multicast_one_channel_down_up_skip_route_from_peer) 
     EXPECT_TRUE(mcobj != NULL);
     //EXPECT_TRUE(mcobj->GetSourceMPLSLabel() != 0);
     //EXPECT_TRUE(mcobj->GetSourceMPLSLabel() == subnet_src_label);
-    EXPECT_TRUE(mcobj->peer_identifier() == old_multicast_identifier); 
+    EXPECT_TRUE(mcobj->peer_identifier() == old_multicast_identifier);
     mc_addr = Ip4Address::from_string("255.255.255.255");
     mcobj = MulticastHandler::GetInstance()->FindGroupObject("vrf1", mc_addr);
     EXPECT_TRUE(MCRouteFind("vrf1", mc_addr));
     //EXPECT_TRUE(mcobj->GetSourceMPLSLabel() != 0);
-    WAIT_FOR(1000, 1000, (mcobj->peer_identifier() == 
+    WAIT_FOR(1000, 1000, (mcobj->peer_identifier() ==
                 Agent::GetInstance()->controller()->multicast_sequence_number()));
     //EXPECT_TRUE(mcobj->GetSourceMPLSLabel() != source_flood_label);
-    EXPECT_TRUE(old_multicast_identifier != 
+    EXPECT_TRUE(old_multicast_identifier !=
                 Agent::GetInstance()->controller()->multicast_sequence_number());
     EXPECT_TRUE(Agent::GetInstance()->controller()->multicast_cleanup_timer().cleanup_timer_->running());
 
@@ -301,7 +295,7 @@ TEST_F(AgentBasicScaleTest, v4_unicast_one_channel_down_up) {
 
     VerifyVmPortActive(true);
     VerifyRoutes(false);
-    
+
     //Bring down the channel
     AgentXmppChannel *ch = static_cast<AgentXmppChannel *>(bgp_peer[0].get());
     bgp_peer[0].get()->HandleXmppChannelEvent(xmps::NOT_READY);
@@ -375,7 +369,7 @@ TEST_F(AgentBasicScaleTest, walk_on_vrf_marked_for_delete) {
     //Bring down the channel
     bgp_peer[0].get()->HandleXmppChannelEvent(xmps::NOT_READY);
     client->WaitForIdle();
-    
+
     //VRF will not get deleted as interface is yet present. So bringing up
     //channel should invoke walk on this VRF and skip it.
     DelVrf("vrf1");
@@ -393,13 +387,13 @@ TEST_F(AgentBasicScaleTest, walk_on_vrf_marked_for_delete) {
 static uint8_t CountStalePath(AgentRoute *rt) {
     uint8_t stale_path_count = 0;
     //Check only one stale path is thr
-    for(Route::PathList::const_iterator it = rt->GetPathList().begin(); 
+    for(Route::PathList::const_iterator it = rt->GetPathList().begin();
         it != rt->GetPathList().end(); it++) {
         const AgentPath *path = static_cast<const AgentPath *>(it.operator->());
         if (path->is_stale()) {
             EXPECT_TRUE(path->peer()->GetType() == Peer::BGP_PEER);
             stale_path_count++;
-        } 
+        }
     }
     return stale_path_count;
 }
@@ -428,7 +422,7 @@ TEST_F(AgentBasicScaleTest, flap_xmpp_channel_check_stale_path_count) {
 
     VerifyVmPortActive(true);
     VerifyRoutes(false);
-    
+
     AgentXmppChannel *ch = static_cast<AgentXmppChannel *>(bgp_peer[0].get());
     //Bring down the channel
     bgp_peer[0].get()->HandleXmppChannelEvent(xmps::NOT_READY);
@@ -470,20 +464,20 @@ TEST_F(AgentBasicScaleTest, unicast_one_channel_down_up_skip_route_from_peer) {
     //expect subscribe message+route at the mock server
     Ip4Address mc_addr = Ip4Address::from_string("255.255.255.255");
     WAIT_FOR(1000, 10000, MCRouteFind("vrf1", mc_addr));
-    //WAIT_FOR(100, 10000, (mock_peer[0].get()->Count() == 
+    //WAIT_FOR(100, 10000, (mock_peer[0].get()->Count() ==
     //                      ((6 * num_vns * num_vms_per_vn) + num_vns)));
 
     VerifyVmPortActive(true);
     VerifyRoutes(false);
     mc_addr = Ip4Address::from_string("1.1.1.255");
     EXPECT_TRUE(RouteFind("vrf1", mc_addr, 32));
-    
+
     //Store the src mpls label to verify it does not change after channel down
     MulticastGroupObject *mcobj = MulticastHandler::GetInstance()->
         FindGroupObject("vrf1", mc_addr);
     EXPECT_TRUE(mcobj != NULL);
 
-    uint32_t old_multicast_identifier = 
+    uint32_t old_multicast_identifier =
         Agent::GetInstance()->controller()->multicast_sequence_number();
     //WAIT_FOR(1000, 1000, (mcobj->GetSourceMPLSLabel() != 0));
     //uint32_t subnet_src_label = mcobj->GetSourceMPLSLabel();
@@ -497,14 +491,14 @@ TEST_F(AgentBasicScaleTest, unicast_one_channel_down_up_skip_route_from_peer) {
     mcobj = MulticastHandler::GetInstance()->FindGroupObject("vrf1", mc_addr);
     EXPECT_TRUE(mcobj != NULL);
     //EXPECT_TRUE(mcobj->GetSourceMPLSLabel() == subnet_src_label);
-    EXPECT_TRUE(mcobj->peer_identifier() == 
+    EXPECT_TRUE(mcobj->peer_identifier() ==
                 Agent::GetInstance()->controller()->multicast_sequence_number());
 
     //uint32_t source_flood_label = mcobj->GetSourceMPLSLabel();
     mc_addr = Ip4Address::from_string("255.255.255.255");
     EXPECT_TRUE(MCRouteFind("vrf1", mc_addr));
     //EXPECT_TRUE(mcobj->GetSourceMPLSLabel() != 0);
-    EXPECT_TRUE(mcobj->peer_identifier() == 
+    EXPECT_TRUE(mcobj->peer_identifier() ==
                 Agent::GetInstance()->controller()->multicast_sequence_number());
 
     //Bring up the channel
@@ -518,15 +512,15 @@ TEST_F(AgentBasicScaleTest, unicast_one_channel_down_up_skip_route_from_peer) {
     EXPECT_TRUE(mcobj != NULL);
     //EXPECT_TRUE(mcobj->GetSourceMPLSLabel() != 0);
     //EXPECT_TRUE(mcobj->GetSourceMPLSLabel() == subnet_src_label);
-    EXPECT_TRUE(mcobj->peer_identifier() == old_multicast_identifier); 
+    EXPECT_TRUE(mcobj->peer_identifier() == old_multicast_identifier);
     mc_addr = Ip4Address::from_string("255.255.255.255");
     mcobj = MulticastHandler::GetInstance()->FindGroupObject("vrf1", mc_addr);
     EXPECT_TRUE(MCRouteFind("vrf1", mc_addr));
     //EXPECT_TRUE(mcobj->GetSourceMPLSLabel() != 0);
-    WAIT_FOR(1000, 1000, (mcobj->peer_identifier() == 
+    WAIT_FOR(1000, 1000, (mcobj->peer_identifier() ==
                 Agent::GetInstance()->controller()->multicast_sequence_number()));
     //EXPECT_TRUE(mcobj->GetSourceMPLSLabel() != source_flood_label);
-    EXPECT_TRUE(old_multicast_identifier != 
+    EXPECT_TRUE(old_multicast_identifier !=
                 Agent::GetInstance()->controller()->multicast_sequence_number());
     EXPECT_TRUE(Agent::GetInstance()->controller()->multicast_cleanup_timer().cleanup_timer_->running());
 
@@ -576,7 +570,7 @@ TEST_F(AgentBasicScaleTest, unicast_cleanup_timer_1) {
 
     VerifyVmPortActive(true);
     VerifyRoutes(false);
-    
+
     AgentXmppChannel *ch1 = static_cast<AgentXmppChannel *>(bgp_peer[0].get());
     AgentXmppChannel *ch2 = static_cast<AgentXmppChannel *>(bgp_peer[1].get());
     //Bring down the channel
@@ -593,7 +587,7 @@ TEST_F(AgentBasicScaleTest, unicast_cleanup_timer_1) {
     EXPECT_TRUE(Agent::GetInstance()->controller()->
                 unicast_cleanup_timer().cleanup_timer_->running() == false);
     AgentXmppChannel *ch = Agent::GetInstance()->controller()->
-       unicast_cleanup_timer().agent_xmpp_channel_; 
+       unicast_cleanup_timer().agent_xmpp_channel_;
     EXPECT_TRUE(ch == NULL);
 
     //Bring up the channel
@@ -606,7 +600,7 @@ TEST_F(AgentBasicScaleTest, unicast_cleanup_timer_1) {
     EXPECT_TRUE(Agent::GetInstance()->controller()->
                 unicast_cleanup_timer().cleanup_timer_->running() == true);
     ch = Agent::GetInstance()->controller()->
-       unicast_cleanup_timer().agent_xmpp_channel_; 
+       unicast_cleanup_timer().agent_xmpp_channel_;
     EXPECT_TRUE(ch != NULL);
 
     bgp_peer[1].get()->HandleXmppChannelEvent(xmps::READY);
@@ -618,7 +612,7 @@ TEST_F(AgentBasicScaleTest, unicast_cleanup_timer_1) {
     EXPECT_TRUE(Agent::GetInstance()->controller()->
                 unicast_cleanup_timer().cleanup_timer_->running() == true);
     AgentXmppChannel *ch_2 = Agent::GetInstance()->controller()->
-       unicast_cleanup_timer().agent_xmpp_channel_; 
+       unicast_cleanup_timer().agent_xmpp_channel_;
     EXPECT_TRUE(ch == ch_2);
 
     //Flap the second channel
@@ -630,7 +624,7 @@ TEST_F(AgentBasicScaleTest, unicast_cleanup_timer_1) {
     client->WaitForIdle();
     EXPECT_TRUE(CountStalePath(rt) == 1);
     ch_2 = Agent::GetInstance()->controller()->
-       unicast_cleanup_timer().agent_xmpp_channel_; 
+       unicast_cleanup_timer().agent_xmpp_channel_;
     EXPECT_TRUE(Agent::GetInstance()->controller()->
                 unicast_cleanup_timer().cleanup_timer_->running() == true);
     EXPECT_TRUE(ch == ch_2);
@@ -665,7 +659,7 @@ TEST_F(AgentBasicScaleTest, unicast_cleanup_timer_2) {
 
     VerifyVmPortActive(true);
     VerifyRoutes(false);
-    
+
     AgentXmppChannel *ch1 = static_cast<AgentXmppChannel *>(bgp_peer[0].get());
     AgentXmppChannel *ch2 = static_cast<AgentXmppChannel *>(bgp_peer[1].get());
     //Bring down the channel
@@ -680,7 +674,7 @@ TEST_F(AgentBasicScaleTest, unicast_cleanup_timer_2) {
         unicast_cleanup_timer().stale_timer_interval();
     EXPECT_TRUE(stale_timeout_interval != 0);
     AgentXmppChannel *ch = Agent::GetInstance()->controller()->
-       unicast_cleanup_timer().agent_xmpp_channel_; 
+       unicast_cleanup_timer().agent_xmpp_channel_;
     EXPECT_TRUE(ch == NULL);
 
     //Bring up the channel
@@ -691,7 +685,7 @@ TEST_F(AgentBasicScaleTest, unicast_cleanup_timer_2) {
         unicast_cleanup_timer().stale_timer_interval();
     EXPECT_TRUE(stale_timeout_interval != 0);
     ch = Agent::GetInstance()->controller()->
-       unicast_cleanup_timer().agent_xmpp_channel_; 
+       unicast_cleanup_timer().agent_xmpp_channel_;
     EXPECT_TRUE(ch != NULL);
     EXPECT_TRUE(Agent::GetInstance()->controller()->
                 unicast_cleanup_timer().cleanup_timer_->running() == true);
@@ -703,7 +697,7 @@ TEST_F(AgentBasicScaleTest, unicast_cleanup_timer_2) {
         unicast_cleanup_timer().stale_timer_interval();
     EXPECT_TRUE(stale_timeout_interval != 0);
     AgentXmppChannel *ch_2 = Agent::GetInstance()->controller()->
-       unicast_cleanup_timer().agent_xmpp_channel_; 
+       unicast_cleanup_timer().agent_xmpp_channel_;
     EXPECT_TRUE(ch == ch_2);
     EXPECT_TRUE(Agent::GetInstance()->controller()->
                 unicast_cleanup_timer().cleanup_timer_->running() == true);
@@ -713,7 +707,7 @@ TEST_F(AgentBasicScaleTest, unicast_cleanup_timer_2) {
     client->WaitForIdle();
     EXPECT_TRUE(CountStalePath(rt) == 1);
     ch_2 = Agent::GetInstance()->controller()->
-       unicast_cleanup_timer().agent_xmpp_channel_; 
+       unicast_cleanup_timer().agent_xmpp_channel_;
     EXPECT_TRUE(ch != ch_2);
     EXPECT_TRUE(Agent::GetInstance()->controller()->
                 unicast_cleanup_timer().cleanup_timer_->running() == true);

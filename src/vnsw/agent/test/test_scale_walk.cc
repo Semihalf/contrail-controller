@@ -125,9 +125,8 @@ int main(int argc, char **argv) {
         return false;
     }
 
-    sprintf(iterations_env, "DB_ITERATION_TO_YIELD=%d", yield);
-    putenv(iterations_env);
-
+    client = TestInit(init_file, ksync_init);
+    putenv(wait_time_env);
 
     InitXmppServers();
 
