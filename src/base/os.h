@@ -2,12 +2,9 @@
 #ifndef _agent_os_h_
 #define _agent_os_h_
 
-/* Requires to be preceeded by inclusion of:
-   sys/types.h
-   net/ethernet.h
-*/
 #if defined(__linux__)
 # include <sys/types.h>
+# include <net/ethernet.h>
 # if !defined(_FEATURES_H)
 #  define UNDEF__FEATURES_H
 #  define _FEATURES_H
@@ -20,8 +17,6 @@
 #  define UNDEF___FAVOR_BSD
 #  define __FAVOR_BSD
 # endif
-//#   include "net/bsdtcp.h"
-//#   include "net/bsdudp.h"
 # include <netinet/tcp.h>
 # include <netinet/udp.h>
 
