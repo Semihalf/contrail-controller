@@ -2,9 +2,9 @@
  * Copyright (c) 2013 Juniper Networks, Inc. All rights reserved.
  */
 
+#include "base/os.h"
 #include <stdio.h>
 #include <stdlib.h>
-#include "base/os.h"
 
 #include "testing/gunit.h"
 #include "test/test_cmn_util.h"
@@ -32,9 +32,9 @@ public:
 TEST_F(VgwTest, conf_file_1) {
     AgentParam param(Agent::GetInstance());
 
-    VirtualGatewayConfigTable *table = 
+    VirtualGatewayConfigTable *table =
         Agent::GetInstance()->params()->vgw_config_table();
-    VirtualGatewayConfigTable::Table::iterator it = 
+    VirtualGatewayConfigTable::Table::iterator it =
         table->table().find(VirtualGatewayConfig("vgw"));
     EXPECT_TRUE(it != table->table().end());
 
@@ -151,7 +151,7 @@ static void ValidateVgwInterface(InetUnicastRouteEntry *route,
     if (nh->GetType() != NextHop::INTERFACE)
         return;
 
-    const Interface *intf = 
+    const Interface *intf =
         static_cast<const InterfaceNH *>(nh)->GetInterface();
     EXPECT_TRUE(intf != NULL);
     if (intf == NULL)
@@ -257,7 +257,7 @@ int main(int argc, char **argv) {
     std::vector<VirtualGatewayInfo> vgw_info_list;
     vgw_info_list.push_back(VirtualGatewayInfo("vgw"));
     vgw_info_list.push_back(VirtualGatewayInfo("vgw1"));
-    boost::shared_ptr<VirtualGatewayData> 
+    boost::shared_ptr<VirtualGatewayData>
         vgw_data(new VirtualGatewayData(VirtualGatewayData::Delete,
                                         vgw_info_list, 0));
     Agent::GetInstance()->params()->vgw_config_table()->Enqueue(vgw_data);

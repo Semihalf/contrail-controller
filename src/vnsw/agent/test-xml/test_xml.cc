@@ -1,12 +1,12 @@
 /*
  * Copyright (c) 2014 Juniper Networks, Inc. All rights reserved.
  */
+#include "base/os.h"
 #include <iostream>
 #include <fstream>
 #include <pugixml/pugixml.hpp>
 #include <boost/uuid/uuid.hpp>
 #include <boost/uuid/string_generator.hpp>
-#include "base/os.h"
 
 #include <test/test_cmn_util.h>
 #include <pkt/test/test_pkt_util.h>

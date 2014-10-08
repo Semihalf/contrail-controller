@@ -5,10 +5,7 @@
 #ifndef vnsw_agent_test_pkt_gen_h
 #define vnsw_agent_test_pkt_gen_h
 
-//#include "base/os.h"
 #include <netinet/ip.h>
-//#include <netinet/tcp.h>
-//#include <netinet/udp.h>
 #include <netinet/ether.h>
 #include <linux/if_ether.h>
 #include <netinet/ip_icmp.h>
@@ -150,16 +147,6 @@ private:
         pkt.tcp.th_ack = htonl(0);
 
         pkt.tcp.th_off = 5;
-#if 0
-        pkt.tcp.fin = 0;
-        pkt.tcp.syn = 0;
-        pkt.tcp.rst = 0;
-        pkt.tcp.psh= 0;
-        pkt.tcp.ack = 0;
-        pkt.tcp.urg = 0;
-        pkt.tcp.res1 = 0;
-        pkt.tcp.res2 = 0;
-#endif
         pkt.tcp.th_flags = 0;
 
         pkt.tcp.th_win = htons(0);
@@ -245,16 +232,6 @@ private:
         pkt.tcp.th_ack = htonl(0);
 
         pkt.tcp.th_off = 5;
-#if 0
-        pkt.tcp.fin = 0;
-        pkt.tcp.syn = 0;
-        pkt.tcp.rst = 0;
-        pkt.tcp.psh= 0;
-        pkt.tcp.ack = 0;
-        pkt.tcp.urg = 0;
-        pkt.tcp.res1 = 0;
-        pkt.tcp.res2 = 0;
-#endif
         pkt.tcp.th_flags = 0;
 
         pkt.tcp.th_win = htons(0);
@@ -354,11 +331,6 @@ public:
         struct tcphdr *tcp = (struct tcphdr *)(buff + len);
         tcp->th_dport = htons(dport);
         tcp->th_sport = htons(sport);
-#if 0
-        tcp->fin = fin;
-        tcp->syn = syn;
-        tcp->ack = ack;
-#endif
         tcp->th_flags = (fin ? TH_FIN : 0) | (syn ? TH_SYN : 0) | (ack ? TH_ACK : 0);
         len += sizeof(tcphdr) + len;
     };

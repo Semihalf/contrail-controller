@@ -3,11 +3,6 @@
  */
 
 #include "base/os.h"
-#include <sys/socket.h>
-#include <linux/netlink.h>
-#include <net/if.h>
-#include <linux/if_tun.h>
-#include <linux/if_packet.h>
 
 #include "testing/gunit.h"
 

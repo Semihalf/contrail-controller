@@ -2,11 +2,9 @@
  * Copyright (c) 2013 Juniper Networks, Inc. All rights reserved.
  */
 
+#include "base/os.h"
 #include <arpa/inet.h>
 #include <netinet/in.h>
-#include "base/os.h"
-//#include <netinet/tcp.h>
-//#include <netinet/udp.h>
 #include <netinet/ip6.h>
 #include <netinet/icmp6.h>
 
