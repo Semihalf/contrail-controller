@@ -96,7 +96,7 @@ const string NHKState::FamilyToString(int nh_family) const {
 const string NHKState::EncapFamilyToString(int nh_family) const {
     unsigned family = nh_family;
     switch(family) {
-        case ETH_P_ARP:
+        case ETHERTYPE_ARP:
             return "ETH_P_ARP";
         case 0:
             return "NO_ENCAP";
@@ -109,7 +109,7 @@ const string NHKState::EncapToString(const vector<signed char> &encap) const {
     ostringstream strm;
     uint8_t ubyte;
     vector<signed char>::const_iterator it = encap.begin();
-    strm << hex << setfill('0'); 
+    strm << hex << setfill('0');
     while(it != encap.end()) {
         ubyte = (uint8_t) *it;
         strm << setw(2) << (int)ubyte;

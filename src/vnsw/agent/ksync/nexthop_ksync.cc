@@ -584,14 +584,14 @@ int NHKSyncEntry::Encode(sandesh_op::type op, char *buf, int buf_len) {
 
     switch (type_) {
         case NextHop::VLAN:
-        case NextHop::ARP: 
-        case NextHop::INTERFACE : 
+        case NextHop::ARP:
+        case NextHop::INTERFACE :
             encoder.set_nhr_type(NH_ENCAP);
             if (if_ksync) {
                 intf_id = if_ksync->interface_id();
             }
             encoder.set_nhr_encap_oif_id(intf_id);
-            encoder.set_nhr_encap_family(ETH_P_ARP);
+            encoder.set_nhr_encap_family(ETHERTYPE_ARP);
 
             SetEncap(if_ksync, encap);
             encoder.set_nhr_encap(encap);
@@ -611,7 +611,7 @@ int NHKSyncEntry::Encode(sandesh_op::type op, char *buf, int buf_len) {
             encoder.set_nhr_type(NH_TUNNEL);
             encoder.set_nhr_tun_sip(htonl(sip_.s_addr));
             encoder.set_nhr_tun_dip(htonl(dip_.s_addr));
-            encoder.set_nhr_encap_family(ETH_P_ARP);
+            encoder.set_nhr_encap_family(ETHERTYPE_ARP);
 
             if (if_ksync) {
                 intf_id = if_ksync->interface_id();
@@ -635,7 +635,7 @@ int NHKSyncEntry::Encode(sandesh_op::type op, char *buf, int buf_len) {
             encoder.set_nhr_tun_dip(htonl(dip_.s_addr));
             encoder.set_nhr_tun_sport(htons(sport_));
             encoder.set_nhr_tun_dport(htons(dport_));
-            encoder.set_nhr_encap_family(ETH_P_ARP);
+            encoder.set_nhr_encap_family(ETHERTYPE_ARP);
 
             if (if_ksync) {
                 intf_id = if_ksync->interface_id();
@@ -674,7 +674,7 @@ int NHKSyncEntry::Encode(sandesh_op::type op, char *buf, int buf_len) {
             /* TODO encoding */
             encoder.set_nhr_tun_sip(htonl(sip_.s_addr));
             encoder.set_nhr_tun_dip(htonl(dip_.s_addr));
-            encoder.set_nhr_encap_family(ETH_P_ARP);
+            encoder.set_nhr_encap_family(ETHERTYPE_ARP);
             /* Proto encode in Network byte order */
             switch (comp_type_) {
             case Composite::L2INTERFACE:
