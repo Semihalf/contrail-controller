@@ -803,19 +803,31 @@ class DBInterface(object):
         return None
     #end _subnet_read
 
-    def _ip_address_to_subnet_id(self, ip_addr, net_obj):
+    def _ip_address_to_subnet_id(self, ip_addr, net_obj, memo_req=None):
         # find subnet-id for ip-addr, called when instance-ip created
-        ipam_refs = net_obj.get_network_ipam_refs()
-        if ipam_refs:
-            for ipam_ref in ipam_refs:
+        # first try if memo created during req can help avoid trips to
+        # backend
+        try:
+           subnets_info = memo_req['subnets'][net_obj.uuid]
+           for subnet_info in subnets_info:
+               if IPAddress(ip_addr) in IPSet([subnet_info['cidr']]):
+                   subnet_id = subnet_info['id']
+                   return subnet_id
+        except Exception:
+            # memo didnt help, need to reach backend for info
+            ipam_refs = net_obj.get_network_ipam_refs()
+            for ipam_ref in ipam_refs or []:
                 subnet_vncs = ipam_ref['attr'].get_ipam_subnets()
                 for subnet_vnc in subnet_vncs:
                     cidr = '%s/%s' % (subnet_vnc.subnet.get_ip_prefix(),
                                       subnet_vnc.subnet.get_ip_prefix_len())
                     if IPAddress(ip_addr) in IPSet([cidr]):
-                        subnet_id = subnet_vnc.subnet_uuid
-                        return subnet_id
+                        subnet_key = self._subnet_vnc_get_key(subnet_vnc,
+                                                              net_obj.uuid)
+                        subnet_id = self._subnet_vnc_read_or_create_mapping(
+                                key=subnet_key)
 
+                        return subnet_id
         return None
     #end _ip_address_to_subnet_id
 
@@ -1136,8 +1148,8 @@ class DBInterface(object):
                                            sequence=SequenceType(seq, 0)))
                 seq = seq + 1
 
-        if 'vpc:route_table' in network_q:
-            rt_fq_name = network_q['vpc:route_table']
+        if 'contrail:route_table' in network_q:
+            rt_fq_name = network_q['contrail:route_table']
             if rt_fq_name:
                 try:
                     rt_obj = self._vnc_lib.route_table_read(fq_name=rt_fq_name)
@@ -1192,7 +1204,7 @@ class DBInterface(object):
 
         rt_refs = net_obj.get_route_table_refs()
         if rt_refs:
-            extra_dict['vpc:route_table'] = \
+            extra_dict['contrail:route_table'] = \
                 [rt_ref['to'] for rt_ref in rt_refs]
 
         ipam_refs = net_obj.get_network_ipam_refs()
@@ -1503,7 +1515,7 @@ class DBInterface(object):
                 port_obj = self._virtual_machine_interface_read(port_id=port_id)
                 if context and not context['is_admin']:
                     port_tenant_id = self._get_obj_tenant_id('port', port_id)
-                    if port_tenant_id != context['tenant']:
+                    if port_tenant_id.replace('-', '') != context['tenant']:
                         raise NoIdError(port_id)
             except NoIdError:
                 self._raise_contrail_exception('PortNotFound',
@@ -1834,7 +1846,7 @@ class DBInterface(object):
                 ip_q_dict = {}
                 ip_q_dict['ip_address'] = ip_addr
                 ip_q_dict['subnet_id'] = self._ip_address_to_subnet_id(ip_addr,
-                                                                       net_obj)
+                                              net_obj, port_req_memo)
 
                 port_q_dict['fixed_ips'].append(ip_q_dict)
 

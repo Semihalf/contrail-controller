@@ -68,6 +68,12 @@ class InstanceManager(object):
         instance_name = "__".join(proj_fq_name + [name])
         return instance_name
 
+    def _get_if_route_table_name(self, if_type, si_obj):
+        domain_name, proj_name = si_obj.get_parent_fq_name()
+        rt_name = si_obj.uuid + ' ' + if_type
+        rt_fq_name = [domain_name, proj_name, rt_name]
+        return rt_fq_name
+
     def _set_vm_db_info(self, inst_count, instance_name, vm_uuid,
                         state, vrouter=None, local_preference=None):
         if not vrouter:
@@ -92,14 +98,12 @@ class InstanceManager(object):
 
         # allocate ip
         if not iip_obj:
-            try:
-                addr = self._vnc_lib.virtual_network_ip_alloc(vn_obj)
-            except Exception as e:
-                return iip_obj
-
-            iip_obj = InstanceIp(name=iip_name, instance_ip_address=addr[0])
+            iip_obj = InstanceIp(name=iip_name)
             iip_obj.add_virtual_network(vn_obj)
-            self._vnc_lib.instance_ip_create(iip_obj)
+            try:
+                self._vnc_lib.instance_ip_create(iip_obj)
+            except Exception as e:
+                return None
 
         return iip_obj
 
@@ -110,9 +114,8 @@ class InstanceManager(object):
             static_routes = {'route':[]}
 
         try:
-            domain_name, proj_name = proj_obj.get_fq_name()
-            rt_name = si_obj.uuid + ' ' + nic['type']
-            rt_fq_name = [domain_name, proj_name, rt_name]
+            rt_fq_name = self._get_if_route_table_name(
+                nic['type'], si_obj)
             rt_obj = self._vnc_lib.interface_route_table_read(
                 fq_name=rt_fq_name)
             rt_obj.set_interface_route_table_routes(static_routes)
@@ -120,7 +123,7 @@ class InstanceManager(object):
             proj_obj = self._vnc_lib.project_read(
                 fq_name=si_obj.get_parent_fq_name())
             rt_obj = InterfaceRouteTable(
-                name=rt_name,
+                name=rt_fq_name[-1],
                 parent_obj=proj_obj,
                 interface_route_table_routes=static_routes)
             self._vnc_lib.interface_route_table_create(rt_obj)
@@ -483,20 +486,56 @@ class VirtualMachineManager(InstanceManager):
 
     def delete_service(self, vm_uuid, proj_name=None):
         try:
+            self._vnc_lib.virtual_machine_delete(id=vm_uuid)
+        except (NoIdError, RefsExistError):
+            pass
+
+        try:
             self.novaclient_oper('servers', 'find', proj_name,
                 id=vm_uuid).delete()
         except nc_exc.NotFound:
             raise KeyError
 
     def check_service(self, si_obj, proj_name=None):
+        status = 'ACTIVE'
+        vm_list = {}
         vm_back_refs = si_obj.get_virtual_machine_back_refs()
         for vm_back_ref in vm_back_refs or []:
-            status = self.novaclient_oper('servers', 'find', proj_name,
-                id=vm_back_ref['uuid']).status
-            if status == 'ERROR':
-                return status
+            try:
+                vm = self.novaclient_oper('servers', 'find', proj_name,
+                    id=vm_back_ref['uuid'])
+                vm_list[vm.name] = vm
+            except nc_exc.NotFound:
+                self._vnc_lib.virtual_machine_delete(id=vm_back_ref['uuid'])
+            except (NoIdError, RefsExistError):
+                pass
 
-        return 'ACTIVE'
+        # check status of VMs
+        si_props = si_obj.get_service_instance_properties()
+        max_instances = si_props.get_scale_out().get_max_instances()
+        for inst_count in range(0, max_instances):
+            instance_name = self._get_instance_name(si_obj, inst_count)
+            if instance_name not in vm_list.keys():
+                status = 'ERROR'
+            elif vm_list[instance_name].status == 'ERROR':
+                try:
+                    self.delete_service(vm_list[instance_name].id, proj_name)
+                except KeyError:
+                    pass
+                status = 'ERROR'
+
+        # check change in instance count
+        if vm_back_refs and (max_instances > len(vm_back_refs)):
+            status = 'ERROR'
+        elif vm_back_refs and (max_instances < len(vm_back_refs)):
+            for vm_back_ref in vm_back_refs:
+                try:
+                    self.delete_service(vm_back_ref['uuid'], proj_name)
+                except KeyError:
+                    pass
+            status = 'ERROR'
+
+        return status
 
     def _novaclient_get(self, proj_name, reauthenticate=False):
         # return cache copy when reauthenticate is not requested
@@ -524,6 +563,37 @@ class VirtualMachineManager(InstanceManager):
             n_client = self._novaclient_get(proj_name, True)
             oper_func = getattr(n_client, oper)
             return oper_func(**kwargs)
+
+    def update_static_routes(self, si_obj):
+        # get service instance interface list
+        si_props = si_obj.get_service_instance_properties()
+        si_if_list = si_props.get_interface_list()
+        if not si_if_list:
+            return
+
+        st_list = si_obj.get_service_template_refs()
+        fq_name = st_list[0]['to']
+        st_obj = self._vnc_lib.service_template_read(fq_name=fq_name)
+        st_props = st_obj.get_service_template_properties()
+        st_if_list = st_props.get_interface_type()
+
+        for idx in range(0, len(si_if_list)):
+            si_if = si_if_list[idx]
+            static_routes = si_if.get_static_routes()
+            if not static_routes:
+                static_routes = {'route':[]}
+
+            # update static routes
+            try:
+                rt_fq_name = self._get_if_route_table_name(
+                    st_if_list[idx].get_service_interface_type(),
+                    si_obj)
+                rt_obj = self._vnc_lib.interface_route_table_read(
+                    fq_name=rt_fq_name)
+                rt_obj.set_interface_route_table_routes(static_routes)
+                self._vnc_lib.interface_route_table_update(rt_obj)
+            except NoIdError:
+                pass
 
 
 class NetworkNamespaceManager(InstanceManager):

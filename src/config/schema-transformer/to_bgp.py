@@ -1377,6 +1377,8 @@ class RoutingInstanceST(object):
     # end update_route_target_list
 
     def delete(self, vn_obj=None):
+        # refresh the ri object because it could have changed
+        self.obj = _vnc_lib.routing_instance_read(id=self.obj.uuid)
         rtgt_list = self.obj.get_route_target_refs()
         ri_fq_name_str = self.obj.get_fq_name_str()
         rt_cf = VirtualNetworkST._rt_cf
@@ -1396,8 +1398,6 @@ class RoutingInstanceST(object):
             uve_msg = UveServiceChain(data=uve, sandesh=_sandesh)
             uve_msg.send(sandesh=_sandesh)
 
-        # refresh the ri object because it could have changed
-        self.obj = _vnc_lib.routing_instance_read(id=self.obj.uuid)
         vmi_refs = self.obj.get_virtual_machine_interface_back_refs()
         for vmi in vmi_refs or []:
             try:
@@ -1457,7 +1457,6 @@ class ServiceChain(DictST):
         self.sp_list = sp_list
         self.dp_list = dp_list
         self.service_list = service_list
-        self.nat_service = False
 
         self.protocol = protocol
         self.created = False
@@ -1601,13 +1600,14 @@ class ServiceChain(DictST):
 
             mode = service_template.get_service_template_properties(
             ).get_service_mode()
+            nat_service = False
             if mode == "transparent":
                 transparent = True
             elif mode == "in-network":
                 transparent = False
             elif mode == "in-network-nat":
                 transparent = False
-                self.nat_service = True
+                nat_service = True
             else:
                 transparent = True
             _sandesh._logger.debug("service chain %s: creating %s chain",
@@ -1642,7 +1642,7 @@ class ServiceChain(DictST):
                     else:
                         result = self.process_in_network_service(
                             vm_obj, service, vn1_obj, vn2_obj, service_ri1,
-                            service_ri2)
+                            service_ri2, nat_service)
                     if not result:
                         return None
             _vnc_lib.routing_instance_update(service_ri1.obj)
@@ -1727,7 +1727,7 @@ class ServiceChain(DictST):
     # end process_transparent_service
 
     def process_in_network_service(self, vm_obj, service, vn1_obj, vn2_obj,
-                                   service_ri1, service_ri2):
+                                   service_ri1, service_ri2, nat_service):
         left_found = False
         right_found = False
         for interface in (vm_obj.get_virtual_machine_interfaces() or
@@ -1757,12 +1757,12 @@ class ServiceChain(DictST):
                 ip_addr = ip_obj.get_instance_ip_address()
                 service_ri1.add_service_info(vn2_obj, service, ip_addr,
                      vn1_obj.get_primary_routing_instance().get_fq_name_str())
-            elif self.direction == '<>' and not self.nat_service:
+            elif self.direction == '<>' and not nat_service:
                 right_found = True
                 ip_addr = ip_obj.get_instance_ip_address()
                 service_ri2.add_service_info(vn1_obj, service, ip_addr,
                      vn2_obj.get_primary_routing_instance().get_fq_name_str())
-        return left_found and (self.nat_service or self.direction != '<>' or
+        return left_found and (nat_service or self.direction != '<>' or
                                right_found)
     # end process_in_network_service
 
@@ -1814,7 +1814,6 @@ class ServiceChain(DictST):
         sc.dst_ports = ','.join(port_list)
         sc.direction = self.direction
         sc.service_list = self.service_list
-        sc.nat_service = self.nat_service
         sc.created = self.created
         return sc
     # end build_introspect
@@ -3637,34 +3636,40 @@ class SchemaTransformer(object):
 def launch_arc(transformer, ssrc_mapc):
     arc_mapc = arc_initialize(transformer._args, ssrc_mapc)
     while True:
-        # If not connected to zookeeper Pause the operations
-        if not _zookeeper_client.is_connected():
-            time.sleep(1)
-            continue
-        pollreq = PollRequest(arc_mapc.get_session_id())
-        result = arc_mapc.call('poll', pollreq)
         try:
+            # If not connected to zookeeper Pause the operations
+            if not _zookeeper_client.is_connected():
+                time.sleep(1)
+                continue
+            pollreq = PollRequest(arc_mapc.get_session_id())
+            result = arc_mapc.call('poll', pollreq)
             transformer.process_poll_result(result)
         except Exception as e:
-            string_buf = StringIO()
-            cgitb.Hook(
-                file=string_buf,
-                format="text",
-                ).handle(sys.exc_info())
-            try:
-                with open('/var/log/contrail/schema.err', 'a') as err_file:
-                    err_file.write(string_buf.getvalue())
-            except IOError:
-                with open('./schema.err', 'a') as err_file:
-                    err_file.write(string_buf.getvalue())
-            raise e
+            if type(e) == socket.error:
+                time.sleep(3)
+            else:
+                string_buf = StringIO()
+                cgitb.Hook(
+                    file=string_buf,
+                    format="text",
+                    ).handle(sys.exc_info())
+                try:
+                    with open('/var/log/contrail/schema.err', 'a') as err_file:
+                        err_file.write(string_buf.getvalue())
+                except IOError:
+                    with open('./schema.err', 'a') as err_file:
+                        err_file.write(string_buf.getvalue())
+                if type(e) == InvalidSessionID:
+                    return
+                raise e
 # end launch_arc
 
 
 def launch_ssrc(transformer):
-    ssrc_mapc = ssrc_initialize(transformer._args)
-    arc_glet = gevent.spawn(launch_arc, transformer, ssrc_mapc)
-    arc_glet.join()
+    while True:
+        ssrc_mapc = ssrc_initialize(transformer._args)
+        arc_glet = gevent.spawn(launch_arc, transformer, ssrc_mapc)
+        arc_glet.join()
 # end launch_ssrc
 
 

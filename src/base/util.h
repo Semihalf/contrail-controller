@@ -265,7 +265,7 @@ static inline boost::asio::ip::address_v4 GetIp4SubnetAddress(
     }
 
     boost::asio::ip::address_v4 subnet(ip_prefix.to_ulong() & 
-                                       (0xFFFFFFFF << (32 - plen)));
+                                       (~((1UL << (32 - plen)) - 1)));
     return subnet;
 }
 
@@ -346,16 +346,17 @@ static inline bool ValidateServerEndpoints(std::vector<std::string> list,
     return true;
 }
 
+// Return IP address string for a host if it is resolvable, empty string
+// otherwise.
 static inline std::string GetHostIp(boost::asio::io_service *io_service,
                                     std::string hostname) {
-    boost::asio::ip::tcp::resolver::iterator iter;
+    boost::asio::ip::tcp::resolver::iterator iter, end;
     boost::system::error_code error;
     boost::asio::ip::tcp::resolver resolver(*io_service);
     boost::asio::ip::tcp::resolver::query query(hostname, "");
 
     iter = resolver.resolve(query, error);
-
-    return iter->endpoint().address().to_string();
+    return iter != end ? iter->endpoint().address().to_string() : "";
 }
 
 // Writes a number into a string
