@@ -221,7 +221,7 @@ public:
         Init(sp, dp);
         len = sizeof(pkt.ip) + sizeof(pkt.tcp) + sizeof(pkt.payload);
         IpUtils::Ip6Init(&pkt.ip, IPPROTO_TCP, len, sip, dip);
-        IpUtils::EthInit(&pkt.eth, ETH_P_IPV6);
+        IpUtils::EthInit(&pkt.eth, ETHERTYPE_IPV6);
     }
     unsigned char *GetPacket() const { return (unsigned char *)&pkt; }
 private:
@@ -248,7 +248,7 @@ public:
         Init(sp, dp);
         len = sizeof(pkt.ip) + sizeof(pkt.udp) + sizeof(pkt.payload);
         IpUtils::Ip6Init(&pkt.ip, IPPROTO_UDP, len, sip, dip);
-        IpUtils::EthInit(&pkt.eth, ETH_P_IPV6);
+        IpUtils::EthInit(&pkt.eth, ETHERTYPE_IPV6);
     }
     unsigned char *GetPacket() const { return (unsigned char *)&pkt; }
 private:
@@ -268,7 +268,7 @@ public:
         uint16_t len;
         len = sizeof(pkt.ip) + sizeof(pkt.icmp);
         IpUtils::Ip6Init(&(pkt.ip), IPPROTO_ICMPV6, len, sip, dip);
-        IpUtils::EthInit(&(pkt.eth), smac, dmac, ETH_P_IPV6);
+        IpUtils::EthInit(&(pkt.eth), smac, dmac, ETHERTYPE_IPV6);
         pkt.icmp.icmp_type = ICMP_ECHO;
         pkt.icmp.icmp_code = 0;
         pkt.icmp.icmp_cksum = IpUtils::IPChecksum((uint16_t *)&pkt.icmp, sizeof(icmp_packet));
