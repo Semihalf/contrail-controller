@@ -281,7 +281,12 @@ void Interface::GetOsParams(Agent *agent) {
     }
     close(fd);
 
+#if defined(__linux__)
     mac_ = ifr.ifr_hwaddr;
+#elif defined(__FreeBSD__)
+    mac_ = ifr.ifr_addr;
+#endif
+
     if (os_index_ == kInvalidIndex) {
         int idx = if_nametoindex(name_.c_str());
         if (idx)
