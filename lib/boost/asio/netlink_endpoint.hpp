@@ -12,6 +12,9 @@
 
 #include <boost/asio/detail/config.hpp>
 #include <boost/asio/detail/push_options.hpp>
+#if defined(__linux__)
+#include <linux/netlink.h>
+#endif
 
 namespace boost {
 namespace asio {
