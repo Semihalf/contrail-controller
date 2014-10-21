@@ -9,9 +9,12 @@
 #include <sys/socket.h>
 
 #include <net/if.h>
+#if defined(__linux__)
 #include <linux/if_ether.h>
 #include <linux/if_tun.h>
 #include <linux/if_packet.h>
+#endif
+#include <net/ethernet.h>
 
 #include "base/logging.h"
 #include "cmn/agent_cmn.h"
@@ -44,6 +47,7 @@ Pkt0Interface::~Pkt0Interface() {
 }
 
 void Pkt0Interface::InitControlInterface() {
+#if defined(__linux__)
     pkt_handler()->agent()->set_pkt_interface_name(name_);
 
     if ((tap_fd_ = open(TUN_INTF_CLONE_DEV, O_RDWR)) < 0) {
@@ -134,6 +138,7 @@ void Pkt0Interface::InitControlInterface() {
 
     VrouterControlInterface::InitControlInterface();
     AsyncRead();
+#endif
 }
 
 void Pkt0Interface::IoShutdownControlInterface() {

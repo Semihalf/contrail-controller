@@ -876,7 +876,7 @@ int CreateTap(const char *name) {
     }
     return fd;
 #else
-    return 0;
+
 #endif
 }
 
