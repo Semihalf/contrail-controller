@@ -144,7 +144,7 @@ KSyncEntry *VxLanIdKSyncEntry::UnresolvedReference() {
     return NULL;
 }
 
-VxLanKSyncObject::VxLanKSyncObject(KSync *ksync) 
+VxLanKSyncObject::VxLanKSyncObject(KSyncBase *ksync) 
     : KSyncDBObject(kVxLanIndexCount), ksync_(ksync) {
 }
 

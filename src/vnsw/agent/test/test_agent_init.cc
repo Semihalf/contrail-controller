@@ -10,7 +10,7 @@
 #include <cfg/cfg_init.h>
 
 #include <oper/operdb_init.h>
-#include <ksync/ksync_init.h>
+#include "ksync_init.h"
 #include <ksync/test/ksync_test.h>
 #include <uve/agent_uve.h>
 #include <uve/test/agent_uve_test.h>
@@ -52,7 +52,7 @@ void TestAgentInit::ProcessOptions
  ***************************************************************************/
 void TestAgentInit::FactoryInit() {
     AgentObjectFactory::Register<AgentUve>(boost::factory<AgentUveTest *>());
-    AgentObjectFactory::Register<KSync>(boost::factory<KSyncTest *>());
+    AgentObjectFactory::Register<KSyncBase>(boost::factory<KSyncTest *>());
 }
 
 // Create the basic modules for agent operation.
@@ -68,7 +68,7 @@ void TestAgentInit::CreateModules() {
                (agent(), AgentUve::kBandwidthInterval));
     agent()->set_uve(uve_.get());
 
-    ksync_.reset(AgentObjectFactory::Create<KSync>(agent()));
+    ksync_.reset(AgentObjectFactory::Create<KSyncBase>(agent()));
     agent()->set_ksync(ksync_.get());
 }
 

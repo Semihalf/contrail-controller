@@ -32,7 +32,7 @@
 #include "pkt/pkt_sandesh_flow.h"
 #include "pkt/agent_stats.h"
 #include "ksync/flowtable_ksync.h"
-#include <ksync/ksync_init.h>
+#include "ksync_init.h"
 
 static void LogError(const PktInfo *pkt, const char *str) {
     if (pkt->family == Address::INET) {

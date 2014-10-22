@@ -53,17 +53,17 @@ private:
 class MirrorKSyncObject : public KSyncDBObject {
 public:
     static const int kMirrorIndexCount = 1000;
-    MirrorKSyncObject(KSync *ksync);
+    MirrorKSyncObject(KSyncBase *ksync);
     virtual ~MirrorKSyncObject();
 
-    KSync *ksync() const { return ksync_; }
+    KSyncBase *ksync() const { return ksync_; }
 
     void RegisterDBClients();
     virtual KSyncEntry *Alloc(const KSyncEntry *entry, uint32_t index);
     virtual KSyncEntry *DBToKSyncEntry(const DBEntry *e);
     uint32_t GetIdx(std::string analyzer_name);
 private:
-    KSync *ksync_;
+    KSyncBase *ksync_;
     DISALLOW_COPY_AND_ASSIGN(MirrorKSyncObject);
 };
 

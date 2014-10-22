@@ -2,8 +2,8 @@
  * Copyright (c) 2013 Juniper Networks, Inc. All rights reserved.
  */
 
-#ifndef vnsw_agent_ksync_init_h
-#define vnsw_agent_ksync_init_h
+#ifndef vnsw_agent_ksync_init_base_h
+#define vnsw_agent_ksync_init_base_h
 
 #include <ksync/flowtable_ksync.h>
 #include <ksync/mpls_ksync.h>
@@ -15,17 +15,17 @@
 #include <ksync/interface_scan.h>
 #include "vnswif_listener.h"
 
-class KSync {
+class KSyncBase {
 public:
-    KSync(Agent *agent);
-    virtual ~KSync();
+    KSyncBase(Agent *agent);
+    virtual ~KSyncBase();
 
     virtual void Init(bool create_vhost);
     virtual void RegisterDBClients(DB *db);
     void VnswInterfaceListenerInit();
     void Shutdown();
 
-    void UpdateVhostMac();
+    virtual void UpdateVhostMac() = 0;
     Agent *agent() const  { return agent_; }
     MirrorKSyncObject *mirror_ksync_obj() const { 
         return mirror_ksync_obj_.get(); 
@@ -65,12 +65,12 @@ private:
     void NetlinkInit();
     void VRouterInterfaceSnapshot();
     void ResetVRouter();
-    void CreateVhostIntf();
+    virtual void CreateVhostIntf() = 0;
     int Encode(Sandesh &encoder, uint8_t *buf, int buf_len);
-    DISALLOW_COPY_AND_ASSIGN(KSync);
+    DISALLOW_COPY_AND_ASSIGN(KSyncBase);
 };
 
 int GenenericNetlinkFamily();
 void GenericNetlinkInit();
 
-#endif //vnsw_agent_ksync_init_h
+#endif //vnsw_agent_ksync_init_base_h

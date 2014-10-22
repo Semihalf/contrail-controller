@@ -5,9 +5,8 @@
 #include <sys/socket.h>
 #if defined(__linux__)
 #include <linux/netlink.h>
-#elif defined(__FreeBSD__)
-#include "vr_os.h"
 #endif
+#include "vr_os.h"
 #include <fcntl.h>
 #include <sys/mman.h>
 #include <sys/types.h>
@@ -34,7 +33,7 @@
 #include <vr_genetlink.h>
 #include <ksync/ksync_sock_user.h>
 #include "vnswif_listener.h"
-#include <ksync/ksync_init.h>
+#include "ksync_init.h"
 
 #include <pkt/flow_proto.h>
 #include <oper/agent_types.h>
@@ -486,7 +485,7 @@ void FlowTableKSyncEntry::ErrorHandler(int err, uint32_t seq_no) const {
     KSyncEntry::ErrorHandler(err, seq_no);
 }
 
-FlowTableKSyncObject::FlowTableKSyncObject(KSync *ksync) : 
+FlowTableKSyncObject::FlowTableKSyncObject(KSyncBase *ksync) : 
     KSyncObject(), ksync_(ksync), audit_flow_idx_(0),
     audit_timer_(TimerManager::CreateTimer
                  (*(ksync_->agent()->event_manager())->io_service(),
@@ -496,7 +495,7 @@ FlowTableKSyncObject::FlowTableKSyncObject(KSync *ksync) :
                   StatsCollector::FlowStatsCollector)) { 
 }
 
-FlowTableKSyncObject::FlowTableKSyncObject(KSync *ksync, int max_index) :
+FlowTableKSyncObject::FlowTableKSyncObject(KSyncBase *ksync, int max_index) :
     KSyncObject(max_index), ksync_(ksync), audit_flow_idx_(0),
     audit_timer_(TimerManager::CreateTimer
                  (*(ksync_->agent()->event_manager())->io_service(),

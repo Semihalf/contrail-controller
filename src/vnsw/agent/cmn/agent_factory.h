@@ -11,14 +11,14 @@
 
 class Agent;
 class AgentUve;
-class KSync;
+class KSyncBase;
 class DB;
 class DBGraph;
 class IFMapDependencyManager;
 class NamespaceManager;
 
 class AgentObjectFactory : public Factory<AgentObjectFactory> {
-    FACTORY_TYPE_N1(AgentObjectFactory, KSync, Agent *);
+    FACTORY_TYPE_N1(AgentObjectFactory, KSyncBase, Agent *);
     FACTORY_TYPE_N2(AgentObjectFactory, AgentUve, Agent *, uint64_t);
     FACTORY_TYPE_N1(AgentObjectFactory, AgentSignal, EventManager *);
     FACTORY_TYPE_N2(AgentObjectFactory, IFMapDependencyManager, DB *,

@@ -9,7 +9,7 @@
 #include <ksync/interface_ksync.h>
 #include <ksync/nexthop_ksync.h>
 #include <ksync/mpls_ksync.h>
-#include <ksync/ksync_init.h>
+#include "ksync_init.h"
 #include <ksync/ksync_sock.h>
 
 MplsKSyncEntry::MplsKSyncEntry(MplsKSyncObject* obj, const MplsKSyncEntry *me,
@@ -125,7 +125,7 @@ KSyncEntry *MplsKSyncEntry::UnresolvedReference() {
     return NULL;
 }
 
-MplsKSyncObject::MplsKSyncObject(KSync *ksync) : 
+MplsKSyncObject::MplsKSyncObject(KSyncBase *ksync) : 
     KSyncDBObject(kMplsIndexCount), ksync_(ksync) {
 }
 

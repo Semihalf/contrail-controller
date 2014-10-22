@@ -17,7 +17,6 @@ class Agent;
 class AgentParam;
 class AgentConfig;
 class AgentStats;
-class KSync;
 class AgentUve;
 class PktModule;
 class VirtualGateway;
@@ -30,6 +29,7 @@ class OperDB;
 class AgentRoute;
 class TaskScheduler;
 class AgentInit;
+class KSyncBase;
 
 class Interface;
 typedef boost::intrusive_ptr<Interface> InterfaceRef;
@@ -597,8 +597,8 @@ public:
     AgentStats *stats() const;
     void set_stats(AgentStats *stats);
 
-    KSync *ksync() const;
-    void set_ksync(KSync *ksync);
+    KSyncBase *ksync() const;
+    void set_ksync(KSyncBase *ksync);
 
     AgentUve *uve() const;
     void set_uve(AgentUve *uve);
@@ -717,7 +717,7 @@ private:
     AgentParam *params_;
     AgentConfig *cfg_;
     AgentStats *stats_;
-    KSync *ksync_;
+    KSyncBase *ksync_;
     AgentUve *uve_;
     PktModule *pkt_;
     ServicesModule *services_;

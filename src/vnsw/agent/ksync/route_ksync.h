@@ -82,10 +82,10 @@ public:
         bool seen_;
     };
 
-    RouteKSyncObject(KSync *ksync, AgentRouteTable *rt_table);
+    RouteKSyncObject(KSyncBase *ksync, AgentRouteTable *rt_table);
     virtual ~RouteKSyncObject();
 
-    KSync *ksync() const { return ksync_; }
+    KSyncBase *ksync() const { return ksync_; }
 
     virtual KSyncEntry *Alloc(const KSyncEntry *entry, uint32_t index);
     virtual KSyncEntry *DBToKSyncEntry(const DBEntry *e);
@@ -94,7 +94,7 @@ public:
     virtual void EmptyTable();
 
 private:
-    KSync *ksync_;
+    KSyncBase *ksync_;
     bool marked_delete_;
     AgentRouteTable *rt_table_;
     LifetimeRef<RouteKSyncObject> table_delete_ref_;
@@ -108,10 +108,10 @@ public:
         bool seen_;
     };
 
-    VrfKSyncObject(KSync *ksync);
+    VrfKSyncObject(KSyncBase *ksync);
     virtual ~VrfKSyncObject();
 
-    KSync *ksync() const { return ksync_; }
+    KSyncBase *ksync() const { return ksync_; }
 
     void RegisterDBClients();
     void Shutdown();
@@ -120,7 +120,7 @@ public:
                      unsigned int table_id);
     void DelFromVrfMap(RouteKSyncObject *);
 private:
-    KSync *ksync_;
+    KSyncBase *ksync_;
     DBTableBase::ListenerId vrf_listener_id_;
     DISALLOW_COPY_AND_ASSIGN(VrfKSyncObject);
 };

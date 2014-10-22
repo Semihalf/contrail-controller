@@ -48,14 +48,14 @@ private:
 class MplsKSyncObject : public KSyncDBObject {
 public:
     static const int kMplsIndexCount = 10000;
-    MplsKSyncObject(KSync *ksync);
+    MplsKSyncObject(KSyncBase *ksync);
     virtual ~MplsKSyncObject();
-    KSync *ksync() const { return ksync_; }
+    KSyncBase *ksync() const { return ksync_; }
     virtual KSyncEntry *Alloc(const KSyncEntry *entry, uint32_t index);
     virtual KSyncEntry *DBToKSyncEntry(const DBEntry *e);
     void RegisterDBClients();
 private:
-    KSync *ksync_;
+    KSyncBase *ksync_;
     DISALLOW_COPY_AND_ASSIGN(MplsKSyncObject);
 };
 

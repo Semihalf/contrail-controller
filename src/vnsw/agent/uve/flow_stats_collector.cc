@@ -20,7 +20,7 @@
 #include <uve/vn_uve_table.h>
 #include <algorithm>
 #include <pkt/flow_proto.h>
-#include <ksync/ksync_init.h>
+#include "ksync_init.h"
 
 FlowStatsCollector::FlowStatsCollector(boost::asio::io_service &io, int intvl,
                                        uint32_t flow_cache_timeout,

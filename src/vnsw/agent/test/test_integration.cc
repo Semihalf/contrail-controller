@@ -14,7 +14,7 @@
 #include <controller/controller_init.h>
 #include <pkt/pkt_init.h>
 #include <services/services_init.h>
-#include <ksync/ksync_init.h>
+#include "ksync_init.h"
 #include "ksync/ksync_index.h"
 #include <ksync/interface_ksync.h>
 #include <cmn/agent_cmn.h>

@@ -51,14 +51,14 @@ private:
 class VxLanKSyncObject : public KSyncDBObject {
 public:
     static const int kVxLanIndexCount = 10000;
-    VxLanKSyncObject(KSync *ksync);
+    VxLanKSyncObject(KSyncBase *ksync);
     virtual ~VxLanKSyncObject();
-    KSync *ksync() const { return ksync_; }
+    KSyncBase *ksync() const { return ksync_; }
     virtual KSyncEntry *Alloc(const KSyncEntry *entry, uint32_t index);
     virtual KSyncEntry *DBToKSyncEntry(const DBEntry *e);
     void RegisterDBClients();
 private:
-    KSync *ksync_;
+    KSyncBase *ksync_;
     DISALLOW_COPY_AND_ASSIGN(VxLanKSyncObject);
 };
 

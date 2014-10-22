@@ -31,7 +31,7 @@
 #include "ksync/nexthop_ksync.h"
 #include "ksync/mirror_ksync.h"
 #include "vnswif_listener.h"
-#include "ksync/ksync_init.h"
+#include "ksync_init.h"
 
 // Name of clone device for creating tap interface
 #define TUN_INTF_CLONE_DEV      "/dev/net/tun"
@@ -535,7 +535,7 @@ int InterfaceKSyncEntry::ChangeMsg(char *buf, int buf_len) {
     return AddMsg(buf, buf_len);
 }
 
-InterfaceKSyncObject::InterfaceKSyncObject(KSync *ksync) :
+InterfaceKSyncObject::InterfaceKSyncObject(KSyncBase *ksync) :
     KSyncDBObject(), ksync_(ksync) {
 }
 

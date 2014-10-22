@@ -68,11 +68,11 @@ public:
     static const uint32_t AuditTimeout = 2000;           // in msec
     static const int AuditYield = 1024;
 
-    FlowTableKSyncObject(KSync *ksync);
-    FlowTableKSyncObject(KSync *ksync, int max_index);
+    FlowTableKSyncObject(KSyncBase *ksync);
+    FlowTableKSyncObject(KSyncBase *ksync, int max_index);
     virtual ~FlowTableKSyncObject();
     vr_flow_req &flow_req() { return flow_req_; }
-    KSync *ksync() const { return ksync_; }
+    KSyncBase *ksync() const { return ksync_; }
     KSyncEntry *Alloc(const KSyncEntry *key, uint32_t index);
     bool DoEventTrace(void) { return false; }
     FlowTableKSyncEntry *Find(FlowEntry *key);
@@ -98,7 +98,7 @@ public:
     }
 private:
     friend class KSyncSandeshContext;
-    KSync *ksync_;
+    KSyncBase *ksync_;
     int major_devid_;
     int flow_table_size_;
     vr_flow_req flow_req_;

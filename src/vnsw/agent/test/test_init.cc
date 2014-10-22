@@ -7,7 +7,7 @@
 #include "oper/mirror_table.h"
 #include "vgw/cfg_vgw.h"
 #include "vgw/vgw.h"
-#include "ksync/ksync_init.h"
+#include "ksync_init.h"
 #include <uve/test/agent_uve_test.h>
 #include <ksync/test/ksync_test.h>
 #include <boost/functional/factory.hpp>

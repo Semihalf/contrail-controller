@@ -98,16 +98,16 @@ private:
 class NHKSyncObject : public KSyncDBObject {
 public:
     static const int kNHIndexCount = NH_TABLE_ENTRIES;
-    NHKSyncObject(KSync *ksync);
+    NHKSyncObject(KSyncBase *ksync);
     virtual ~NHKSyncObject();
 
-    KSync *ksync() const { return ksync_; }
+    KSyncBase *ksync() const { return ksync_; }
 
     virtual KSyncEntry *Alloc(const KSyncEntry *entry, uint32_t index);
     virtual KSyncEntry *DBToKSyncEntry(const DBEntry *e);
     void RegisterDBClients();
 private:
-    KSync *ksync_;
+    KSyncBase *ksync_;
     DISALLOW_COPY_AND_ASSIGN(NHKSyncObject);
 };
 

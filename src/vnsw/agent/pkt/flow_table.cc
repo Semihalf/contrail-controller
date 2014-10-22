@@ -13,7 +13,7 @@
 #include <sandesh/sandesh_trace.h>
 #include <pkt/flow_table.h>
 #include <uve/flow_stats_collector.h>
-#include <ksync/ksync_init.h>
+#include "ksync_init.h"
 #include <ksync/ksync_entry.h>
 #include <ksync/flowtable_ksync.h>
 

@@ -42,7 +42,7 @@
 #include "controller/controller_peer.h"
 #include <controller/controller_vrf_export.h>
 #include <services/services_init.h>
-#include <ksync/ksync_init.h>
+#include "ksync_init.h"
 #include "vnswif_listener.h"
 #include <ifmap/ifmap_agent_parser.h>
 #include <ifmap/ifmap_agent_table.h>

@@ -62,7 +62,7 @@ private:
     bool router_id_dep_enable_;
 
     std::auto_ptr<AgentStats> stats_;
-    std::auto_ptr<KSync> ksync_;
+    std::auto_ptr<KSyncBase> ksync_;
     std::auto_ptr<AgentUve> uve_;
 
     std::auto_ptr<DiagTable> diag_table_;

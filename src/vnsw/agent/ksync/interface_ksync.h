@@ -100,10 +100,10 @@ private:
 
 class InterfaceKSyncObject : public KSyncDBObject {
 public:
-    InterfaceKSyncObject(KSync *parent);
+    InterfaceKSyncObject(KSyncBase *parent);
     virtual ~InterfaceKSyncObject();
 
-    KSync *ksync() const { return ksync_; }
+    KSyncBase *ksync() const { return ksync_; }
 
     void Init();
     void InitTest();
@@ -112,7 +112,7 @@ public:
     void RegisterDBClients();
 
 private:
-    KSync *ksync_;
+    KSyncBase *ksync_;
     DISALLOW_COPY_AND_ASSIGN(InterfaceKSyncObject);
 };
 

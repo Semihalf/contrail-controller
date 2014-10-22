@@ -11,7 +11,7 @@
 #include <ksync/interface_ksync.h>
 #include <pkt/flow_table.h>
 #include <oper/mirror_table.h>
-#include <ksync/ksync_init.h>
+#include "ksync_init.h"
 
 void vr_drop_stats_req::Process(SandeshContext *context) {
     AgentSandeshContext *ioc = static_cast<AgentSandeshContext *>(context);

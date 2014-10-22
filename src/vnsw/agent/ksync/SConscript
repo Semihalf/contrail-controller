@@ -17,16 +17,18 @@ SandeshGenSrcs = env.ExtractCpp(SandeshGenFiles)
 sandesh_objs = AgentEnv.BuildExceptionCppObj(env, SandeshGenSrcs)
 
 if sys.platform.startswith('linux'):
-    except_files = [ 'vnswif_listener_base.cc', 'linux/vnswif_listener.cc' ]
+    except_files = [ 'vnswif_listener_base.cc', 'linux/vnswif_listener.cc',
+                     'linux/ksync_init.cc' ]
 elif sys.platform.startswith('freebsd'):
-    except_files = [ 'vnswif_listener_base.cc', 'freebsd/vnswif_listener.cc' ]
+    except_files = [ 'vnswif_listener_base.cc', 'freebsd/vnswif_listener.cc',
+                     'freebsd/ksync_init.cc' ]
 
 except_objs = AgentEnv.BuildExceptionCcObj(env, except_files)
 
 libksync = env.Library('vnswksync',
                        sandesh_objs +
                        except_objs +
-                       ['ksync_init.cc',
+                       ['ksync_init_base.cc',
                         'interface_ksync.cc',
                         'interface_scan.cc',
                         'mirror_ksync.cc',

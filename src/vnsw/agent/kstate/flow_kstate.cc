@@ -15,7 +15,7 @@
 #include <pkt/flow_table.h>
 
 #include <ksync/flowtable_ksync.h>
-#include <ksync/ksync_init.h>
+#include "ksync_init.h"
 
 using namespace std;
 

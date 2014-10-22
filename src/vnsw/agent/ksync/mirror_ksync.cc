@@ -5,7 +5,7 @@
 #include <ksync/ksync_index.h>
 #include "ksync/mirror_ksync.h"
 #include "ksync/nexthop_ksync.h"
-#include "ksync/ksync_init.h"
+#include "ksync_init.h"
 #include <ksync/ksync_sock.h>
 
 MirrorKSyncEntry::MirrorKSyncEntry(MirrorKSyncObject *obj, 
@@ -118,7 +118,7 @@ KSyncEntry *MirrorKSyncEntry::UnresolvedReference() {
     return NULL;
 }
 
-MirrorKSyncObject::MirrorKSyncObject(KSync *ksync) : 
+MirrorKSyncObject::MirrorKSyncObject(KSyncBase *ksync) : 
     KSyncDBObject(kMirrorIndexCount), ksync_(ksync) {
 }
 

@@ -49,16 +49,16 @@ private:
 
 class VrfAssignKSyncObject : public KSyncDBObject {
 public:
-    VrfAssignKSyncObject(KSync *ksync);
+    VrfAssignKSyncObject(KSyncBase *ksync);
     virtual ~VrfAssignKSyncObject();
 
-    KSync *ksync() const { return ksync_; }
+    KSyncBase *ksync() const { return ksync_; }
 
     void RegisterDBClients();
     virtual KSyncEntry *Alloc(const KSyncEntry *entry, uint32_t index);
     virtual KSyncEntry *DBToKSyncEntry(const DBEntry *e);
 private:
-    KSync *ksync_;
+    KSyncBase *ksync_;
     DISALLOW_COPY_AND_ASSIGN(VrfAssignKSyncObject);
 };
 

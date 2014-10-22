@@ -4,14 +4,7 @@
 
 #include <sys/types.h>
 #include <sys/socket.h>
-#if defined(__linux__)
-#include <linux/netlink.h>
-#include <linux/rtnetlink.h>
-#include <linux/genetlink.h>
-#include <linux/sockios.h>
-#elif defined(__FreeBSD__)
 #include "vr_os.h"
-#endif
 
 #include <boost/bind.hpp>
 

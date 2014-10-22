@@ -425,7 +425,7 @@ KSyncEntry *RouteKSyncEntry::UnresolvedReference() {
     return NULL;
 }
 
-RouteKSyncObject::RouteKSyncObject(KSync *ksync, AgentRouteTable *rt_table):
+RouteKSyncObject::RouteKSyncObject(KSyncBase *ksync, AgentRouteTable *rt_table):
     KSyncDBObject(), ksync_(ksync), marked_delete_(false), 
     table_delete_ref_(this, rt_table->deleter()) {
     rt_table_ = rt_table;
@@ -510,7 +510,7 @@ void VrfKSyncObject::VrfNotify(DBTablePartBase *partition, DBEntryBase *e) {
     }
 }
 
-VrfKSyncObject::VrfKSyncObject(KSync *ksync) 
+VrfKSyncObject::VrfKSyncObject(KSyncBase *ksync) 
     : ksync_(ksync) {
 }
 

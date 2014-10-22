@@ -5,7 +5,7 @@
 #ifndef vnsw_agent_ksync_test_h
 #define vnsw_agent_ksync_test_h
 
-#include <ksync/ksync_init.h>
+#include "ksync_init.h"
 
 class KSyncTest : public KSync {
 public:

@@ -984,7 +984,7 @@ void NHKSyncEntry::SetEncap(InterfaceKSyncEntry *if_ksync,
     encap.push_back(0x00);
 }
 
-NHKSyncObject::NHKSyncObject(KSync *ksync) :
+NHKSyncObject::NHKSyncObject(KSyncBase *ksync) :
     KSyncDBObject(), ksync_(ksync) {
 }
 

@@ -9,7 +9,7 @@
 
 #include <oper/operdb_init.h>
 #include <controller/controller_init.h>
-#include <ksync/ksync_init.h>
+#include "ksync_init.h"
 #include <uve/agent_uve.h>
 #include <openstack/instance_service_server.h>
 
@@ -48,7 +48,7 @@ void ContrailAgentInit::CreateModules() {
                (agent(), AgentUve::kBandwidthInterval));
     agent()->set_uve(uve_.get());
 
-    ksync_.reset(AgentObjectFactory::Create<KSync>(agent()));
+    ksync_.reset(AgentObjectFactory::Create<KSyncBase>(agent()));
     agent()->set_ksync(ksync_.get());
 
 }

@@ -422,11 +422,11 @@ void Agent::set_stats(AgentStats *stats) {
     stats_ = stats;
 }
 
-KSync *Agent::ksync() const {
+KSyncBase *Agent::ksync() const {
     return ksync_;
 }
 
-void Agent::set_ksync(KSync *ksync) {
+void Agent::set_ksync(KSyncBase *ksync) {
     ksync_ = ksync;
 }
 
