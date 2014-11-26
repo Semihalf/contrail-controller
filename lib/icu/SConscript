@@ -28,7 +28,7 @@ import sys
 env = DefaultEnvironment().Clone()
 
 src_path = Dir('#/third_party/icu/source').abspath
-cd_cmd = 'cd ' + Dir('.').path + ' && '
+cd_cmd = 'cd ' + src_path + ' && '
 
 configure_command = cd_cmd + src_path + '/configure --prefix=' + \
     str(Dir('#/build'))

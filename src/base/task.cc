@@ -666,7 +666,7 @@ TaskStats *TaskScheduler::GetTaskStats(int task_id, int instance_id) {
 // in specific process.
 //
 int TaskScheduler::CountThreadsPerPid(pid_t pid) {
-    int threads;
+    unsigned int threads;
     threads = 0;
 
 #if defined(__FreeBSD__)
