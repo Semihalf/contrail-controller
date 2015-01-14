@@ -267,6 +267,11 @@ void Interface::GetOsParams(Agent *agent) {
         return;
     }
 
+#if defined(__linux__)
+    mac_ = ifr.ifr_hwaddr;
+#elif defined(__FreeBSD__)
+    mac_ = ifr.ifr_addr;
+#endif
 
     if (ioctl(fd, SIOCGIFFLAGS, (void *)&ifr) < 0) {
         LOG(ERROR, "Error <" << errno << ": " << strerror(errno) <<
@@ -282,11 +287,6 @@ void Interface::GetOsParams(Agent *agent) {
     }
     close(fd);
 
-#if defined(__linux__)
-    mac_ = ifr.ifr_hwaddr;
-#elif defined(__FreeBSD__)
-    mac_ = ifr.ifr_addr;
-#endif
 
     if (os_index_ == kInvalidIndex) {
         int idx = if_nametoindex(name_.c_str());
